@@ -18,34 +18,9 @@ $ git pull --allow-unrelated-histories
 
 # Working environment
 
-## Conda environment using conda install (UNSUCCESSFUL)
-
-Environment creation (based on Python 3.10.6)
-
-```bash
-$ conda create -n hduq
-$ conda activate hduq
-```
-
-Installation of packages
-
-- Based on [dynamax requirements](https://github.com/probml/dynamax/blob/main/setup.cfg#L21)
-```bash
-$ conda install jax jaxlib optax
-$ conda install scikit-learn matplotlib
-$ conda install fastprogress
-$ conda install -c conda-forge tensorflow-probability
-$ conda install -c conda-forge typing-extensions
-```
-
-$ conda install -c conda-forge tensorflow-probability='0.19.0'
-
-- To run the notebooks
-```bash
-$ conda install jupyter
-```
-
 ## Conda environment with pip install
+
+### Definition
 
 - Main conda environment
 ```bash
@@ -70,18 +45,17 @@ $ pip install jupyter matplotlib seaborn flax blackjax graphviz scipy
 $ pip install diffrax
 ```
 
-- To replicate with conda (UNSUCCESSFUL, due to missing channels)
-```bash
-$ conda list --export > hduq_requirements.txt
-```
-- To replicate, based on pip
+### Replication
+
+- Replicate active conda environment, based on pip
 ```bash
 $ pip freeze > hduq_pip_requirements.txt
 $ gedit hduq_pip_requirements.txt
     Remove line referring to certifi
 ```
 
-- Then, create
+- Create copy of conda environment using the pip-based requirements file
+
 ```bash
 $ conda create --name hduq python=3.11.4
 $ conda activate hduq
