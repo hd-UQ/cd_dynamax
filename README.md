@@ -45,7 +45,6 @@ $ conda install -c conda-forge tensorflow-probability='0.19.0'
 $ conda install jupyter
 ```
 
-
 ## Conda environment with pip install
 
 - Main conda environment
@@ -66,7 +65,29 @@ conda install typing_extensions
 $ pip install jupyter matplotlib seaborn flax blackjax graphviz scipy
 ```
 
-- To replicate
+- Pip install the [diffrax]() library for 
+```bash
+$ pip install diffrax
+```
+
+- To replicate with conda (UNSUCCESSFUL, due to missing channels)
 ```bash
 $ conda list --export > hduq_requirements.txt
 ```
+- To replicate, based on pip
+```bash
+$ pip freeze > hduq_pip_requirements.txt
+$ gedit hduq_pip_requirements.txt
+    Remove line referring to certifi
+```
+
+- Then, create
+```bash
+$ conda create --name hduq
+$ conda activate hduq
+$ conda install pip
+$ pip install -r hduq_pip_requirements.txt
+``
+
+
+
