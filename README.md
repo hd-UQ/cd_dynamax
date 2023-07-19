@@ -83,11 +83,8 @@ $ gedit hduq_pip_requirements.txt
 
 - Then, create
 ```bash
-$ conda create --name hduq
+$ conda create --name hduq python=3.11.4
 $ conda activate hduq
 $ conda install pip
 $ pip install -r hduq_pip_requirements.txt
 ``
-
-
-
