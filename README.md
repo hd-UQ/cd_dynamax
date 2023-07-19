@@ -61,4 +61,10 @@ $ conda create --name hduq python=3.11.4
 $ conda activate hduq
 $ conda install pip
 $ pip install -r hduq_pip_requirements.txt
-``
+```
+
+- If you have issues with running the notebooks (due to jupyter not knowing about the conda environment), try running:
+```bash
+$ conda install jupyter
+$ pip install -U "jupyter-server<2.0.0"
+```
