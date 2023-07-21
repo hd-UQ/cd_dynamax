@@ -45,6 +45,11 @@ $ pip install jupyter matplotlib seaborn flax blackjax graphviz scipy
 $ pip install diffrax
 ```
 
+- To actually use the code within the repo we want to change, then we
+```bash
+$ pip uninstall dynamax
+```
+
 ### Replication
 
 - Replicate active conda environment, based on pip
