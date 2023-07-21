@@ -276,12 +276,13 @@ def preprocess_args(f):
         bound_args.apply_defaults()
         params = bound_args.arguments['params']
         emissions = bound_args.arguments['emissions']
+        t_emissions = bound_args.arguments['t_emissions']
         inputs = bound_args.arguments['inputs']
 
         num_timesteps = len(emissions)
         full_params, inputs = preprocess_params_and_inputs(params, num_timesteps, inputs)
 
-        return f(full_params, emissions, inputs=inputs)
+        return f(full_params, emissions, t_emissions, inputs=inputs)
     return wrapper
 
 
@@ -289,6 +290,7 @@ def lgssm_joint_sample(
     params: ParamsLGSSM,
     key: PRNGKey,
     num_timesteps: int,
+    t_emissions: Optional[Float[Array, "ntime 1"]]=None,
     inputs: Optional[Float[Array, "num_timesteps input_dim"]]=None
 )-> Tuple[Float[Array, "num_timesteps state_dim"],
           Float[Array, "num_timesteps emission_dim"]]:
@@ -328,10 +330,11 @@ def lgssm_joint_sample(
         return initial_state, initial_emission
 
     def _step(prev_state, args):
-        key, t, inpt = args
+        key, t0, t1, inpt = args
         key1, key2 = jr.split(key, 2)
 
         # Shorthand: get parameters and inputs for time index t
+        # TODO: replace F and Q? with diffrax from t0 to t1
         F = _get_params(params.dynamics.weights, 2, t)
         B = _get_params(params.dynamics.input_weights, 2, t)
         b = _get_params(params.dynamics.bias, 1, t)
@@ -342,6 +345,7 @@ def lgssm_joint_sample(
         R = _get_params(params.emissions.cov, 2, t)
 
         # Sample from transition and emission distributions
+        # TODO: replace with diffrax? 
         state = _sample_transition(key1, F, B, b, Q, prev_state, inpt)
         emission = _sample_emission(key2, H, D, d, R, state, inpt)
 
@@ -354,9 +358,21 @@ def lgssm_joint_sample(
 
     # Sample the remaining emissions and states
     next_keys = jr.split(key2, num_timesteps - 1)
-    next_times = jnp.arange(1, num_timesteps)
+    
+    # Figure out timestamps
+    if t_emissions is not None:
+        num_timesteps = t_emissions.shape[0]
+        # Factored as vectors, not matrices
+        t0 = tree_map(lambda x: t_emissions[0:-1,0], t_emissions)
+        t1 = tree_map(lambda x: t_emissions[1:,0], t_emissions)
+    else:
+        num_timesteps = len(emissions)
+        t0 = jnp.arange(num_timesteps)
+        t1 = jnp.arange(1,num_timesteps+1)
+    # next_times = jnp.arange(1, num_timesteps)
+    
     next_inputs = tree_map(lambda x: x[1:], inputs)
-    _, (next_states, next_emissions) = lax.scan(_step, initial_state, (next_keys, next_times, next_inputs))
+    _, (next_states, next_emissions) = lax.scan(_step, initial_state, (next_keys, t0, t1, next_inputs))
 
     # Concatenate the initial state and emission with the following ones
     expand_and_cat = lambda x0, x1T: jnp.concatenate((jnp.expand_dims(x0, 0), x1T))
@@ -370,6 +386,7 @@ def lgssm_joint_sample(
 def lgssm_filter(
     params: ParamsLGSSM,
     emissions:  Float[Array, "ntime emission_dim"],
+    t_emissions: Optional[Float[Array, "ntime 1"]]=None,
     inputs: Optional[Float[Array, "ntime input_dim"]]=None
 ) -> PosteriorGSSMFiltered:
     r"""Run a Kalman filter to produce the marginal likelihood and filtered state estimates.
@@ -383,13 +400,24 @@ def lgssm_filter(
         PosteriorGSSMFiltered: filtered posterior object
 
     """
-    num_timesteps = len(emissions)
+    # Figure out timestamps
+    if t_emissions is not None:
+        num_timesteps = t_emissions.shape[0]
+        # Factored as vectors, not matrices
+        t0 = tree_map(lambda x: t_emissions[0:-1,0], t_emissions)
+        t1 = tree_map(lambda x: t_emissions[1:,0], t_emissions)
+    else:
+        num_timesteps = len(emissions)
+        t0 = jnp.arange(num_timesteps)
+        t1 = jnp.arange(1,num_timesteps+1)
+
     inputs = jnp.zeros((num_timesteps, 0)) if inputs is None else inputs
 
-    def _step(carry, t):
+    def _step(carry, args):
         ll, pred_mean, pred_cov = carry
-
+        t,t1 = args
         # Shorthand: get parameters and inputs for time index t
+        # TODO: dyffrax?
         F = _get_params(params.dynamics.weights, 2, t)
         B = _get_params(params.dynamics.input_weights, 2, t)
         b = _get_params(params.dynamics.bias, 1, t)
@@ -414,7 +442,7 @@ def lgssm_filter(
 
     # Run the Kalman filter
     carry = (0.0, params.initial.mean, params.initial.cov)
-    (ll, _, _), (filtered_means, filtered_covs) = lax.scan(_step, carry, jnp.arange(num_timesteps))
+    (ll, _, _), (filtered_means, filtered_covs) = lax.scan(_step, carry, (t0, t1))
     return PosteriorGSSMFiltered(marginal_loglik=ll, filtered_means=filtered_means, filtered_covariances=filtered_covs)
 
 
@@ -422,6 +450,7 @@ def lgssm_filter(
 def lgssm_smoother(
     params: ParamsLGSSM,
     emissions: Float[Array, "ntime emission_dim"],
+    t_emissions: Optional[Float[Array, "ntime 1"]]=None,
     inputs: Optional[Float[Array, "ntime input_dim"]]=None
 ) -> PosteriorGSSMSmoothed:
     r"""Run forward-filtering, backward-smoother to compute expectations
@@ -437,20 +466,33 @@ def lgssm_smoother(
         PosteriorGSSMSmoothed: smoothed posterior object.
 
     """
-    num_timesteps = len(emissions)
+    # Figure out timestamps
+    if t_emissions is not None:
+        num_timesteps = t_emissions.shape[0]
+        # Factored as vectors, not matrices
+        t0 = tree_map(lambda x: t_emissions[0:-1,0], t_emissions)
+        t1 = tree_map(lambda x: t_emissions[1:,0], t_emissions)
+    else:
+        num_timesteps = len(emissions)
+        t0 = jnp.arange(num_timesteps)
+        t1 = jnp.arange(1,num_timesteps+1)
+    
     inputs = jnp.zeros((num_timesteps, 0)) if inputs is None else inputs
 
     # Run the Kalman filter
-    filtered_posterior = lgssm_filter(params, emissions, inputs)
+    filtered_posterior = lgssm_filter(params, emissions, t_emissions, inputs)
     ll, filtered_means, filtered_covs, *_ = filtered_posterior
 
     # Run the smoother backward in time
+    # TODO: need to rewrite this backwards to deal with t0 and t1
     def _step(carry, args):
         # Unpack the inputs
         smoothed_mean_next, smoothed_cov_next = carry
+        # TODO: Replace t with t1, t0
         t, filtered_mean, filtered_cov = args
 
         # Shorthand: get parameters and inputs for time index t
+        # TODO: dyffrax with t1 and t0
         F = _get_params(params.dynamics.weights, 2, t)
         B = _get_params(params.dynamics.input_weights, 2, t)
         b = _get_params(params.dynamics.bias, 1, t)
@@ -472,6 +514,7 @@ def lgssm_smoother(
 
     # Run the Kalman smoother
     init_carry = (filtered_means[-1], filtered_covs[-1])
+    # TODO: reverse t0 and t1 and pass to step via scan
     args = (jnp.arange(num_timesteps - 2, -1, -1), filtered_means[:-1][::-1], filtered_covs[:-1][::-1])
     _, (smoothed_means, smoothed_covs, smoothed_cross) = lax.scan(_step, init_carry, args)
 
@@ -493,6 +536,7 @@ def lgssm_posterior_sample(
     key: PRNGKey,
     params: ParamsLGSSM,
     emissions:  Float[Array, "ntime emission_dim"],
+    t_emissions: Optional[Float[Array, "ntime 1"]]=None,
     inputs: Optional[Float[Array, "ntime input_dim"]]=None,
     jitter: Optional[Scalar]=0
     
@@ -509,13 +553,24 @@ def lgssm_posterior_sample(
     Returns:
         Float[Array, "ntime state_dim"]: one sample of $z_{1:T}$ from the posterior distribution on latent states.
     """
-    num_timesteps = len(emissions)
+    # Figure out timestamps
+    if t_emissions is not None:
+        num_timesteps = t_emissions.shape[0]
+        # Factored as vectors, not matrices
+        t0 = tree_map(lambda x: t_emissions[0:-1,0], t_emissions)
+        t1 = tree_map(lambda x: t_emissions[1:,0], t_emissions)
+    else:
+        num_timesteps = len(emissions)
+        t0 = jnp.arange(num_timesteps)
+        t1 = jnp.arange(1,num_timesteps+1)
+    
     inputs = jnp.zeros((num_timesteps, 0)) if inputs is None else inputs
 
     # Run the Kalman filter
-    filtered_posterior = lgssm_filter(params, emissions, inputs)
+    filtered_posterior = lgssm_filter(params, emissions, t_emissions, inputs)
     ll, filtered_means, filtered_covs, *_ = filtered_posterior
 
+    # TODO: need to rewrite this backwards to deal with t0 and t1
     # Sample backward in time
     def _step(carry, args):
         next_state = carry
