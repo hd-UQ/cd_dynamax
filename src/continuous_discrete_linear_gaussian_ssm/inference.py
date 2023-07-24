@@ -125,7 +125,6 @@ def _get_params(x, dim, t):
         return x
 _zeros_if_none = lambda x, shape: x if x is not None else jnp.zeros(shape)
 
-
 def compute_pushforward(
     params: ParamsCDLGSSM,
     t0: Float,
@@ -300,7 +299,7 @@ def preprocess_args(f):
         return f(full_params, emissions, t_emissions, inputs=inputs)
     return wrapper
 
-
+# TODO: update with t0, t1
 def cdlgssm_joint_sample(
     params: ParamsCDLGSSM,
     key: PRNGKey,
@@ -319,7 +318,8 @@ def cdlgssm_joint_sample(
         latent states and emissions
 
     """
-    
+    raise ValueError("Not implemented yet")
+
     params, inputs = preprocess_params_and_inputs(params, num_timesteps, inputs)
 
     def _sample_transition(key, F, B, b, Q, x_tm1, u):
@@ -395,7 +395,6 @@ def cdlgssm_joint_sample(
     emissions = tree_map(expand_and_cat, initial_emission, next_emissions)
 
     return states, emissions
-
 
 @preprocess_args
 def cdlgssm_filter(
@@ -525,7 +524,6 @@ def cdlgssm_smoother(
     # Run the Kalman smoother
     init_carry = (filtered_means[-1], filtered_covs[-1])
     
-    # TODO: reverse t0 and t1 and pass to step via scan
     args = (t0[:-1][::-1], t1[1:][::-1], filtered_means[:-1][::-1], filtered_covs[:-1][::-1])
     _, (smoothed_means, smoothed_covs, smoothed_cross) = lax.scan(_step, init_carry, args)
 
@@ -542,7 +540,7 @@ def cdlgssm_smoother(
         smoothed_cross_covariances=smoothed_cross,
     )
 
-
+# TODO: update with t0, t1
 def cdlgssm_posterior_sample(
     key: PRNGKey,
     params: ParamsCDLGSSM,
