@@ -4,7 +4,6 @@
     - [ekf_ukf_pendulum_diffrax.ipynb](./notebooks/ekf_ukf_pendulum_diffrax.ipynb)
     - No parameter estimation yet!
     
-
 ## Extend dynamax to deal with irregular sampling
 - add non-regular interval capability to dynamax codebase
 - linear transition function using diffrax
@@ -14,6 +13,7 @@
 - Parameter estimation for the linear gaussian case
 - parameter estimation for 1 non-linear pendulum
 - hierarchical parameter estimation for multiple non-linear pendula
+- Check the conjugate version of the model class, and decide how to proceed
 
 ## New models
 
