@@ -416,15 +416,15 @@ def cdlgssm_filter(
 
     """
     # Figure out timestamps
-    if t_emissions is not None:
-        num_timesteps = t_emissions.shape[0]
-        # Factored as vectors, not matrices
-        t0 = tree_map(lambda x: t_emissions[0:-1,0], t_emissions)
-        t1 = tree_map(lambda x: t_emissions[1:,0], t_emissions)
-    else:
-        num_timesteps = len(emissions)
-        t0 = jnp.arange(num_timesteps)
-        t1 = jnp.arange(1,num_timesteps+1)
+    num_timesteps = t_emissions.shape[0]
+    # Factored as vectors, not matrices
+    t0 = t_emissions[:,0]
+    # We need an extra prediction time-instant, so
+    t1 = jnp.concatenate((
+            t_emissions[1:,0],
+            jnp.array([t_emissions[-1,0]+1]) # NB: t_{N+1} is simply t_{N}+1 
+        )
+    )
 
     inputs = jnp.zeros((num_timesteps, 0)) if inputs is None else inputs
 
@@ -432,15 +432,14 @@ def cdlgssm_filter(
         ll, pred_mean, pred_cov = carry
         t0,t1 = args
 
-        F, Q = compute_pushforward(params, t0, t1)
-        B = _get_params(params.dynamics.input_weights, 2, t1)
-        b = _get_params(params.dynamics.bias, 1, t1)
-        H = _get_params(params.emissions.weights, 2, t1)
-        D = _get_params(params.emissions.input_weights, 2, t1)
-        d = _get_params(params.emissions.bias, 1, t1)
-        R = _get_params(params.emissions.cov, 2, t1)
-        u = inputs[t1]
-        y = emissions[t1]
+        B = _get_params(params.dynamics.input_weights, 2, t0)
+        b = _get_params(params.dynamics.bias, 1, t0)
+        H = _get_params(params.emissions.weights, 2, t0)
+        D = _get_params(params.emissions.input_weights, 2, t0)
+        d = _get_params(params.emissions.bias, 1, t0)
+        R = _get_params(params.emissions.cov, 2, t0)
+        u = inputs[t0]
+        y = emissions[t0]
 
         # Update the log likelihood
         ll += MVN(H @ pred_mean + D @ u + d, H @ pred_cov @ H.T + R).log_prob(y)
@@ -449,6 +448,7 @@ def cdlgssm_filter(
         filtered_mean, filtered_cov = _condition_on(pred_mean, pred_cov, H, D, d, R, u, y)
 
         # Predict the next state
+        F, Q = compute_pushforward(params, t0, t1)
         pred_mean, pred_cov = _predict(filtered_mean, filtered_cov, F, B, b, Q, u)
 
         return (ll, pred_mean, pred_cov), (filtered_mean, filtered_cov)
