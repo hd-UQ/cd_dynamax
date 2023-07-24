@@ -497,23 +497,20 @@ def cdlgssm_smoother(
     ll, filtered_means, filtered_covs, *_ = filtered_posterior
 
     # Run the smoother backward in time
-    # TODO: need to rewrite this backwards to deal with t0 and t1
     def _step(carry, args):
         # Unpack the inputs
         smoothed_mean_next, smoothed_cov_next = carry
-        # TODO: Replace t with t1, t0
-        t, filtered_mean, filtered_cov = args
+        t0, t1, filtered_mean, filtered_cov = args
 
         # Shorthand: get parameters and inputs for time index t
-        # TODO: dyffrax with t1 and t0
-        F = _get_params(params.dynamics.weights, 2, t)
-        B = _get_params(params.dynamics.input_weights, 2, t)
-        b = _get_params(params.dynamics.bias, 1, t)
-        Q = _get_params(params.dynamics.cov, 2, t)
-        u = inputs[t]
+        F, Q = compute_pushforward(params, t0, t1)
+        B = _get_params(params.dynamics.input_weights, 2, t0)
+        b = _get_params(params.dynamics.bias, 1, t0)
+        u = inputs[t0]
 
         # This is like the Kalman gain but in reverse
         # See Eq 8.11 of Saarka's "Bayesian Filtering and Smoothing"
+        # TODO: make sure that computation of G is correct in CD-Kalman Smoother case
         G = psd_solve(Q + F @ filtered_cov @ F.T, F @ filtered_cov).T
 
         # Compute the smoothed mean and covariance
@@ -529,7 +526,7 @@ def cdlgssm_smoother(
     init_carry = (filtered_means[-1], filtered_covs[-1])
     
     # TODO: reverse t0 and t1 and pass to step via scan
-    args = (jnp.arange(num_timesteps - 2, -1, -1), filtered_means[:-1][::-1], filtered_covs[:-1][::-1])
+    args = (t0[:-1][::-1], t1[1:][::-1], filtered_means[:-1][::-1], filtered_covs[:-1][::-1])
     _, (smoothed_means, smoothed_covs, smoothed_cross) = lax.scan(_step, init_carry, args)
 
     # Reverse the arrays and return
