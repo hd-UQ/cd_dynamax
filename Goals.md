@@ -13,15 +13,16 @@
 
 ## Parameter estimation
 - Parameter estimation for the linear gaussian case
+- hierarchical parameter estimation for the linear gaussian case
+
 - parameter estimation for 1 non-linear pendulum
 - hierarchical parameter estimation for multiple non-linear pendula
 - Check the conjugate version of the model class, and decide how to proceed
 
-## New models
-
+## New non-linear models
 - lorenz
-- hormone models
 - glucose-insulin
+- hormone models: Delayed ODEs!!
 
 ## Big picture
 - Learn a RHS with uncertainty (via GP or NN)...either purely data-driven and/or hybrid modeling.
