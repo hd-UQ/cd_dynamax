@@ -3,6 +3,8 @@
 - Nonlinear transition function using diffrax (get this to work on nonlinear ssm ipynb notebooks) (DONE)
     - [ekf_ukf_pendulum_diffrax.ipynb](./notebooks/ekf_ukf_pendulum_diffrax.ipynb)
     - No parameter estimation yet!
+
+- Understand what info version of code is for, and implement if needed
     
 ## Extend dynamax to deal with irregular sampling
 - add non-regular interval capability to dynamax codebase
