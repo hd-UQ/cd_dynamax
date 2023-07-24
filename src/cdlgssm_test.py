@@ -79,7 +79,7 @@ assert jnp.allclose(d_states, cd_states)
 assert jnp.allclose(d_emissions, cd_emissions)
 
 print('Continuous-Discrete time filtering')
-from continuous_discrete_linear_gaussian_ssm.inference import cdlgssm_filter, cdlgssm_smoother, cdlgssm_posterior_sample
+from continuous_discrete_linear_gaussian_ssm.inference import cdlgssm_filter
 cd_filtered_posterior = cdlgssm_filter(cd_params, cd_emissions, t_emissions, inputs)
 
 pdb.set_trace()
