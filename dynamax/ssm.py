@@ -18,7 +18,6 @@ from dynamax.types import PRNGKey, Scalar
 from dynamax.utils.optimize import run_sgd
 from dynamax.utils.utils import ensure_array_has_batch_dim
 
-import pdb
 
 class Posterior(Protocol):
     """A :class:`NamedTuple` with parameters stored as :class:`jax.DeviceArray` in the leaf nodes."""
@@ -105,8 +104,6 @@ class SSM(ABC):
         self,
         params: ParameterSet,
         state: Float[Array, "state_dim"],
-        t0: Optional[Float],
-        t1: Optional[Float],
         inputs: Optional[Float[Array, "input_dim"]]
     ) -> tfd.Distribution:
         r"""Return a distribution over next latent state given current state.
@@ -176,7 +173,6 @@ class SSM(ABC):
         params: ParameterSet,
         key: PRNGKey,
         num_timesteps: int,
-        t_emissions: Optional[Float[Array, "num_timesteps 1"]]=None,
         inputs: Optional[Float[Array, "num_timesteps input_dim"]]=None
     ) -> Tuple[Float[Array, "num_timesteps state_dim"],
               Float[Array, "num_timesteps emission_dim"]]:
@@ -193,9 +189,9 @@ class SSM(ABC):
 
         """
         def _step(prev_state, args):
-            key, t0, t1, inpt = args
+            key, inpt = args
             key1, key2 = jr.split(key, 2)
-            state = self.transition_distribution(params, prev_state, t0, t1, inpt).sample(seed=key2)
+            state = self.transition_distribution(params, prev_state, inpt).sample(seed=key2)
             emission = self.emission_distribution(params, state, inpt).sample(seed=key1)
             return state, (state, emission)
 
@@ -205,17 +201,10 @@ class SSM(ABC):
         initial_state = self.initial_distribution(params, initial_input).sample(seed=key1)
         initial_emission = self.emission_distribution(params, initial_state, initial_input).sample(seed=key2)
 
-        # Figure out timestamps
-        if t_emissions is not None:
-            num_timesteps = t_emissions.shape[0]
-        # Define t0 and t1, should work for None
-        t0 = tree_map(lambda x: t_emissions[0:-1], t_emissions)
-        t1 = tree_map(lambda x: t_emissions[1:], t_emissions)
-    
         # Sample the remaining emissions and states
         next_keys = jr.split(key, num_timesteps - 1)
         next_inputs = tree_map(lambda x: x[1:], inputs)
-        _, (next_states, next_emissions) = lax.scan(_step, initial_state, (next_keys, t0, t1, next_inputs))
+        _, (next_states, next_emissions) = lax.scan(_step, initial_state, (next_keys, next_inputs))
 
         # Concatenate the initial state and emission with the following ones
         expand_and_cat = lambda x0, x1T: jnp.concatenate((jnp.expand_dims(x0, 0), x1T))
@@ -228,15 +217,14 @@ class SSM(ABC):
         params: ParameterSet,
         states: Float[Array, "num_timesteps state_dim"],
         emissions: Float[Array, "num_timesteps emission_dim"],
-        t_emissions: Optional[Float[Array, "num_timesteps 1"]]=None,
         inputs: Optional[Float[Array, "num_timesteps input_dim"]]=None
     ) -> Scalar:
         r"""Compute the log joint probability of the states and observations"""
 
         def _step(carry, args):
             lp, prev_state = carry
-            state, emission, t0, t1, inpt = args
-            lp += self.transition_distribution(params, prev_state, t0, t1, inpt).log_prob(state)
+            state, emission, inpt = args
+            lp += self.transition_distribution(params, prev_state, inpt).log_prob(state)
             lp += self.emission_distribution(params, state, inpt).log_prob(emission)
             return (lp, state), None
 
@@ -246,16 +234,12 @@ class SSM(ABC):
         initial_input = tree_map(lambda x: x[0], inputs)
         lp = self.initial_distribution(params, initial_input).log_prob(initial_state)
         lp += self.emission_distribution(params, initial_state, initial_input).log_prob(initial_emission)
-        
-        # Define t0 and t1, should work for None
-        t0 = tree_map(lambda x: t_emissions[0:-1], t_emissions)
-        t1 = tree_map(lambda x: t_emissions[1:], t_emissions)
-        
+
         # Scan over remaining time steps
         next_states = tree_map(lambda x: x[1:], states)
         next_emissions = tree_map(lambda x: x[1:], emissions)
         next_inputs = tree_map(lambda x: x[1:], inputs)
-        (lp, _), _ = lax.scan(_step, (lp, initial_state), (next_states, next_emissions, t0, t1, next_inputs))
+        (lp, _), _ = lax.scan(_step, (lp, initial_state), (next_states, next_emissions, next_inputs))
         return lp
 
     # Some SSMs will implement these inference functions.
@@ -263,7 +247,6 @@ class SSM(ABC):
         self,
         params: ParameterSet,
         emissions: Float[Array, "ntime emission_dim"],
-        t_emissions: Optional[Float[Array, "num_timesteps 1"]]=None,
         inputs: Optional[Float[Array, "ntime input_dim"]]=None
     ) -> Scalar:
         r"""Compute log marginal likelihood of observations, $\log \sum_{z_{1:T}} p(y_{1:T}, z_{1:T} \mid \theta)$.
@@ -283,7 +266,6 @@ class SSM(ABC):
         self,
         params: ParameterSet,
         emissions: Float[Array, "ntime emission_dim"],
-        t_emissions: Optional[Float[Array, "num_timesteps 1"]]=None,
         inputs: Optional[Float[Array, "ntime input_dim"]]=None
     ) -> Posterior:
         r"""Compute filtering distributions, $p(z_t \mid y_{1:t}, u_{1:t}, \theta)$ for $t=1,\ldots,T$.
@@ -303,7 +285,6 @@ class SSM(ABC):
         self,
         params: ParameterSet,
         emissions: Float[Array, "ntime emission_dim"],
-        t_emissions: Optional[Float[Array, "num_timesteps 1"]]=None,
         inputs: Optional[Float[Array, "ntime input_dim"]]=None
     ) -> Posterior:
         r"""Compute smoothing distribution, $p(z_t \mid y_{1:T}, u_{1:T}, \theta)$ for $t=1,\ldots,T$.
@@ -324,7 +305,6 @@ class SSM(ABC):
         self,
         params: ParameterSet,
         emissions: Float[Array, "num_timesteps emission_dim"],
-        t_emissions: Optional[Float[Array, "num_timesteps 1"]]=None,
         inputs: Optional[Float[Array, "num_timesteps input_dim"]]=None
     ) -> Tuple[SuffStatsSSM, Scalar]:
         r"""Perform an E-step to compute expected sufficient statistics under the posterior, $p(z_{1:T} \mid y_{1:T}, u_{1:T}, \theta)$.
@@ -371,8 +351,6 @@ class SSM(ABC):
         props: PropertySet,
         emissions: Union[Float[Array, "num_timesteps emission_dim"],
                          Float[Array, "num_batches num_timesteps emission_dim"]],
-        t_emissions: Optional[Union[Float[Array, "num_timesteps 1"],
-                        Float[Array, "num_batches num_timesteps 1"]]]=None,
         inputs: Optional[Union[Float[Array, "num_timesteps input_dim"],
                                Float[Array, "num_batches num_timesteps input_dim"]]]=None,
         num_iters: int=50,
@@ -402,14 +380,12 @@ class SSM(ABC):
         """
 
         # Make sure the emissions and inputs have batch dimensions
-        # TODO: FIGURE OUT THIS BATCH DIMENSION STUFF
         batch_emissions = ensure_array_has_batch_dim(emissions, self.emission_shape)
-        batch_t_emissions = ensure_array_has_batch_dim(t_emissions, (1,))
         batch_inputs = ensure_array_has_batch_dim(inputs, self.inputs_shape)
 
         @jit
         def em_step(params, m_step_state):
-            batch_stats, lls = vmap(partial(self.e_step, params))(batch_emissions, batch_t_emissions, batch_inputs)
+            batch_stats, lls = vmap(partial(self.e_step, params))(batch_emissions, batch_inputs)
             lp = self.log_prior(params) + lls.sum()
             params, m_step_state = self.m_step(params, props, batch_stats, m_step_state)
             return params, m_step_state, lp
@@ -428,8 +404,6 @@ class SSM(ABC):
         props: PropertySet,
         emissions: Union[Float[Array, "num_timesteps emission_dim"],
                          Float[Array, "num_batches num_timesteps emission_dim"]],
-        t_emissions: Optional[Union[Float[Array, "num_timesteps 1"],
-                        Float[Array, "num_batches num_timesteps 1"]]]=None,
         inputs: Optional[Union[Float[Array, "num_timesteps input_dim"],
                                Float[Array, "num_batches num_timesteps input_dim"]]]=None,
         optimizer: optax.GradientTransformation=optax.adam(1e-3),
@@ -467,9 +441,7 @@ class SSM(ABC):
 
         """
         # Make sure the emissions and inputs have batch dimensions
-        # TODO: FIGURE OUT THIS BATCH DIMENSION STUFF
         batch_emissions = ensure_array_has_batch_dim(emissions, self.emission_shape)
-        batch_t_emissions = ensure_array_has_batch_dim(t_emissions, (1,))
         batch_inputs = ensure_array_has_batch_dim(inputs, self.inputs_shape)
 
         unc_params = to_unconstrained(params, props)
@@ -477,13 +449,13 @@ class SSM(ABC):
         def _loss_fn(unc_params, minibatch):
             """Default objective function."""
             params = from_unconstrained(unc_params, props)
-            minibatch_emissions, minibatch_t_emissions, minibatch_inputs = minibatch
+            minibatch_emissions, minibatch_inputs = minibatch
             scale = len(batch_emissions) / len(minibatch_emissions)
-            minibatch_lls = vmap(partial(self.marginal_log_prob, params))(minibatch_emissions, minibatch_t_emissions, minibatch_inputs)
+            minibatch_lls = vmap(partial(self.marginal_log_prob, params))(minibatch_emissions, minibatch_inputs)
             lp = self.log_prior(params) + minibatch_lls.sum() * scale
             return -lp / batch_emissions.size
 
-        dataset = (batch_emissions, batch_t_emissions, batch_inputs)
+        dataset = (batch_emissions, batch_inputs)
         unc_params, losses = run_sgd(_loss_fn,
                                      unc_params,
                                      dataset,
