@@ -37,7 +37,16 @@ d_states, d_emissions = model.sample(
 )
 
 pdb.set_trace()
+print('Fitting discrete time with SGD')
+d_sgd_fitted_params, d_sgd_lps = model.fit_sgd(
+    params,
+    param_props,
+    d_emissions,
+    inputs=inputs,
+    num_epochs=10
+)
 
+pdb.set_trace()
 # Continuous-Discrete model
 NUM_TIMESTEPS = 100
 t_emissions = jnp.arange(NUM_TIMESTEPS)[:,None]
@@ -51,7 +60,7 @@ cdmodel=ContDiscreteLinearGaussianSSM(state_dim=2, emission_dim=5)
 cdparams, cdparam_props = cdmodel.initialize(key1)
 
 # Simulate from continuous model
-print('Simulating in continuous time')
+print('Simulating in continuous-discrete time')
 cd_states, cd_emissions = cdmodel.sample(
     cdparams,
     key2,
@@ -65,4 +74,17 @@ assert jnp.allclose(d_states, cd_states)
 assert jnp.allclose(d_emissions, cd_emissions)
 
 pdb.set_trace()
+print('Fitting continuous-discrete time with SGD')
+cd_sgd_fitted_params, cd_sgd_lps = cdmodel.fit_sgd(
+    params,
+    param_props,
+    cd_emissions,
+    t_emissions,
+    inputs=inputs,
+    num_epochs=10
+)
 
+pdb.set_trace()
+assert jnp.allclose(d_sgd_fitted_params, cd_sgd_fitted_params)
+assert jnp.allclose(d_sgd_lps, cd_sgd_lps)
+pdb.set_trace()
