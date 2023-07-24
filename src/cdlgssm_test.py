@@ -5,11 +5,13 @@ from datetime import datetime
 import jax.numpy as jnp
 import jax.random as jr
 
-# Our codebase
+# Local dynamax 
 sys.path.append('..')
 from dynamax.linear_gaussian_ssm import LinearGaussianSSM
-from continuous_discrete_linear_gaussian_ssm import ContDiscreteLinearGaussianSSM
 from dynamax.utils.utils import monotonically_increasing
+
+# Our codebase
+from continuous_discrete_linear_gaussian_ssm import ContDiscreteLinearGaussianSSM
 
 # Discrete sampling
 NUM_TIMESTEPS = 100
