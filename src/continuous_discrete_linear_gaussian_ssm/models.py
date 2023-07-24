@@ -14,6 +14,7 @@ from typing_extensions import Protocol
 # Our codebase
 from ssm_temissions import SSM
 from continuous_discrete_linear_gaussian_ssm.inference import cdlgssm_filter, cdlgssm_smoother, cdlgssm_posterior_sample
+from continuous_discrete_linear_gaussian_ssm.inference import compute_pushforward
 from continuous_discrete_linear_gaussian_ssm.inference import ParamsCDLGSSM, ParamsCDLGSSMInitial, ParamsCDLGSSMDynamics, ParamsCDLGSSMEmissions
 from continuous_discrete_linear_gaussian_ssm.inference import PosteriorGSSMFiltered, PosteriorGSSMSmoothed
 
@@ -205,25 +206,12 @@ class ContDiscreteLinearGaussianSSM(SSM):
         # Compute pushforward map:
         # A maps the state from t0 to t1
         # Q is the covariance at t1
-        A, Q = self.get_pushforward(params, t0, t1)
+        A, Q = compute_pushforward(params, t0, t1)
         # Pushforward the state from t0 to t1, then add controls at t1 
         mean = A @ state + params.dynamics.input_weights @ inputs
         if self.has_dynamics_bias:
             mean += params.dynamics.bias
         return MVN(mean, Q)
-
-    # TODO:
-    def get_pushforward(
-        self,
-        params: ParamsCDLGSSM,
-        t0: Float,
-        t1: Float,
-    ) -> Tuple[Float[Array, "state_dim state_dim"], Float[Array, "state_dim state_dim"]]:
-        
-        # TODO: compute A, and Q based on Sarkka's thesis eq (3.135)
-        A = params.dynamics.weights
-        Q = params.dynamics.diff_cov
-        return A, Q
         
     def emission_distribution(
         self,

@@ -126,6 +126,17 @@ def _get_params(x, dim, t):
 _zeros_if_none = lambda x, shape: x if x is not None else jnp.zeros(shape)
 
 
+def compute_pushforward(
+    params: ParamsCDLGSSM,
+    t0: Float,
+    t1: Float,
+) -> Tuple[Float[Array, "state_dim state_dim"], Float[Array, "state_dim state_dim"]]:
+
+    # TODO: compute A, and Q based on Sarkka's thesis eq (3.135)
+    A = params.dynamics.weights
+    Q = params.dynamics.diff_cov
+    return A, Q
+
 def make_cdlgssm_params(initial_mean,
                       initial_cov,
                       dynamics_weights,
@@ -419,19 +430,17 @@ def cdlgssm_filter(
 
     def _step(carry, args):
         ll, pred_mean, pred_cov = carry
-        t,t1 = args
-        # Shorthand: get parameters and inputs for time index t
-        # TODO: dyffrax?
-        F = _get_params(params.dynamics.weights, 2, t)
-        B = _get_params(params.dynamics.input_weights, 2, t)
-        b = _get_params(params.dynamics.bias, 1, t)
-        Q = _get_params(params.dynamics.cov, 2, t)
-        H = _get_params(params.emissions.weights, 2, t)
-        D = _get_params(params.emissions.input_weights, 2, t)
-        d = _get_params(params.emissions.bias, 1, t)
-        R = _get_params(params.emissions.cov, 2, t)
-        u = inputs[t]
-        y = emissions[t]
+        t0,t1 = args
+
+        F, Q = compute_pushforward(params, t0, t1)
+        B = _get_params(params.dynamics.input_weights, 2, t1)
+        b = _get_params(params.dynamics.bias, 1, t1)
+        H = _get_params(params.emissions.weights, 2, t1)
+        D = _get_params(params.emissions.input_weights, 2, t1)
+        d = _get_params(params.emissions.bias, 1, t1)
+        R = _get_params(params.emissions.cov, 2, t1)
+        u = inputs[t1]
+        y = emissions[t1]
 
         # Update the log likelihood
         ll += MVN(H @ pred_mean + D @ u + d, H @ pred_cov @ H.T + R).log_prob(y)
