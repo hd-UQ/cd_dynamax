@@ -480,15 +480,15 @@ def cdlgssm_smoother(
 
     """
     # Figure out timestamps
-    if t_emissions is not None:
-        num_timesteps = t_emissions.shape[0]
-        # Factored as vectors, not matrices
-        t0 = tree_map(lambda x: t_emissions[0:-1,0], t_emissions)
-        t1 = tree_map(lambda x: t_emissions[1:,0], t_emissions)
-    else:
-        num_timesteps = len(emissions)
-        t0 = jnp.arange(num_timesteps)
-        t1 = jnp.arange(1,num_timesteps+1)
+    num_timesteps = t_emissions.shape[0]
+    # Factored as vectors, not matrices
+    t0 = t_emissions[:,0]
+    # We need an extra prediction time-instant, so
+    t1 = jnp.concatenate((
+            t_emissions[1:,0],
+            jnp.array([t_emissions[-1,0]+1]) # NB: t_{N+1} is simply t_{N}+1 
+        )
+    )
     
     inputs = jnp.zeros((num_timesteps, 0)) if inputs is None else inputs
 
@@ -527,6 +527,7 @@ def cdlgssm_smoother(
 
     # Run the Kalman smoother
     init_carry = (filtered_means[-1], filtered_covs[-1])
+    
     # TODO: reverse t0 and t1 and pass to step via scan
     args = (jnp.arange(num_timesteps - 2, -1, -1), filtered_means[:-1][::-1], filtered_covs[:-1][::-1])
     _, (smoothed_means, smoothed_covs, smoothed_cross) = lax.scan(_step, init_carry, args)
