@@ -76,8 +76,8 @@ assert jnp.allclose(d_emissions, cd_emissions)
 pdb.set_trace()
 print('Fitting continuous-discrete time with SGD')
 cd_sgd_fitted_params, cd_sgd_lps = cdmodel.fit_sgd(
-    params,
-    param_props,
+    cdparams,
+    cdparam_props,
     cd_emissions,
     t_emissions,
     inputs=inputs,
@@ -85,6 +85,45 @@ cd_sgd_fitted_params, cd_sgd_lps = cdmodel.fit_sgd(
 )
 
 pdb.set_trace()
-assert jnp.allclose(d_sgd_fitted_params, cd_sgd_fitted_params)
+
+print('Checking that discrete and continuous-discrete models computed similar log probabilities')
 assert jnp.allclose(d_sgd_lps, cd_sgd_lps)
+
+# print('Checking that discrete and continuous-discrete models computed similar parameters')
+print('Checking that dynamics weights are close...')
+assert jnp.allclose(d_sgd_fitted_params.dynamics.weights,
+                    cd_sgd_fitted_params.dynamics.weights)
+
+print('Checking that dynamics biases are close...')
+assert jnp.allclose(d_sgd_fitted_params.dynamics.bias,
+                     cd_sgd_fitted_params.dynamics.bias)
+
+print('Checking that emission weights are close...')
+assert jnp.allclose(d_sgd_fitted_params.emission.weights,
+                    cd_sgd_fitted_params.emission.weights)
+
+print('Checking that emission biases are close...')
+assert jnp.allclose(d_sgd_fitted_params.emission.bias,
+                        cd_sgd_fitted_params.emission.bias)
+
+print('Checking that initial mean is close...')
+assert jnp.allclose(d_sgd_fitted_params.initial_mean,
+                    cd_sgd_fitted_params.initial_mean)
+
+print('Checking that initial covariance is close...')
+assert jnp.allclose(d_sgd_fitted_params.initial_covariance,
+                    cd_sgd_fitted_params.initial_covariance)
+
+print('Checking that dynamics covariance is close...')
+assert jnp.allclose(d_sgd_fitted_params.dynamics_covariance,
+                    cd_sgd_fitted_params.dynamics_covariance)
+
+print('Checking that emission covariance is close...')
+assert jnp.allclose(d_sgd_fitted_params.emission_covariance,
+                    cd_sgd_fitted_params.emission_covariance)
+
+print('All tests passed!')
+
+
+
 pdb.set_trace()
