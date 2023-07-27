@@ -12,6 +12,8 @@ from dynamax.utils.utils import psd_solve, symmetrize
 from dynamax.parameters import ParameterProperties
 from dynamax.types import PRNGKey, Scalar
 
+import diffrax as dfx
+
 class ParamsCDLGSSMInitial(NamedTuple):
     r"""Parameters of the initial distribution
 
@@ -125,15 +127,64 @@ def _get_params(x, dim, t):
         return x
 _zeros_if_none = lambda x, shape: x if x is not None else jnp.zeros(shape)
 
+
+def diffeqsolve(
+    rhs,
+    t0: float,
+    t1: float,
+    y0: jnp.ndarray,
+    solver: dfx.AbstractSolver = dfx.Dopri5(),
+    stepsize_controller: dfx.AbstractStepSizeController = dfx.ConstantStepSize(),
+    dt0: float = 0.01,
+) -> jnp.ndarray:
+    return dfx.diffeqsolve(
+        dfx.ODETerm(rhs),
+        solver=solver,
+        stepsize_controller=stepsize_controller,
+        t0=t0,
+        t1=t1,
+        y0=y0,
+        dt0=dt0,
+        saveat=dfx.SaveAt(t1=True),
+    ).ys
+
 def compute_pushforward(
     params: ParamsCDLGSSM,
     t0: Float,
     t1: Float,
 ) -> Tuple[Float[Array, "state_dim state_dim"], Float[Array, "state_dim state_dim"]]:
 
+    # TODO: ensure that t0, t1 are passed as floats.
+    t0 = t0[0]
+    t1 = t1[0]
+
     # TODO: compute A, and Q based on Sarkka's thesis eq (3.135)
-    A = params.dynamics.weights
-    Q = params.dynamics.diff_cov
+    state_dim = params.dynamics.weights.shape[0]
+    A0 = jnp.eye(state_dim)
+    Q0 = jnp.zeros((state_dim, state_dim))
+    y0 = (A0, Q0)
+
+    def rhs_all(t, y, args):
+        A, Q = y
+
+        # possibly time-dependent weights
+        F_t = _get_params(params.dynamics.weights, 2, t)
+        Qc_t = _get_params(params.dynamics.diff_cov, 2, t)
+        L_t = _get_params(params.dynamics.diff_coeff, 2, t)
+
+        dAdt = F_t @ A
+
+        dQdt = F_t @ Q + Q @ F_t.T + L_t @ Qc_t @ L_t.T
+
+        return (dAdt, dQdt)
+
+    sol = diffeqsolve(rhs_all, t0=t0, t1=t1, y0=y0)
+    A, Q = sol[0][-1], sol[1][-1]
+
+    # To pass discrete vs continuous tests, simply uncomment the below 2 lines.
+    # e.g. cdlgssm_test_smoother.py and cdlgssm_test.py
+    # A = params.dynamics.weights
+    # Q = params.dynamics.diff_cov
     return A, Q
 
 def make_cdlgssm_params(initial_mean,
@@ -447,6 +498,7 @@ def cdlgssm_filter(
         filtered_mean, filtered_cov = _condition_on(pred_mean, pred_cov, H, D, d, R, u, y)
 
         # Predict the next state
+        # TODO: Currently, t0 and t1 appear as 1d arrays of length 1.
         F, Q = compute_pushforward(params, t0, t1)
         pred_mean, pred_cov = _predict(filtered_mean, filtered_cov, F, B, b, Q, u)
 
@@ -502,6 +554,7 @@ def cdlgssm_smoother(
         t0, t1, filtered_mean, filtered_cov = args
 
         # Shorthand: get parameters and inputs for time index t
+        # TODO: Currently, t0 and t1 appear as 1d arrays of length 1.
         F, Q = compute_pushforward(params, t0, t1)
         B = _get_params(params.dynamics.input_weights, 2, t0)
         b = _get_params(params.dynamics.bias, 1, t0)
