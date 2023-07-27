@@ -131,7 +131,7 @@ class ContDiscreteLinearGaussianSSM(SSM):
         # Arbitrary default values, for demo purposes.
         _initial_mean = jnp.zeros(self.state_dim)
         _initial_covariance = jnp.eye(self.state_dim)
-        _dynamics_weights = 0.99 * jnp.eye(self.state_dim)
+        _dynamics_weights = -0.1 * jnp.eye(self.state_dim)
         _dynamics_input_weights = jnp.zeros((self.state_dim, self.input_dim))
         _dynamics_bias = jnp.zeros((self.state_dim,)) if self.has_dynamics_bias else None
         _dynamics_diffusion_coefficient = 0.1 * jnp.eye(self.state_dim)
