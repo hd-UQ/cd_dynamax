@@ -401,11 +401,8 @@ def cdlgssm_joint_sample(
         key1, key2 = jr.split(key, 2)
 
         # Shorthand: get parameters and inputs for time index t
-        # F = _get_params(params.dynamics.weights, 2, t)
         B = _get_params(params.dynamics.input_weights, 2, t)
         b = _get_params(params.dynamics.bias, 1, t)
-        # Q = _get_params(params.dynamics.cov, 2, t)
-        jdb.breakpoint()
         F, Q = compute_pushforward(params, t0, t1)
         H = _get_params(params.emissions.weights, 2, t)
         D = _get_params(params.emissions.input_weights, 2, t)
@@ -434,8 +431,8 @@ def cdlgssm_joint_sample(
         t0 = tree_map(lambda x: x[0:-1,0], t_emissions)
         t1 = tree_map(lambda x: x[1:,0], t_emissions)
     else:
-        t0 = jnp.arange(num_timesteps)
-        t1 = jnp.arange(1,num_timesteps+1)
+        t0 = jnp.arange(num_timesteps-1)
+        t1 = jnp.arange(1,num_timesteps)
     
     # next_times = jnp.arange(1, num_timesteps)
     
@@ -484,8 +481,8 @@ def cdlgssm_filter(
             )
     else:
         num_timesteps = len(emissions)
-        t0 = jnp.arange(num_timesteps+1)
-        t1 = jnp.arange(1,num_timesteps+2)
+        t0 = jnp.arange(num_timesteps)
+        t1 = jnp.arange(1,num_timesteps+1)
     
     inputs = jnp.zeros((num_timesteps, 0)) if inputs is None else inputs
 
@@ -549,15 +546,15 @@ def cdlgssm_smoother(
         t1 = tree_map(lambda x: x[1:,0], t_emissions)
     else:
         num_timesteps = len(emissions)
-        t0 = jnp.arange(num_timesteps)
-        t1 = jnp.arange(1,num_timesteps+1)
+        t0 = jnp.arange(num_timesteps-1)
+        t1 = jnp.arange(1,num_timesteps)
     
     inputs = jnp.zeros((num_timesteps, 0)) if inputs is None else inputs
 
     # Run the Kalman filter
     filtered_posterior = cdlgssm_filter(params, emissions, t_emissions, inputs)
     ll, filtered_means, filtered_covs, *_ = filtered_posterior
-
+    
     # Run the smoother backward in time
     def _step(carry, args):
         # Unpack the inputs
@@ -637,8 +634,8 @@ def cdlgssm_posterior_sample(
         t1 = tree_map(lambda x: x[1:,0], t_emissions)
     else:
         num_timesteps = len(emissions)
-        t0 = jnp.arange(num_timesteps)
-        t1 = jnp.arange(1,num_timesteps+1)
+        t0 = jnp.arange(num_timesteps-1)
+        t1 = jnp.arange(1,num_timesteps)
     
     inputs = jnp.zeros((num_timesteps, 0)) if inputs is None else inputs
 
@@ -668,7 +665,6 @@ def cdlgssm_posterior_sample(
     key, this_key = jr.split(key, 2)
     last_state = MVN(filtered_means[-1], filtered_covs[-1]).sample(seed=this_key)
     
-    jdb.breakpoint()
     args = (
         jr.split(key, num_timesteps - 1),
         t0[::-1], t1[::-1], # jnp.arange(num_timesteps - 2, -1, -1),
