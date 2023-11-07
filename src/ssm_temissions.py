@@ -186,6 +186,7 @@ class SSM(ABC):
             params: model parameters $\theta$
             key: random number generator
             num_timesteps: number of timesteps $T$
+            t_emissions: specific, continuous time instants, if not None, it is an array 
             inputs: inputs $u_{1:T}$
 
         Returns:
@@ -205,13 +206,17 @@ class SSM(ABC):
         initial_state = self.initial_distribution(params, initial_input).sample(seed=key1)
         initial_emission = self.emission_distribution(params, initial_state, initial_input).sample(seed=key2)
 
-        # Figure out timestamps
+        # Figure out timestamps, as vectors to scan over
+        # t_emissions is of shape num_timesteps \times 1
+        #t0 and t1 are num_timesteps-1 \times 0
         if t_emissions is not None:
             num_timesteps = t_emissions.shape[0]
-        # Define t0 and t1, should work for None
-        t0 = tree_map(lambda x: t_emissions[0:-1], t_emissions)
-        t1 = tree_map(lambda x: t_emissions[1:], t_emissions)
-    
+            t0 = tree_map(lambda x: x[0:-1,0], t_emissions)
+            t1 = tree_map(lambda x: x[1:,0], t_emissions)
+        else:
+            t0 = jnp.arange(num_timesteps)
+            t1 = jnp.arange(1,num_timesteps+1)
+        
         # Sample the remaining emissions and states
         next_keys = jr.split(key, num_timesteps - 1)
         next_inputs = tree_map(lambda x: x[1:], inputs)
@@ -247,9 +252,17 @@ class SSM(ABC):
         lp = self.initial_distribution(params, initial_input).log_prob(initial_state)
         lp += self.emission_distribution(params, initial_state, initial_input).log_prob(initial_emission)
         
-        # Define t0 and t1, should work for None
-        t0 = tree_map(lambda x: t_emissions[0:-1], t_emissions)
-        t1 = tree_map(lambda x: t_emissions[1:], t_emissions)
+        # Figure out timestamps, as vectors to scan over
+        # t_emissions is of shape num_timesteps \times 1
+        # t0 and t1 are num_timesteps-1 \times 0
+        if t_emissions is not None:
+            num_timesteps = t_emissions.shape[0]
+            t0 = tree_map(lambda x: x[0:-1,0], t_emissions)
+            t1 = tree_map(lambda x: x[1:,0], t_emissions)
+        else:
+            num_timesteps = len(emissions)
+            t0 = jnp.arange(num_timesteps)
+            t1 = jnp.arange(1,num_timesteps+1)
         
         # Scan over remaining time steps
         next_states = tree_map(lambda x: x[1:], states)
@@ -402,7 +415,6 @@ class SSM(ABC):
         """
 
         # Make sure the emissions and inputs have batch dimensions
-        # TODO: FIGURE OUT THIS BATCH DIMENSION STUFF
         batch_emissions = ensure_array_has_batch_dim(emissions, self.emission_shape)
         batch_t_emissions = ensure_array_has_batch_dim(t_emissions, (1,))
         batch_inputs = ensure_array_has_batch_dim(inputs, self.inputs_shape)
@@ -467,7 +479,6 @@ class SSM(ABC):
 
         """
         # Make sure the emissions and inputs have batch dimensions
-        # TODO: FIGURE OUT THIS BATCH DIMENSION STUFF
         batch_emissions = ensure_array_has_batch_dim(emissions, self.emission_shape)
         batch_t_emissions = ensure_array_has_batch_dim(t_emissions, (1,))
         batch_inputs = ensure_array_has_batch_dim(inputs, self.inputs_shape)
