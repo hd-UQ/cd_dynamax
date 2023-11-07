@@ -208,14 +208,14 @@ class SSM(ABC):
 
         # Figure out timestamps, as vectors to scan over
         # t_emissions is of shape num_timesteps \times 1
-        #t0 and t1 are num_timesteps-1 \times 0
+        # t0 and t1 are num_timesteps-1 \times 0
         if t_emissions is not None:
             num_timesteps = t_emissions.shape[0]
             t0 = tree_map(lambda x: x[0:-1,0], t_emissions)
             t1 = tree_map(lambda x: x[1:,0], t_emissions)
         else:
-            t0 = jnp.arange(num_timesteps)
-            t1 = jnp.arange(1,num_timesteps+1)
+            t0 = jnp.arange(num_timesteps-1)
+            t1 = jnp.arange(1,num_timesteps)
         
         # Sample the remaining emissions and states
         next_keys = jr.split(key, num_timesteps - 1)
@@ -261,8 +261,8 @@ class SSM(ABC):
             t1 = tree_map(lambda x: x[1:,0], t_emissions)
         else:
             num_timesteps = len(emissions)
-            t0 = jnp.arange(num_timesteps)
-            t1 = jnp.arange(1,num_timesteps+1)
+            t0 = jnp.arange(num_timesteps-1)
+            t1 = jnp.arange(1,num_timesteps)
         
         # Scan over remaining time steps
         next_states = tree_map(lambda x: x[1:], states)

@@ -75,6 +75,13 @@ cd_params, cd_param_props = cd_model.initialize(
 
 # Simulate from continuous model
 print('Simulating in continuous-discrete time')
+cd_num_timesteps_states, cd_num_timesteps_emissions = cd_model.sample(
+    cd_params,
+    key2,
+    num_timesteps=NUM_TIMESTEPS,
+    inputs=inputs
+)
+
 cd_states, cd_emissions = cd_model.sample(
     cd_params,
     key2,
@@ -82,6 +89,14 @@ cd_states, cd_emissions = cd_model.sample(
     t_emissions=t_emissions,
     inputs=inputs
 )
+
+if not jnp.allclose(cd_num_timesteps_states, cd_states):
+    assert jnp.allclose(cd_num_timesteps_states,cd_states, atol=1e-06)
+    print('\tStates allclose with atol=1e-06')
+
+if not jnp.allclose(cd_num_timesteps_emissions, cd_emissions):
+    assert jnp.allclose(cd_num_timesteps_emissions, cd_emissions, atol=1e-05)
+    print('\tEmissions allclose with atol=1e-05')
 
 if not jnp.allclose(d_states, cd_states):
     assert jnp.allclose(d_states,cd_states, atol=1e-06)
