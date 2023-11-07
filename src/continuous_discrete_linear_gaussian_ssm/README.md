@@ -10,6 +10,10 @@
 - We provide the Continuous Discrete Kalman Smoother I implementation
     - i.e., Algorithm 3.17 in (Sarkka's proper reference)
     
-- We hope to provide code for parameter estimation.
+- We provide a parameter (point)-estimation via  implementation of stochastic gradient descent based MLE
+    - See fit_sgd() in [../ssm_temissions.py](../ssm_temissions.py)
+    
+- We do not provide a parameter (point)-estimation via EM
+    - The m-step requires MLE for continuous time parameters
 
 

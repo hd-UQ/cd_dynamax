@@ -293,7 +293,6 @@ class ContDiscreteLinearGaussianSSM(SSM):
         return smoothed_emissions, smoothed_emissions_std
 
     # Expectation-maximization (EM) code
-    # TODO: revise how t_emissions impacts computations (maybe it does not)
     def e_step(
         self,
         params: ParamsCDLGSSM,
@@ -304,8 +303,6 @@ class ContDiscreteLinearGaussianSSM(SSM):
         inputs: Optional[Union[Float[Array, "num_timesteps input_dim"],
                                Float[Array, "num_batches num_timesteps input_dim"]]]=None,
     ) -> Tuple[SuffStatsCDLGSSM, Scalar]:
-        
-        raise ValueError('Not implemented yet for Continuous Discrete linear Gaussian dynamics')
         
         num_timesteps = emissions.shape[0]
         if inputs is None:
@@ -373,9 +370,7 @@ class ContDiscreteLinearGaussianSSM(SSM):
         batch_stats: SuffStatsCDLGSSM,
         m_step_state: Any
     ) -> Tuple[ParamsCDLGSSM, Any]:
-        
-        raise ValueError('Not implemented yet for Continuous Discrete linear Gaussian dynamics')
-        
+                
         def fit_linear_regression(ExxT, ExyT, EyyT, N):
             # Solve a linear regression given sufficient statistics
             W = psd_solve(ExxT, ExyT).T
@@ -391,6 +386,9 @@ class ContDiscreteLinearGaussianSSM(SSM):
         S = (sum_x0x0T - jnp.outer(sum_x0, sum_x0)) / N
         m = sum_x0 / N
 
+        # TODO: What's the m-step MLE for diff_cov and diff_coeff?
+        raise ValueError('m_step not implemented yet: what is the MLE for diff_cov and diff_coeff?')
+        
         FB, Q = fit_linear_regression(*dynamics_stats)
         F = FB[:, :self.state_dim]
         B, b = (FB[:, self.state_dim:-1], FB[:, -1]) if self.has_dynamics_bias \
@@ -400,9 +398,10 @@ class ContDiscreteLinearGaussianSSM(SSM):
         H = HD[:, :self.state_dim]
         D, d = (HD[:, self.state_dim:-1], HD[:, -1]) if self.has_emissions_bias \
             else (HD[:, self.state_dim:], None)
-
+        
         params = ParamsCDLGSSM(
             initial=ParamsCDLGSSMInitial(mean=m, cov=S),
+            # TODO: this will crash, as we should provide diff_cov and diff_coeff
             dynamics=ParamsCDLGSSMDynamics(weights=F, bias=b, input_weights=B, cov=Q),
             emissions=ParamsCDLGSSMEmissions(weights=H, bias=d, input_weights=D, cov=R)
         )
