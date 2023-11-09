@@ -11,7 +11,8 @@
     
 ## Extend dynamax to deal with irregular sampling
 - add non-regular interval capability to dynamax codebase
-    - Done within continuous-discrete linear codebase (need to test)
+    - Done within continuous-discrete linear codebase (DONE)
+        - [cdlgssm_tracking.ipynb](./src/cdlgssm_tracking.ipynb)
     - If it works, replicate for continuous-discrete nonlinear codebase
         - Implement continuous-discrete nonlinear codebase with non-regular intervals (t_emissions)
         - Implement continuous-discrete nonlinear pushforward in dyfrax
