@@ -434,10 +434,12 @@ def cdlgssm_joint_sample(
         t0 = jnp.arange(num_timesteps-1)
         t1 = jnp.arange(1,num_timesteps)
     
+    t0_idx = jnp.arange(num_timesteps-1)
+
     # next_times = jnp.arange(1, num_timesteps)
     
     next_inputs = tree_map(lambda x: x[1:], inputs)
-    _, (next_states, next_emissions) = lax.scan(_step, initial_state, (next_keys, t0, t1, next_inputs))
+    _, (next_states, next_emissions) = lax.scan(_step, initial_state, (next_keys, t0, t1, t0_idx, next_inputs))
 
     # Concatenate the initial state and emission with the following ones
     expand_and_cat = lambda x0, x1T: jnp.concatenate((jnp.expand_dims(x0, 0), x1T))
@@ -484,11 +486,13 @@ def cdlgssm_filter(
         t0 = jnp.arange(num_timesteps)
         t1 = jnp.arange(1,num_timesteps+1)
     
+    t0_idx = jnp.arange(num_timesteps)
+
     inputs = jnp.zeros((num_timesteps, 0)) if inputs is None else inputs
 
     def _step(carry, args):
         ll, pred_mean, pred_cov = carry
-        t0,t1 = args
+        t0, t1, t0_idx = args
 
         B = _get_params(params.dynamics.input_weights, 2, t0)
         b = _get_params(params.dynamics.bias, 1, t0)
@@ -496,8 +500,8 @@ def cdlgssm_filter(
         D = _get_params(params.emissions.input_weights, 2, t0)
         d = _get_params(params.emissions.bias, 1, t0)
         R = _get_params(params.emissions.cov, 2, t0)
-        u = inputs[t0]
-        y = emissions[t0]
+        u = inputs[t0_idx]
+        y = emissions[t0_idx]
 
         # Update the log likelihood
         ll += MVN(H @ pred_mean + D @ u + d, H @ pred_cov @ H.T + R).log_prob(y)
@@ -513,7 +517,7 @@ def cdlgssm_filter(
 
     # Run the Kalman filter
     carry = (0.0, params.initial.mean, params.initial.cov)
-    (ll, _, _), (filtered_means, filtered_covs) = lax.scan(_step, carry, (t0, t1))
+    (ll, _, _), (filtered_means, filtered_covs) = lax.scan(_step, carry, (t0, t1, t0_idx))
     return PosteriorGSSMFiltered(marginal_loglik=ll, filtered_means=filtered_means, filtered_covariances=filtered_covs)
 
 
@@ -549,6 +553,7 @@ def cdlgssm_smoother(
         t0 = jnp.arange(num_timesteps-1)
         t1 = jnp.arange(1,num_timesteps)
     
+    t0_idx = jnp.arange(num_timesteps-1)
     inputs = jnp.zeros((num_timesteps, 0)) if inputs is None else inputs
 
     # Run the Kalman filter
@@ -559,14 +564,14 @@ def cdlgssm_smoother(
     def _step(carry, args):
         # Unpack the inputs
         smoothed_mean_next, smoothed_cov_next = carry
-        t0, t1, filtered_mean, filtered_cov = args
+        t0, t1, t0_idx, filtered_mean, filtered_cov = args
 
         # Shorthand: get parameters and inputs for time index t
         F, Q = compute_pushforward(params, t0, t1)
         # TODO: when smoothing, shall we use t0 or t1 for inputs?
         B = _get_params(params.dynamics.input_weights, 2, t0)
         b = _get_params(params.dynamics.bias, 1, t0)
-        u = inputs[t0]
+        u = inputs[t0_idx]
 
         # This is like the Kalman gain but in reverse
         # See Eq 8.11 of Saarka's "Bayesian Filtering and Smoothing"
@@ -587,6 +592,7 @@ def cdlgssm_smoother(
     
     args = (
         t0[::-1], t1[::-1],
+        t0_idx[::-1],
         filtered_means[:-1][::-1], filtered_covs[:-1][::-1]
     )
     _, (smoothed_means, smoothed_covs, smoothed_cross) = lax.scan(_step, init_carry, args)
@@ -637,6 +643,7 @@ def cdlgssm_posterior_sample(
         t0 = jnp.arange(num_timesteps-1)
         t1 = jnp.arange(1,num_timesteps)
     
+    t0_idx = jnp.arange(num_timesteps-1)
     inputs = jnp.zeros((num_timesteps, 0)) if inputs is None else inputs
 
     # Run the Kalman filter
@@ -646,14 +653,14 @@ def cdlgssm_posterior_sample(
     # Sample backward in time
     def _step(carry, args):
         next_state = carry
-        key, t0, t1, filtered_mean, filtered_cov = args
+        key, t0, t1, t0_idx, filtered_mean, filtered_cov = args
 
         # Shorthand: get parameters and inputs for time index t
         F, Q = compute_pushforward(params, t0, t1)
         # TODO: when smoothing, shall we use t0 or t1 for inputs?
         B = _get_params(params.dynamics.input_weights, 2, t0)
         b = _get_params(params.dynamics.bias, 1, t0)
-        u = inputs[t0]
+        u = inputs[t0_idx]
         
         # Condition on next state
         smoothed_mean, smoothed_cov = _condition_on(filtered_mean, filtered_cov, F, B, b, Q, u, next_state)
@@ -668,6 +675,7 @@ def cdlgssm_posterior_sample(
     args = (
         jr.split(key, num_timesteps - 1),
         t0[::-1], t1[::-1], # jnp.arange(num_timesteps - 2, -1, -1),
+        t0_idx[::-1],
         filtered_means[:-1][::-1], filtered_covs[:-1][::-1],
     )
     _, reversed_states = lax.scan(_step, last_state, args)
