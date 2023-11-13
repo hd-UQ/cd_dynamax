@@ -28,9 +28,9 @@
 - Currently, the codebase supports inputs only at measurement times
 - Moreover, these inputs currently couple to the dynamics and measurements discretely (creating a discontinuity in the state and measurement trajectories):
     - The dynamics are pushed-forward between measurement timepoints $[t0,t1]$, then the state at time $t_1$ is updated (additively) by a linear function $B$ of input at time $t_0$, $Bu(t_0)$.
-    $$ x(t_1) := Fx(t_0) + Bu(t_0) + noise_Q $$
+        - $ x(t_1) := Fx(t_0) + Bu(t_0) + noise_Q $
     - The emission at time $t_1$ is then updated (additively) by a linear function $D$ of input at time $t_0$, $Du(t_0)$.
-    $$ y(t_1) := Hx(t_1) + Du(t_0) + noise_R $$
+        - $ y(t_1) := Hx(t_1) + Du(t_0) + noise_R $
 - GOALS:
   - allow for input times to be different from measurement times
   - extend to continuous coupling of $u(t)$ to the state and measurement dynamics---how?
