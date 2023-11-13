@@ -36,16 +36,17 @@
   - extend to continuous coupling of $u(t)$ to the state and measurement dynamics---how?
     - Do we interpolate $u(t)$ between input-measurement times?
 
-
-
 ## Parameter estimation
 - Parameter estimation for the linear gaussian case
     - SGD
+        - TODO: Add notebook showcasing parameter estimation accuracy
     - EM is not implemented
         - The m-step requires MLE for continuous-time linear parameters 
         - EM will not be trivial for nonlinear ssms
     - ContDiscreteLinearGaussianConjugateSSM:
         - Shall we keep this and modify it for continuous-time linear paraemeters
+
+- Uncertainty Quantification for the continuous-discrete linear gaussian case using Monte Carlo
 
 - hierarchical parameter estimation for the linear gaussian case
     - Incorporate priors over parameters
