@@ -3,7 +3,9 @@
 - Implementation of the Continuous-discrete Linear Gaussian State Space Models
     - We provide a model class definition
     - NB: t0 and t1 refer to t_k and t_{k+1}
-        
+
+- Note that the codebase currently only supports inputs at measurement times, i.e., $u$ is observed at times $t_k$ as given in t_emissions.
+    
 - We provide the Continuous Discrete Kalman Filter I implementation
     - i.e., Algorithm 3.15 in (Sarkka's proper reference)
 
