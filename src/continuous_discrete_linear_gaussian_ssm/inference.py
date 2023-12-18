@@ -84,7 +84,7 @@ class ParamsCDLGSSM(NamedTuple):
     emissions: ParamsCDLGSSMEmissions
 
 
-class PosteriorGSSMFiltered(NamedTuple):
+class PosteriorCDLGSSMFiltered(NamedTuple):
     r"""Marginals of the Gaussian filtering posterior.
 
     :param marginal_loglik: marginal log likelihood, $p(y_{1:T} \mid u_{1:T})$
@@ -99,7 +99,7 @@ class PosteriorGSSMFiltered(NamedTuple):
     predicted_covariances: Optional[Float[Array, "ntime state_dim state_dim"]] = None
 
 
-class PosteriorGSSMSmoothed(NamedTuple):
+class PosteriorCDLGSSMSmoothed(NamedTuple):
     r"""Marginals of the Gaussian filtering and smoothing posterior.
 
     :param marginal_loglik: marginal log likelihood, $p(y_{1:T} \mid u_{1:T})$
@@ -454,7 +454,7 @@ def cdlgssm_filter(
     emissions:  Float[Array, "num_timesteps emission_dim"],
     t_emissions: Optional[Float[Array, "num_timesteps 1"]]=None,
     inputs: Optional[Float[Array, "num_timesteps input_dim"]]=None
-) -> PosteriorGSSMFiltered:
+) -> PosteriorCDLGSSMFiltered:
     r"""Run a Continuous Discrete Kalman filter to produce the marginal likelihood and filtered state estimates.
 
     Args:
@@ -463,7 +463,7 @@ def cdlgssm_filter(
         inputs: optional array of inputs.
 
     Returns:
-        PosteriorGSSMFiltered: filtered posterior object
+        PosteriorCDLGSSMFiltered: filtered posterior object
 
     """
     # Figure out timestamps, as vectors to scan over
@@ -518,7 +518,7 @@ def cdlgssm_filter(
     # Run the Kalman filter
     carry = (0.0, params.initial.mean, params.initial.cov)
     (ll, _, _), (filtered_means, filtered_covs) = lax.scan(_step, carry, (t0, t1, t0_idx))
-    return PosteriorGSSMFiltered(marginal_loglik=ll, filtered_means=filtered_means, filtered_covariances=filtered_covs)
+    return PosteriorCDLGSSMFiltered(marginal_loglik=ll, filtered_means=filtered_means, filtered_covariances=filtered_covs)
 
 
 @preprocess_args
@@ -527,7 +527,7 @@ def cdlgssm_smoother(
     emissions: Float[Array, "num_timesteps emission_dim"],
     t_emissions: Optional[Float[Array, "num_timesteps 1"]]=None,
     inputs: Optional[Float[Array, "num_timesteps input_dim"]]=None
-) -> PosteriorGSSMSmoothed:
+) -> PosteriorCDLGSSMSmoothed:
     r"""Run forward-filtering, backward-smoother to compute expectations
     under the posterior distribution on latent states. Technically, this
     implements the Rauch-Tung-Striebel (RTS) smoother.
@@ -538,7 +538,7 @@ def cdlgssm_smoother(
         inputs: array of inputs.
 
     Returns:
-        PosteriorGSSMSmoothed: smoothed posterior object.
+        PosteriorCDLGSSMSmoothed: smoothed posterior object.
 
     """
     # Figure out timestamps, as vectors to scan over
@@ -601,7 +601,7 @@ def cdlgssm_smoother(
     smoothed_means = jnp.row_stack((smoothed_means[::-1], filtered_means[-1][None, ...]))
     smoothed_covs = jnp.row_stack((smoothed_covs[::-1], filtered_covs[-1][None, ...]))
     smoothed_cross = smoothed_cross[::-1]
-    return PosteriorGSSMSmoothed(
+    return PosteriorCDLGSSMSmoothed(
         marginal_loglik=ll,
         filtered_means=filtered_means,
         filtered_covariances=filtered_covs,
