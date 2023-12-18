@@ -16,7 +16,7 @@ from ssm_temissions import SSM
 from continuous_discrete_linear_gaussian_ssm.inference import cdlgssm_filter, cdlgssm_smoother, cdlgssm_posterior_sample
 from continuous_discrete_linear_gaussian_ssm.inference import compute_pushforward
 from continuous_discrete_linear_gaussian_ssm.inference import ParamsCDLGSSM, ParamsCDLGSSMInitial, ParamsCDLGSSMDynamics, ParamsCDLGSSMEmissions
-from continuous_discrete_linear_gaussian_ssm.inference import PosteriorGSSMFiltered, PosteriorGSSMSmoothed
+from continuous_discrete_linear_gaussian_ssm.inference import PosteriorCDLGSSMFiltered, PosteriorCDLGSSMSmoothed
 
 # From dynamax
 from dynamax.parameters import ParameterProperties, ParameterSet
@@ -241,7 +241,7 @@ class ContDiscreteLinearGaussianSSM(SSM):
         emissions: Float[Array, "ntime emission_dim"],
         t_emissions: Optional[Float[Array, "ntime 1"]]=None,
         inputs: Optional[Float[Array, "ntime input_dim"]] = None
-    ) -> PosteriorGSSMFiltered:
+    ) -> PosteriorCDLGSSMFiltered:
         return cdlgssm_filter(params, emissions, t_emissions, inputs)
 
     def smoother(
@@ -250,7 +250,7 @@ class ContDiscreteLinearGaussianSSM(SSM):
         emissions: Float[Array, "ntime emission_dim"],
         t_emissions: Optional[Float[Array, "ntime 1"]]=None,
         inputs: Optional[Float[Array, "ntime input_dim"]] = None
-    ) -> PosteriorGSSMSmoothed:
+    ) -> PosteriorCDLGSSMSmoothed:
         return cdlgssm_smoother(params, emissions, t_emissions, inputs)
 
     def posterior_sample(
