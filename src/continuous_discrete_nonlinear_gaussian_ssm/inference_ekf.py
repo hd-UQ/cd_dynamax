@@ -135,10 +135,12 @@ def extended_kalman_filter(
     
     t0_idx = jnp.arange(num_timesteps)
     
-    # TODO: 
+    # TODO: Fundamental questions
     # Dynamics and emission functions and their Jacobians
     f, h = params.dynamics_function, params.emission_function
     F, H = jacfwd(f), jacfwd(h)
+    h = params.emission_function
+    H = jacfwd(h)
     f, h, F, H = (_process_fn(fn, inputs) for fn in (f, h, F, H))
     inputs = _process_input(inputs, num_timesteps)
 

@@ -36,8 +36,10 @@ class ParamsCDNLGSSM(NamedTuple):
 
     initial_mean: Float[Array, "state_dim"]
     initial_covariance: Float[Array, "state_dim state_dim"]
-    dynamics_function: Union[FnStateToState, FnStateAndInputToState]
+    # TODO:
+    dynamics_function: Union[FnStateToState, FnStateAndInputToState, t0, t1]
     dynamics_covariance: Float[Array, "state_dim state_dim"]
+    # TODO:
     emission_function: Union[FnStateToEmission, FnStateAndInputToEmission]
     emission_covariance: Float[Array, "emission_dim emission_dim"]
 
@@ -100,6 +102,7 @@ class ContDiscreteNonlinearGaussianSSM(SSM):
         state: Float[Array, "state_dim"],
         inputs: Optional[Float[Array, "input_dim"]] = None
     ) -> tfd.Distribution:
+        # TODO:
         f = params.dynamics_function
         if inputs is None:
             mean = f(state)
@@ -113,6 +116,7 @@ class ContDiscreteNonlinearGaussianSSM(SSM):
         state: Float[Array, "state_dim"],
         inputs: Optional[Float[Array, "input_dim"]] = None
      ) -> tfd.Distribution:
+        # TODO:
         h = params.emission_function
         if inputs is None:
             mean = h(state)
