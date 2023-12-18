@@ -186,7 +186,7 @@ class SSM(ABC):
             params: model parameters $\theta$
             key: random number generator
             num_timesteps: number of timesteps $T$
-            t_emissions: specific, continuous time instants, if not None, it is an array 
+            t_emissions: continuous-time specific time instants: if not None, it is an array 
             inputs: inputs $u_{1:T}$
 
         Returns:
@@ -283,6 +283,7 @@ class SSM(ABC):
 
         Args:
             params: model parameters $\theta$
+            t_emissions: continuous-time specific time instants: if not None, it is an array 
             state: current latent state $z_t$
             inputs: current inputs  $u_t$
 
@@ -303,6 +304,7 @@ class SSM(ABC):
 
         Args:
             params: model parameters $\theta$
+            t_emissions: continuous-time specific time instants: if not None, it is an array 
             state: current latent state $z_t$
             inputs: current inputs  $u_t$
 
@@ -323,6 +325,7 @@ class SSM(ABC):
 
         Args:
             params: model parameters $\theta$
+            t_emissions: continuous-time specific time instants: if not None, it is an array 
             state: current latent state $z_t$
             inputs: current inputs  $u_t$
 
@@ -345,6 +348,7 @@ class SSM(ABC):
         Args:
             params: model parameters $\theta$
             emissions: emissions $y_{1:T}$
+            t_emissions: continuous-time specific time instants: if not None, it is an array 
             inputs: optional inputs $u_{1:T}$
 
         Returns:
@@ -405,6 +409,7 @@ class SSM(ABC):
             params: model parameters $\theta$
             props: properties specifying which parameters should be learned
             emissions: one or more sequences of emissions
+            t_emissions: continuous-time specific time instants: if not None, it is an array 
             inputs: one or more sequences of corresponding inputs
             num_iters: number of iterations of EM to run
             verbose: whether or not to show a progress bar
@@ -467,6 +472,7 @@ class SSM(ABC):
             params: model parameters $\theta$
             props: properties specifying which parameters should be learned
             emissions: one or more sequences of emissions
+            t_emissions: continuous-time specific time instants: if not None, it is an array 
             inputs: one or more sequences of corresponding inputs
             optimizer: an `optax` optimizer for minimization
             batch_size: number of sequences per minibatch
