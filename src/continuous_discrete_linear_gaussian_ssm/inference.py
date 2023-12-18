@@ -364,6 +364,7 @@ def cdlgssm_joint_sample(
     
     Args:
         params: model parameters
+        t_emissions: continuous-time specific time instants of observations: if not None, it is an array 
         inputs: optional array of inputs.
 
     Returns:
@@ -460,6 +461,7 @@ def cdlgssm_filter(
     Args:
         params: model parameters
         emissions: array of observations.
+        t_emissions: continuous-time specific time instants of observations: if not None, it is an array 
         inputs: optional array of inputs.
 
     Returns:
@@ -535,6 +537,7 @@ def cdlgssm_smoother(
     Args:
         params: an CDLGSSMParams instance (or object with the same fields)
         emissions: array of observations.
+        t_emissions: continuous-time specific time instants of observations: if not None, it is an array 
         inputs: array of inputs.
 
     Returns:
@@ -625,6 +628,7 @@ def cdlgssm_posterior_sample(
         key: random number key.
         params: parameters.
         emissions: sequence of observations.
+        t_emissions: continuous-time specific time instants of observations: if not None, it is an array 
         inputs: optional sequence of inptus.
         jitter: padding to add to the diagonal of the covariance matrix before sampling.
 
