@@ -29,7 +29,7 @@ class ParamsCDNLGSSM(NamedTuple):
     :param initial_mean: $m$
     :param initial_covariance: $S$
     :param dynamics_function: $f$
-    :param dynamics_function: $L$
+    :param dynamics_coefficients: $L$
     :param dynamics_covariance: $Q$
     :param emissions_function: $h$
     :param emissions_covariance: $R$
@@ -39,7 +39,7 @@ class ParamsCDNLGSSM(NamedTuple):
     initial_mean: Float[Array, "state_dim"]
     initial_covariance: Float[Array, "state_dim state_dim"]
     # f in Sarkka
-    dynamics_function: Union[FnStateToState, FnStateAndInputToState, t0, t1]
+    dynamics_function: Union[FnStateToState, FnStateAndInputToState]
     # L in Sarka
     dynamics_coefficients: Float[Array, "state_dim state_dim"]
     # Q in Sarka
