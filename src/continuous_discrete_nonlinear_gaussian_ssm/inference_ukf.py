@@ -9,8 +9,7 @@ from dynamax.utils.utils import psd_solve
 
 # Our codebase
 from continuous_discrete_nonlinear_gaussian_ssm.models import ParamsCDNLGSSM
-# TODO: decide on consistent naming, then replace all PosteriorGSSMFiltered and PosteriorGSSMSmoothed
-from continuous_discrete_linear_gaussian_ssm.inference import PosteriorCDLGSSMFiltered, PosteriorCDLGSSMSmoothed
+from dynamax.linear_gaussian_ssm.inference import ParamsLGSSMInitial, ParamsLGSSMEmissions, PosteriorGSSMFiltered, PosteriorGSSMSmoothed
 
 class UKFHyperParams(NamedTuple):
     """Lightweight container for UKF hyperparameters.
@@ -66,7 +65,7 @@ def _compute_weights(n, alpha, beta, lamb):
     w_cov = jnp.concatenate((jnp.array([lamb / (n + lamb) + (1 - alpha**2 + beta)]), jnp.ones(2 * n) * factor))
     return w_mean, w_cov
 
-
+# TODO: how do we combine compute_push_forward and time-instants?
 def _predict(m, P, f, Q, lamb, w_mean, w_cov, u):
     """Predict next mean and covariance using additive UKF
 
@@ -190,7 +189,7 @@ def unscented_kalman_filter(
     lamb = _compute_lambda(alpha, kappa, state_dim)
     w_mean, w_cov = _compute_weights(state_dim, alpha, beta, lamb)
 
-    # TODO:
+    # TODO: use compute_push_forward instead, and let autodiff do the magic? How about time-instants?
     # Dynamics and emission functions
     f, h = params.dynamics_function, params.emission_function
     f, h = (_process_fn(fn, inputs) for fn in (f, h))
@@ -216,6 +215,7 @@ def unscented_kalman_filter(
         ll += log_likelihood
 
         # Predict the next state
+        # TODO: How?
         pred_mean, pred_cov, _ = _predict(filtered_mean, filtered_cov, f, Q, lamb, w_mean, w_cov, u)
 
         # Build carry and output states
@@ -235,7 +235,7 @@ def unscented_kalman_filter(
     carry = (0.0, params.initial_mean, params.initial_covariance)
     (ll, *_), outputs = lax.scan(_step, carry, (t0, t1, t0_idx))
     outputs = {"marginal_loglik": ll, **outputs}
-    posterior_filtered = PosteriorCDLGSSMFiltered(
+    posterior_filtered = PosteriorGSSMFiltered(
         **outputs,
     )
     return posterior_filtered
@@ -295,7 +295,7 @@ def unscented_kalman_smoother(
     lamb = _compute_lambda(alpha, kappa, state_dim)
     w_mean, w_cov = _compute_weights(state_dim, alpha, beta, lamb)
 
-    # TODO:
+    # TODO: use compute_push_forward instead, and let autodiff do the magic? How about time-instants?
     # Dynamics and emission functions
     f, h = params.dynamics_function, params.emission_function
     f, h = (_process_fn(fn, inputs) for fn in (f, h))
@@ -313,6 +313,7 @@ def unscented_kalman_smoother(
         y = emissions[t0_idx]
 
         # Prediction step
+        # TODO:
         m_pred, S_pred, S_cross = _predict(filtered_mean, filtered_cov, f, Q, lamb, w_mean, w_cov, u)
         G = psd_solve(S_pred, S_cross.T).T
 
@@ -334,7 +335,7 @@ def unscented_kalman_smoother(
     # Reverse the arrays and return
     smoothed_means = jnp.row_stack((smoothed_means[::-1], filtered_means[-1][None, ...]))
     smoothed_covs = jnp.row_stack((smoothed_covs[::-1], filtered_covs[-1][None, ...]))
-    return PosteriorCDLGSSMSmoothed(
+    return PosteriorGSSMSmoothed(
         marginal_loglik=ll,
         filtered_means=filtered_means,
         filtered_covariances=filtered_covs,

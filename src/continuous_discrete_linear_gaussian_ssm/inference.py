@@ -16,22 +16,18 @@ import diffrax as dfx
 
 import jax.debug as jdb
 
-class ParamsCDLGSSMInitial(NamedTuple):
-    r"""Parameters of the initial distribution
+# To avoid unnecessary redefinitions of code,
+# We import those that can be reused from LGSSM first
+# And define the rest later
+# Initial state's distribution can be imported
+from dynamax.linear_gaussian_ssm.inference import ParamsLGSSMInitial
+# Emission distribution can be imported
+from dynamax.linear_gaussian_ssm.inference import ParamsLGSSMEmissions
+# Filtering and smoothing classes are equivalent
+from dynamax.linear_gaussian_ssm.inference import PosteriorGSSMFiltered
+from dynamax.linear_gaussian_ssm.inference import PosteriorGSSMSmoothed
 
-    $$p(z_1) = \mathcal{N}(z_1 \mid \mu_1, Q_1)$$
-
-    The tuple doubles as a container for the ParameterProperties.
-
-    :param mean: $\mu_1$
-    :param cov: $Q_1$
-
-    """
-    mean: Union[Float[Array, "state_dim"], ParameterProperties]
-    # unconstrained parameters are stored as a vector.
-    cov: Union[Float[Array, "state_dim state_dim"], Float[Array, "state_dim_triu"], ParameterProperties]
-
-
+# Continuous dynamic distributions are different than discrete ones, we define them here
 class ParamsCDLGSSMDynamics(NamedTuple):
     r"""Parameters of the dynamics distribution
 
@@ -50,27 +46,8 @@ class ParamsCDLGSSMDynamics(NamedTuple):
     input_weights: Union[Float[Array, "state_dim input_dim"], Float[Array, "ntime state_dim input_dim"], ParameterProperties]
     diff_coeff: Union[Float[Array, "state_dim state_dim"], Float[Array, "ntime state_dim state_dim"], ParameterProperties]
     diff_cov: Union[Float[Array, "state_dim state_dim"], Float[Array, "ntime state_dim state_dim"], Float[Array, "state_dim_triu"], ParameterProperties]
-    
-class ParamsCDLGSSMEmissions(NamedTuple):
-    r"""Parameters of the emission distribution
 
-    $$p(y_t \mid z_t, u_t) = \mathcal{N}(y_t \mid H z_t + D u_t + d, R)$$
-
-    The tuple doubles as a container for the ParameterProperties.
-
-    :param weights: emission weights $H$
-    :param bias: emission bias $d$
-    :param input_weights: emission input weights $D$
-    :param cov: emission covariance $R$
-
-    """
-    weights: Union[Float[Array, "emission_dim state_dim"], Float[Array, "ntime emission_dim state_dim"], ParameterProperties]
-    bias: Union[Float[Array, "emission_dim"], Float[Array, "ntime emission_dim"], ParameterProperties]
-    input_weights: Union[Float[Array, "emission_dim input_dim"], Float[Array, "ntime emission_dim input_dim"], ParameterProperties]
-    cov: Union[Float[Array, "emission_dim emission_dim"], Float[Array, "ntime emission_dim emission_dim"], Float[Array, "emission_dim_triu"], ParameterProperties]
-
-
-
+# CDLGSSM parameters are different to LGSSM due to different dynamics
 class ParamsCDLGSSM(NamedTuple):
     r"""Parameters of a linear Gaussian SSM.
 
@@ -79,44 +56,9 @@ class ParamsCDLGSSM(NamedTuple):
     :param emissions: emission distribution parameters
 
     """
-    initial: ParamsCDLGSSMInitial
+    initial: ParamsLGSSMInitial
     dynamics: ParamsCDLGSSMDynamics
-    emissions: ParamsCDLGSSMEmissions
-
-
-class PosteriorCDLGSSMFiltered(NamedTuple):
-    r"""Marginals of the Gaussian filtering posterior.
-
-    :param marginal_loglik: marginal log likelihood, $p(y_{1:T} \mid u_{1:T})$
-    :param filtered_means: array of filtered means $\mathbb{E}[z_t \mid y_{1:t}, u_{1:t}]$
-    :param filtered_covariances: array of filtered covariances $\mathrm{Cov}[z_t \mid y_{1:t}, u_{1:t}]$
-
-    """
-    marginal_loglik: Union[Scalar, Float[Array, "ntime"]]
-    filtered_means: Optional[Float[Array, "ntime state_dim"]] = None
-    filtered_covariances: Optional[Float[Array, "ntime state_dim state_dim"]] = None
-    predicted_means: Optional[Float[Array, "ntime state_dim"]] = None
-    predicted_covariances: Optional[Float[Array, "ntime state_dim state_dim"]] = None
-
-
-class PosteriorCDLGSSMSmoothed(NamedTuple):
-    r"""Marginals of the Gaussian filtering and smoothing posterior.
-
-    :param marginal_loglik: marginal log likelihood, $p(y_{1:T} \mid u_{1:T})$
-    :param filtered_means: array of filtered means $\mathbb{E}[z_t \mid y_{1:t}, u_{1:t}]$
-    :param filtered_covariances: array of filtered covariances $\mathrm{Cov}[z_t \mid y_{1:t}, u_{1:t}]$
-    :param smoothed_means: array of smoothed means $\mathbb{E}[z_t \mid y_{1:T}, u_{1:T}]$
-    :param smoothed_covariances: array of smoothed marginal covariances, $\mathrm{Cov}[z_t \mid y_{1:T}, u_{1:T}]$
-    :param smoothed_cross_covariances: array of smoothed cross products, $\mathbb{E}[z_t z_{t+1}^T \mid y_{1:T}, u_{1:T}]$
-
-    """
-    marginal_loglik: Scalar
-    filtered_means: Float[Array, "ntime state_dim"]
-    filtered_covariances: Float[Array, "ntime state_dim state_dim"]
-    smoothed_means: Float[Array, "ntime state_dim"]
-    smoothed_covariances: Float[Array, "ntime state_dim state_dim"]
-    smoothed_cross_covariances: Optional[Float[Array, "ntime_minus1 state_dim state_dim"]] = None
-
+    emissions: ParamsLGSSMEmissions
 
 # Helper functions
 # _get_params = lambda x, dim, t: x[t] if x.ndim == dim + 1 else x
@@ -129,7 +71,8 @@ def _get_params(x, dim, t):
         return x
 _zeros_if_none = lambda x, shape: x if x is not None else jnp.zeros(shape)
 
-
+# TODO: Shall we move these two functions to models.py,
+# they seem intrinsic to the CD modeling, it would add consistency for linear & nonlinear models
 def diffeqsolve(
     rhs,
     t0: float,
@@ -207,7 +150,7 @@ def make_cdlgssm_params(initial_mean,
                     emissions_input_weights.shape[-1] if emissions_input_weights is not None else 0)
 
     params = ParamsCDLGSSM(
-        initial=ParamsCDLGSSMInitial(
+        initial=ParamsLGSSMInitial(
             mean=initial_mean,
             cov=initial_cov
         ),
@@ -218,7 +161,7 @@ def make_cdlgssm_params(initial_mean,
             diff_coeff=dynamics_diffusion_coeff,
             diff_cov=dynamics_diffusion_cov,
         ),
-        emissions=ParamsCDLGSSMEmissions(
+        emissions=ParamsLGSSMEmissions(
             weights=emissions_weights,
             bias=_zeros_if_none(emissions_bias, emission_dim),
             input_weights=_zeros_if_none(emissions_input_weights, (emission_dim, input_dim)),
@@ -314,7 +257,7 @@ def preprocess_params_and_inputs(params, num_timesteps, inputs):
     emissions_bias = _zeros_if_none(params.emissions.bias, (emission_dim,))
 
     full_params = ParamsCDLGSSM(
-        initial=ParamsCDLGSSMInitial(
+        initial=ParamsLGSSMInitial(
             mean=params.initial.mean,
             cov=params.initial.cov),
         dynamics=ParamsCDLGSSMDynamics(
@@ -323,7 +266,7 @@ def preprocess_params_and_inputs(params, num_timesteps, inputs):
             input_weights=dynamics_input_weights,
             diff_coeff=params.dynamics.diff_coeff,
             diff_cov=params.dynamics.diff_cov),
-        emissions=ParamsCDLGSSMEmissions(
+        emissions=ParamsLGSSMEmissions(
             weights=params.emissions.weights,
             bias=emissions_bias,
             input_weights=emissions_input_weights,
@@ -455,7 +398,7 @@ def cdlgssm_filter(
     emissions:  Float[Array, "num_timesteps emission_dim"],
     t_emissions: Optional[Float[Array, "num_timesteps 1"]]=None,
     inputs: Optional[Float[Array, "num_timesteps input_dim"]]=None
-) -> PosteriorCDLGSSMFiltered:
+) -> PosteriorGSSMFiltered:
     r"""Run a Continuous Discrete Kalman filter to produce the marginal likelihood and filtered state estimates.
 
     Args:
@@ -465,7 +408,7 @@ def cdlgssm_filter(
         inputs: optional array of inputs.
 
     Returns:
-        PosteriorCDLGSSMFiltered: filtered posterior object
+        PosteriorGSSMFiltered: filtered posterior object
 
     """
     # Figure out timestamps, as vectors to scan over
@@ -520,7 +463,7 @@ def cdlgssm_filter(
     # Run the Kalman filter
     carry = (0.0, params.initial.mean, params.initial.cov)
     (ll, _, _), (filtered_means, filtered_covs) = lax.scan(_step, carry, (t0, t1, t0_idx))
-    return PosteriorCDLGSSMFiltered(marginal_loglik=ll, filtered_means=filtered_means, filtered_covariances=filtered_covs)
+    return PosteriorGSSMFiltered(marginal_loglik=ll, filtered_means=filtered_means, filtered_covariances=filtered_covs)
 
 
 @preprocess_args
@@ -529,7 +472,7 @@ def cdlgssm_smoother(
     emissions: Float[Array, "num_timesteps emission_dim"],
     t_emissions: Optional[Float[Array, "num_timesteps 1"]]=None,
     inputs: Optional[Float[Array, "num_timesteps input_dim"]]=None
-) -> PosteriorCDLGSSMSmoothed:
+) -> PosteriorGSSMSmoothed:
     r"""Run forward-filtering, backward-smoother to compute expectations
     under the posterior distribution on latent states. Technically, this
     implements the Rauch-Tung-Striebel (RTS) smoother.
@@ -541,7 +484,7 @@ def cdlgssm_smoother(
         inputs: array of inputs.
 
     Returns:
-        PosteriorCDLGSSMSmoothed: smoothed posterior object.
+        PosteriorGSSMSmoothed: smoothed posterior object.
 
     """
     # Figure out timestamps, as vectors to scan over
@@ -604,7 +547,7 @@ def cdlgssm_smoother(
     smoothed_means = jnp.row_stack((smoothed_means[::-1], filtered_means[-1][None, ...]))
     smoothed_covs = jnp.row_stack((smoothed_covs[::-1], filtered_covs[-1][None, ...]))
     smoothed_cross = smoothed_cross[::-1]
-    return PosteriorCDLGSSMSmoothed(
+    return PosteriorGSSMSmoothed(
         marginal_loglik=ll,
         filtered_means=filtered_means,
         filtered_covariances=filtered_covs,

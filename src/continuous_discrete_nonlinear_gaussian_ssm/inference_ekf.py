@@ -11,15 +11,14 @@ from dynamax.types import PRNGKey
 
 # Our codebase
 from continuous_discrete_nonlinear_gaussian_ssm.models import ParamsCDNLGSSM
-# TODO: decide on consistent naming, then replace all PosteriorGSSMFiltered and PosteriorGSSMSmoothed
-from continuous_discrete_linear_gaussian_ssm.inference import PosteriorCDLGSSMFiltered, PosteriorCDLGSSMSmoothed
+from dynamax.linear_gaussian_ssm.inference import ParamsLGSSMInitial, ParamsLGSSMEmissions, PosteriorGSSMFiltered, PosteriorGSSMSmoothed
 
 # Helper functions
 _get_params = lambda x, dim, t: x[t] if x.ndim == dim + 1 else x
 _process_fn = lambda f, u: (lambda x, y: f(x)) if u is None else f
 _process_input = lambda x, y: jnp.zeros((y,1)) if x is None else x
 
-
+# TODO: how do we combine compute_push_forward and time-instants?
 def _predict(m, P, f, F, Q, u):
     r"""Predict next mean and covariance using first-order additive EKF
 
@@ -136,6 +135,7 @@ def extended_kalman_filter(
     t0_idx = jnp.arange(num_timesteps)
     
     # TODO: Fundamental questions
+    # TODO: use compute_push_forward instead, and let autodiff do the magic? How about time-instants?
     # Dynamics and emission functions and their Jacobians
     f, h = params.dynamics_function, params.emission_function
     F, H = jacfwd(f), jacfwd(h)
@@ -163,6 +163,7 @@ def extended_kalman_filter(
         filtered_mean, filtered_cov = _condition_on(pred_mean, pred_cov, h, H, R, u, y, num_iter)
 
         # Predict the next state
+        # TODO: use compute_push_forward instead, and let autodiff do the magic? how about time instants
         pred_mean, pred_cov = _predict(filtered_mean, filtered_cov, f, F, Q, u)
 
         # Build carry and output states
@@ -182,7 +183,7 @@ def extended_kalman_filter(
     carry = (0.0, params.initial_mean, params.initial_covariance)
     (ll, *_), outputs = lax.scan(_step, carry, (t0, t1, t0_idx))
     outputs = {"marginal_loglik": ll, **outputs}
-    posterior_filtered = PosteriorCDLGSSMFiltered(
+    posterior_filtered = PosteriorGSSMFiltered(
         **outputs,
     )
     return posterior_filtered
@@ -262,7 +263,7 @@ def extended_kalman_smoother(
     filtered_means = filtered_posterior.filtered_means
     filtered_covs = filtered_posterior.filtered_covariances
 
-    # TODO:
+    # TODO: use compute_push_forward instead, and let autodiff do the magic? How about time-instants?
     # Dynamics and emission functions and their Jacobians
     f = params.dynamics_function
     F = jacfwd(f)
@@ -304,7 +305,7 @@ def extended_kalman_smoother(
     # Reverse the arrays and return
     smoothed_means = jnp.row_stack((smoothed_means[::-1], filtered_means[-1][None, ...]))
     smoothed_covs = jnp.row_stack((smoothed_covs[::-1], filtered_covs[-1][None, ...]))
-    return PosteriorCDLGSSMSmoothed(
+    return PosteriorGSSMSmoothed(
         marginal_loglik=ll,
         filtered_means=filtered_means,
         filtered_covariances=filtered_covs,
@@ -362,7 +363,7 @@ def extended_kalman_posterior_sample(
     filtered_means = filtered_posterior.filtered_means
     filtered_covs = filtered_posterior.filtered_covariances
 
-    # TODO:
+    # TODO: use compute_push_forward instead, and let autodiff do the magic? how do we incorporate time though?
     # Dynamics and emission functions and their Jacobians
     f = params.dynamics_function
     F = jacfwd(f)
