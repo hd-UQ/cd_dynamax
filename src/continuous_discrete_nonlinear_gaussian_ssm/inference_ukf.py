@@ -48,6 +48,7 @@ def _compute_sigmas(m, P, n, lamb):
 
 
 def _compute_weights(n, alpha, beta, lamb):
+    # TODO: make sure weights are the same for CD version
     """Compute weights used to compute predicted mean and covariance (Sarkka 5.77).
 
     Args:
@@ -65,15 +66,23 @@ def _compute_weights(n, alpha, beta, lamb):
     w_cov = jnp.concatenate((jnp.array([lamb / (n + lamb) + (1 - alpha**2 + beta)]), jnp.ones(2 * n) * factor))
     return w_mean, w_cov
 
-# TODO: how do we combine compute_push_forward and time-instants?
-def _predict(m, P, f, Q, lamb, w_mean, w_cov, u):
+# TODO: Revise and implement push-forward here
+def _predict(
+        m, P, # priors
+        params: ParamsCDLGSSM, # All necessary CD dynamic params
+        t0: Float,
+        t1: Float,
+        lamb, w_mean, w_cov,
+        u
+    ):
     """Predict next mean and covariance using additive UKF
 
     Args:
         m (D_hid,): prior mean.
         P (D_hid,D_hid): prior covariance.
-        f (Callable): dynamics function.
-        Q (D_hid,D_hid): dynamics covariance matrix.
+        params: parameters of CD nonlinear dynamics, containing dynamics RHS function, coeff matrix and Brownian covariance matrix.
+        t0: initial time-instant
+        t1: final time-instant
         lamb (float): lamb = alpha**2 *(n + kappa) - n.
         w_mean (2*D_hid+1,): 2n+1 weights to compute predicted mean.
         w_cov (2*D_hid+1,): 2n+1 weights to compute predicted covariance.
@@ -85,15 +94,32 @@ def _predict(m, P, f, Q, lamb, w_mean, w_cov, u):
         
     """
     n = len(m)
-    # Form sigma points and propagate
+    
+    # Form sigma points
     sigmas_pred = _compute_sigmas(m, P, n, lamb)
     u_s = jnp.array([u] * len(sigmas_pred))
-    sigmas_pred_prop = vmap(f, (0, 0), 0)(sigmas_pred, u_s)
+    
+    # TODO: we should propagate according to Sarkka's algo 3.24
+    # Account for t0, t1, f, L, Q
+    def rhs_all(t, y, args):
+        # TODO
 
+        return something
+    
+    sol = diffeqsolve(rhs_all, t0=t0, t1=t1, y0=y0)
+    
+    # TODO: all these is from discrete version, probably unnecessary
+    '''
+    # Propagate
+    sigmas_pred_prop = vmap(f, (0, 0), 0)(sigmas_pred, u_s)
     # Compute predicted mean and covariance
     m_pred = jnp.tensordot(w_mean, sigmas_pred_prop, axes=1)
     P_pred = jnp.tensordot(w_cov, _outer(sigmas_pred_prop - m_pred, sigmas_pred_prop - m_pred), axes=1) + Q
     P_cross = jnp.tensordot(w_cov, _outer(sigmas_pred - m, sigmas_pred_prop - m_pred), axes=1)
+    '''
+    
+    # TODO: what are are we returning?
+    # Collect from solution
     return m_pred, P_pred, P_cross
 
 
@@ -189,19 +215,16 @@ def unscented_kalman_filter(
     lamb = _compute_lambda(alpha, kappa, state_dim)
     w_mean, w_cov = _compute_weights(state_dim, alpha, beta, lamb)
 
-    # TODO: use compute_push_forward instead, and let autodiff do the magic? How about time-instants?
-    # Dynamics and emission functions
-    f, h = params.dynamics_function, params.emission_function
-    f, h = (_process_fn(fn, inputs) for fn in (f, h))
+    # Only emission function
+    h = params.emission_function
+    h = _process_fn(h, inputs)
     inputs = _process_input(inputs, num_timesteps)
 
     def _step(carry, args):
         ll, pred_mean, pred_cov = carry
         t0, t1, t0_idx = args
 
-        # TODO:
         # Get parameters and inputs for time t0
-        Q = _get_params(params.dynamics_covariance, 2, t0)
         R = _get_params(params.emission_covariance, 2, t0)
         u = inputs[t0_idx]
         y = emissions[t0_idx]
@@ -214,9 +237,9 @@ def unscented_kalman_filter(
         # Update the log likelihood
         ll += log_likelihood
 
-        # Predict the next state
-        # TODO: How?
-        pred_mean, pred_cov, _ = _predict(filtered_mean, filtered_cov, f, Q, lamb, w_mean, w_cov, u)
+        # Predict the next state, based on UKF predict
+        # TODO: Make sure we return at least these two!
+        pred_mean, pred_cov, _ = _predict(filtered_mean, filtered_cov, params, t0, t1, lamb, w_mean, w_cov, u)
 
         # Build carry and output states
         carry = (ll, pred_mean, pred_cov)
@@ -295,10 +318,9 @@ def unscented_kalman_smoother(
     lamb = _compute_lambda(alpha, kappa, state_dim)
     w_mean, w_cov = _compute_weights(state_dim, alpha, beta, lamb)
 
-    # TODO: use compute_push_forward instead, and let autodiff do the magic? How about time-instants?
-    # Dynamics and emission functions
-    f, h = params.dynamics_function, params.emission_function
-    f, h = (_process_fn(fn, inputs) for fn in (f, h))
+    # Only emission functions
+    h = params.emission_function
+    h = _process_fn(h, inputs)
     inputs = _process_input(inputs, num_timesteps)
 
     def _step(carry, args):
@@ -307,14 +329,15 @@ def unscented_kalman_smoother(
         t0, t1, t0_idx, filtered_mean, filtered_cov = args
 
         # Get parameters and inputs for time t0
-        Q = _get_params(params.dynamics_covariance, 2, t0)
         R = _get_params(params.emission_covariance, 2, t0)
         u = inputs[t0_idx]
         y = emissions[t0_idx]
 
         # Prediction step
-        # TODO:
+        # TODO: Make sure we return all components needed for smoothing!
+        pred_mean, pred_cov, _ = _predict(filtered_mean, filtered_cov, params, t0, t1, lamb, w_mean, w_cov, u)
         m_pred, S_pred, S_cross = _predict(filtered_mean, filtered_cov, f, Q, lamb, w_mean, w_cov, u)
+        # TODO: what is G???
         G = psd_solve(S_pred, S_cross.T).T
 
         # Compute smoothed mean and covariance

@@ -18,28 +18,33 @@ FnStateAndInputToEmission = Callable[ [Float[Array, "state_dim"], Float[Array, "
 # TODO: is there anything specific to CDLGSSM here compared to NLGSSM?
 class ParamsCDNLGSSM(NamedTuple):
     """Parameters for a CDNLGSSM model.
-
+    # TODO: revise these equations, they do not match Sarkaas exactly
+    
     $$p(z_t | z_{t-1}, u_t) = N(z_t | f(z_{t-1}, u_t), Q_t)$$
     $$p(y_t | z_t) = N(y_t | h(z_t, u_t), R_t)$$
     $$p(z_1) = N(z_1 | m, S)$$
 
     If you have no inputs, the dynamics and emission functions do not to take $u_t$ as an argument.
 
+    :param initial_mean: $m$
+    :param initial_covariance: $S$
     :param dynamics_function: $f$
+    :param dynamics_function: $L$
     :param dynamics_covariance: $Q$
     :param emissions_function: $h$
     :param emissions_covariance: $R$
-    :param initial_mean: $m$
-    :param initial_covariance: $S$
 
     """
     # Initial state distribution
     initial_mean: Float[Array, "state_dim"]
     initial_covariance: Float[Array, "state_dim state_dim"]
-    # TODO: take function here, to be used by compute_push_forward
+    # f in Sarkka
     dynamics_function: Union[FnStateToState, FnStateAndInputToState, t0, t1]
+    # L in Sarka
+    dynamics_coefficients: Float[Array, "state_dim state_dim"]
+    # Q in Sarka
     dynamics_covariance: Float[Array, "state_dim state_dim"]
-    # TODO: keep?
+    # Emission distribution h
     emission_function: Union[FnStateToEmission, FnStateAndInputToEmission]
     emission_covariance: Float[Array, "emission_dim emission_dim"]
 
@@ -49,7 +54,7 @@ class ContDiscreteNonlinearGaussianSSM(SSM):
     Continuous Discrete Nonlinear Gaussian State Space Model.
 
     The model is defined as follows
-
+    # TODO: revise these equations, they do not match Sarkaas exactly
     $$p(z_t | z_{t-1}, u_t) = N(z_t | f(z_{t-1}, u_t), Q_t)$$
     $$p(y_t | z_t) = N(y_t | h(z_t, u_t), R_t)$$
     $$p(z_1) = N(z_1 | m, S)$$
@@ -59,9 +64,10 @@ class ContDiscreteNonlinearGaussianSSM(SSM):
     * $z_t$ = hidden variables of size `state_dim`,
     * $y_t$ = observed variables of size `emission_dim`
     * $u_t$ = input covariates of size `input_dim` (defaults to 0).
-    * $f$ = dynamics (transition) function
+    * $f$ = dynamics deterministic function (RHS), used to compute transition function
+    * $L$ = dynamics coefficient multiplying brownian motion 
+    * $Q$ = dynamics brownian motion's covariance (system) noise
     * $h$ = emission (observation) function
-    * $Q$ = covariance matrix of dynamics (system) noise
     * $R$ = covariance matrix for emission (observation) noise
     * $m$ = mean of initial state
     * $S$ = covariance matrix of initial state
@@ -88,6 +94,8 @@ class ContDiscreteNonlinearGaussianSSM(SSM):
     @property
     def inputs_shape(self):
         return (self.input_dim,) if self.input_dim > 0 else None
+
+    # TODO: why not define initialize()?
 
     def initial_distribution(
         self,
