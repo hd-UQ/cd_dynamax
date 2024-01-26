@@ -12,9 +12,10 @@ from dynamax.utils.utils import psd_solve, symmetrize
 from dynamax.parameters import ParameterProperties
 from dynamax.types import PRNGKey, Scalar
 
-import diffrax as dfx
-
 import jax.debug as jdb
+
+# Diffrax based diff-eq solver
+from cdssm_utils import diffeqsolve
 
 # To avoid unnecessary redefinitions of code,
 # We import those that can be reused from LGSSM first
@@ -71,28 +72,7 @@ def _get_params(x, dim, t):
         return x
 _zeros_if_none = lambda x, shape: x if x is not None else jnp.zeros(shape)
 
-# TODO: Shall we move these two functions to models.py,
-# they seem intrinsic to the CD modeling, it would add consistency for linear & nonlinear models
-def diffeqsolve(
-    rhs,
-    t0: float,
-    t1: float,
-    y0: jnp.ndarray,
-    solver: dfx.AbstractSolver = dfx.Dopri5(),
-    stepsize_controller: dfx.AbstractStepSizeController = dfx.ConstantStepSize(),
-    dt0: float = 0.01,
-) -> jnp.ndarray:
-    return dfx.diffeqsolve(
-        dfx.ODETerm(rhs),
-        solver=solver,
-        stepsize_controller=stepsize_controller,
-        t0=t0,
-        t1=t1,
-        y0=y0,
-        dt0=dt0,
-        saveat=dfx.SaveAt(t1=True),
-    ).ys
-
+# CD push-forwards are inferece specific
 def compute_pushforward(
     params: ParamsCDLGSSM,
     t0: Float,
