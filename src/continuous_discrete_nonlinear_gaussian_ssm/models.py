@@ -15,7 +15,7 @@ FnStateAndInputToState = Callable[ [Float[Array, "state_dim"], Float[Array, "inp
 FnStateToEmission = Callable[ [Float[Array, "state_dim"]], Float[Array, "emission_dim"]]
 FnStateAndInputToEmission = Callable[ [Float[Array, "state_dim"], Float[Array, "input_dim"] ], Float[Array, "emission_dim"]]
 
-
+# TODO: is there anything specific to CDLGSSM here compared to NLGSSM?
 class ParamsCDNLGSSM(NamedTuple):
     """Parameters for a CDNLGSSM model.
 
@@ -33,13 +33,13 @@ class ParamsCDNLGSSM(NamedTuple):
     :param initial_covariance: $S$
 
     """
-
+    # Initial state distribution
     initial_mean: Float[Array, "state_dim"]
     initial_covariance: Float[Array, "state_dim state_dim"]
-    # TODO:
+    # TODO: take function here, to be used by compute_push_forward
     dynamics_function: Union[FnStateToState, FnStateAndInputToState, t0, t1]
     dynamics_covariance: Float[Array, "state_dim state_dim"]
-    # TODO:
+    # TODO: keep?
     emission_function: Union[FnStateToEmission, FnStateAndInputToEmission]
     emission_covariance: Float[Array, "emission_dim emission_dim"]
 
@@ -100,10 +100,14 @@ class ContDiscreteNonlinearGaussianSSM(SSM):
         self,
         params: ParamsCDNLGSSM,
         state: Float[Array, "state_dim"],
+        t0: Optional[Float]=None,
+        t1: Optional[Float]=None,
         inputs: Optional[Float[Array, "input_dim"]] = None
     ) -> tfd.Distribution:
         # TODO:
         f = params.dynamics_function
+        # Compute pushforward map 
+        f = compute_pushforward(params, t0, t1)
         if inputs is None:
             mean = f(state)
         else:
@@ -116,7 +120,7 @@ class ContDiscreteNonlinearGaussianSSM(SSM):
         state: Float[Array, "state_dim"],
         inputs: Optional[Float[Array, "input_dim"]] = None
      ) -> tfd.Distribution:
-        # TODO:
+        # TODO: keep?
         h = params.emission_function
         if inputs is None:
             mean = h(state)

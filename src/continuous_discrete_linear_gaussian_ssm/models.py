@@ -15,8 +15,7 @@ from typing_extensions import Protocol
 from ssm_temissions import SSM
 from continuous_discrete_linear_gaussian_ssm.inference import cdlgssm_filter, cdlgssm_smoother, cdlgssm_posterior_sample
 from continuous_discrete_linear_gaussian_ssm.inference import compute_pushforward
-from continuous_discrete_linear_gaussian_ssm.inference import ParamsCDLGSSM, ParamsCDLGSSMInitial, ParamsCDLGSSMDynamics, ParamsCDLGSSMEmissions
-from continuous_discrete_linear_gaussian_ssm.inference import PosteriorCDLGSSMFiltered, PosteriorCDLGSSMSmoothed
+from continuous_discrete_linear_gaussian_ssm.inference import ParamsCDLGSSM, ParamsCDLGSSMDynamics
 
 # From dynamax
 from dynamax.parameters import ParameterProperties, ParameterSet
@@ -26,6 +25,7 @@ from dynamax.utils.distributions import MatrixNormalInverseWishart as MNIW
 from dynamax.utils.distributions import NormalInverseWishart as NIW
 from dynamax.utils.distributions import mniw_posterior_update, niw_posterior_update
 from dynamax.utils.utils import pytree_stack, psd_solve
+from dynamax.linear_gaussian_ssm.inference import ParamsLGSSMInitial, ParamsLGSSMEmissions, PosteriorGSSMFiltered, PosteriorGSSMSmoothed
 
 class SuffStatsCDLGSSM(Protocol):
     """A :class:`NamedTuple` with sufficient statistics for CDLGSSM parameter estimation."""
@@ -146,7 +146,7 @@ class ContDiscreteLinearGaussianSSM(SSM):
 
         # Create nested dictionary of params
         params = ParamsCDLGSSM(
-            initial=ParamsCDLGSSMInitial(
+            initial=ParamsLGSSMInitial(
                 mean=default(initial_mean, _initial_mean),
                 cov=default(initial_covariance, _initial_covariance)
                 ),
@@ -157,7 +157,7 @@ class ContDiscreteLinearGaussianSSM(SSM):
                 diff_coeff=default(dynamics_diffusion_coefficient, _dynamics_diffusion_coefficient),
                 diff_cov=default(dynamics_diffusion_covariance, _dynamics_diffusion_covariance)
                 ),
-            emissions=ParamsCDLGSSMEmissions(
+            emissions=ParamsLGSSMEmissions(
                 weights=default(emission_weights, _emission_weights),
                 bias=default(emission_bias, _emission_bias),
                 input_weights=default(emission_input_weights, _emission_input_weights),
@@ -167,7 +167,7 @@ class ContDiscreteLinearGaussianSSM(SSM):
         
         # The keys of param_props must match those of params!
         props = ParamsCDLGSSM(
-            initial=ParamsCDLGSSMInitial(
+            initial=ParamsLGSSMInitial(
                 mean=ParameterProperties(),
                 cov=ParameterProperties(constrainer=RealToPSDBijector())),
             dynamics=ParamsCDLGSSMDynamics(
@@ -176,7 +176,7 @@ class ContDiscreteLinearGaussianSSM(SSM):
                 input_weights=ParameterProperties(),
                 diff_coeff=ParameterProperties(),
                 diff_cov=ParameterProperties(constrainer=RealToPSDBijector())),
-            emissions=ParamsCDLGSSMEmissions(
+            emissions=ParamsLGSSMEmissions(
                 weights=ParameterProperties(),
                 bias=ParameterProperties(),
                 input_weights=ParameterProperties(),
@@ -241,7 +241,7 @@ class ContDiscreteLinearGaussianSSM(SSM):
         emissions: Float[Array, "ntime emission_dim"],
         t_emissions: Optional[Float[Array, "ntime 1"]]=None,
         inputs: Optional[Float[Array, "ntime input_dim"]] = None
-    ) -> PosteriorCDLGSSMFiltered:
+    ) -> PosteriorGSSMFiltered:
         return cdlgssm_filter(params, emissions, t_emissions, inputs)
 
     def smoother(
@@ -250,7 +250,7 @@ class ContDiscreteLinearGaussianSSM(SSM):
         emissions: Float[Array, "ntime emission_dim"],
         t_emissions: Optional[Float[Array, "ntime 1"]]=None,
         inputs: Optional[Float[Array, "ntime input_dim"]] = None
-    ) -> PosteriorCDLGSSMSmoothed:
+    ) -> PosteriorGSSMSmoothed:
         return cdlgssm_smoother(params, emissions, t_emissions, inputs)
 
     def posterior_sample(
@@ -400,10 +400,10 @@ class ContDiscreteLinearGaussianSSM(SSM):
             else (HD[:, self.state_dim:], None)
         
         params = ParamsCDLGSSM(
-            initial=ParamsCDLGSSMInitial(mean=m, cov=S),
+            initial=ParamsLGSSMInitial(mean=m, cov=S),
             # TODO: this will crash, as we should provide diff_cov and diff_coeff
             dynamics=ParamsCDLGSSMDynamics(weights=F, bias=b, input_weights=B, cov=Q),
-            emissions=ParamsCDLGSSMEmissions(weights=H, bias=d, input_weights=D, cov=R)
+            emissions=ParamsLGSSMEmissions(weights=H, bias=d, input_weights=D, cov=R)
         )
         return params, m_step_state
 
@@ -525,9 +525,9 @@ class ContDiscreteLinearGaussianConjugateSSM(ContDiscreteLinearGaussianSSM):
             else (HD[:, self.state_dim:], jnp.zeros(self.emission_dim))
 
         params = ParamsCDLGSSM(
-            initial=ParamsCDLGSSMInitial(mean=m, cov=S),
+            initial=ParamsLGSSMInitial(mean=m, cov=S),
             dynamics=ParamsCDLGSSMDynamics(weights=F, bias=b, input_weights=B, cov=Q),
-            emissions=ParamsCDLGSSMEmissions(weights=H, bias=d, input_weights=D, cov=R)
+            emissions=ParamsLGSSMEmissions(weights=H, bias=d, input_weights=D, cov=R)
         )
         return params, m_step_state
 
@@ -611,9 +611,9 @@ class ContDiscreteLinearGaussianConjugateSSM(ContDiscreteLinearGaussianSSM):
                 else (HD[:, self.state_dim:], jnp.zeros(self.emission_dim))
 
             params = ParamsCDLGSSM(
-                initial=ParamsCDLGSSMInitial(mean=m, cov=S),
+                initial=ParamsLGSSMInitial(mean=m, cov=S),
                 dynamics=ParamsCDLGSSMDynamics(weights=F, bias=b, input_weights=B, cov=Q),
-                emissions=ParamsCDLGSSMEmissions(weights=H, bias=d, input_weights=D, cov=R)
+                emissions=ParamsLGSSMEmissions(weights=H, bias=d, input_weights=D, cov=R)
             )
             return params
 
