@@ -74,7 +74,6 @@ def _compute_weights(n, alpha, beta, lamb):
 
     # These follow eq. 3.69-3.70 in Sarkka's thesis
     factor = 1 / (2 * (n + lamb))
-    # TODO: iurteaga needs to understand
     w_mean = jnp.concatenate((jnp.array([lamb / (n + lamb)]), jnp.ones(2 * n) * factor))
     w_cov = jnp.concatenate((jnp.array([lamb / (n + lamb) + (1 - alpha**2 + beta)]), jnp.ones(2 * n) * factor))
 
@@ -192,12 +191,11 @@ def _condition_on(m, P, h, R, lamb, w_mean, w_cov, W_matrix, u, y):
     pred_cov = jnp.tensordot(w_cov, _outer(sigmas_cond_prop - pred_mean, sigmas_cond_prop - pred_mean), axes=1) + R
     pred_cross = jnp.tensordot(w_cov, _outer(sigmas_cond - m, sigmas_cond_prop - pred_mean), axes=1)
 
-    # Saarka style
+    # Sarkka style
     pred_mean_2 = w_mean @ sigmas_cond_prop
     S = sigmas_cond_prop @ W_matrix @ sigmas_cond_prop.T + R
     C = sigmas_cond @ W_matrix @ sigmas_cond_prop.T
     K_new = psd_solve(S, C.T).T
-
 
     # Compute log-likelihood of observation
     ll = MVN(pred_mean, pred_cov).log_prob(y)
