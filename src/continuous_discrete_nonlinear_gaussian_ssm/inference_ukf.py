@@ -41,7 +41,7 @@ _compute_lambda = lambda x, y, z: x**2 * (y + z) - z
 
 def _compute_sigmas(m, P, n, lamb):
     """Compute (2n+1) sigma points used for inputs to  unscented transform.
-
+        These are independent of Continuous or Discrete solutions
     Args:
         m (D_hid,): mean.
         P (D_hid,D_hid): covariance.
@@ -58,9 +58,9 @@ def _compute_sigmas(m, P, n, lamb):
 
 
 def _compute_weights(n, alpha, beta, lamb):
-    # TODO: make sure weights are the same for CD version
-    """Compute weights used to compute predicted mean and covariance (Sarkka 5.77).
-
+    """Compute weights used to compute predicted mean and covariance.
+        These are different from Continuous and Discrete solutions
+        We here use 
     Args:
         n (int): number of state dimensions.
         alpha (float): hyperparameter that determines the spread of sigma points
@@ -74,6 +74,7 @@ def _compute_weights(n, alpha, beta, lamb):
 
     # These follow eq. 3.69-3.70 in Sarkka's thesis
     factor = 1 / (2 * (n + lamb))
+    # TODO: iurteaga needs to understand
     w_mean = jnp.concatenate((jnp.array([lamb / (n + lamb)]), jnp.ones(2 * n) * factor))
     w_cov = jnp.concatenate((jnp.array([lamb / (n + lamb) + (1 - alpha**2 + beta)]), jnp.ones(2 * n) * factor))
 
