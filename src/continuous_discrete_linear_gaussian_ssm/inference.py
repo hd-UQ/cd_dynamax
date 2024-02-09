@@ -72,7 +72,7 @@ def _get_params(x, dim, t):
         return x
 _zeros_if_none = lambda x, shape: x if x is not None else jnp.zeros(shape)
 
-# CD push-forwards are inferece specific
+# CD push-forwards are inference specific
 def compute_pushforward(
     params: ParamsCDLGSSM,
     t0: Float,
