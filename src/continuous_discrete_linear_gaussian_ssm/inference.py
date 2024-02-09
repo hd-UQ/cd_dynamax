@@ -93,6 +93,7 @@ def compute_pushforward(
         Qc_t = _get_params(params.dynamics.diff_cov, 2, t)
         L_t = _get_params(params.dynamics.diff_coeff, 2, t)
 
+        # TODO: Do we want a bias term here?
         dAdt = F_t @ A
 
         dQdt = F_t @ Q + Q @ F_t.T + L_t @ Qc_t @ L_t.T
