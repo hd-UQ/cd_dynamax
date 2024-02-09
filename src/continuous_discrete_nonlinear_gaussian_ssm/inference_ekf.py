@@ -6,6 +6,7 @@ from tensorflow_probability.substrates.jax.distributions import MultivariateNorm
 from jaxtyping import Array, Float
 from typing import List, Optional
 
+from jax.tree_util import tree_map
 from dynamax.utils.utils import psd_solve, symmetrize
 from dynamax.types import PRNGKey
 
@@ -88,7 +89,7 @@ def _condition_on(m, P, h, H, R, u, y, num_iter):
 
 
 def extended_kalman_filter(
-    params: ParamsNLGSSM,
+    params: ParamsCDNLGSSM,
     emissions: Float[Array, "ntime emission_dim"],
     t_emissions: Optional[Float[Array, "num_timesteps 1"]]=None,
     num_iter: int = 1,
@@ -190,7 +191,7 @@ def extended_kalman_filter(
 
 
 def iterated_extended_kalman_filter(
-    params: ParamsNLGSSM,
+    params: ParamsCDNLGSSM,
     emissions:  Float[Array, "ntime emission_dim"],
     t_emissions: Optional[Float[Array, "num_timesteps 1"]]=None,
     num_iter: int = 2,
@@ -215,7 +216,7 @@ def iterated_extended_kalman_filter(
 
 
 def extended_kalman_smoother(
-    params: ParamsNLGSSM,
+    params: ParamsCDNLGSSM,
     emissions:  Float[Array, "ntime emission_dim"],
     t_emissions: Optional[Float[Array, "num_timesteps 1"]]=None,
     filtered_posterior: Optional[PosteriorGSSMFiltered] = None,
@@ -314,11 +315,9 @@ def extended_kalman_smoother(
     )
 
 
-
-
 def extended_kalman_posterior_sample(
     key: PRNGKey,
-    params: ParamsNLGSSM,
+    params: ParamsCDNLGSSM,
     emissions:  Float[Array, "ntime emission_dim"],
     t_emissions: Optional[Float[Array, "num_timesteps 1"]]=None,
     inputs: Optional[Float[Array, "ntime input_dim"]] = None
@@ -401,9 +400,8 @@ def extended_kalman_posterior_sample(
     return states
 
 
-
 def iterated_extended_kalman_smoother(
-    params: ParamsNLGSSM,
+    params: ParamsCDNLGSSM,
     emissions:  Float[Array, "ntime emission_dim"],
     t_emissions: Optional[Float[Array, "num_timesteps 1"]]=None,
     num_iter: int = 2,
