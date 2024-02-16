@@ -15,6 +15,9 @@ from dynamax.utils.utils import ensure_array_has_batch_dim
 from continuous_discrete_linear_gaussian_ssm import ContDiscreteLinearGaussianSSM
 from continuous_discrete_nonlinear_gaussian_ssm import ContDiscreteNonlinearGaussianSSM
 
+STATE_DIM = 2
+EMISSION_DIM = 6
+
 print("************* Discrete LGSSM *************")
 # Discrete sampling
 NUM_TIMESTEPS = 100
@@ -24,7 +27,7 @@ key1, key2 = jr.split(jr.PRNGKey(0))
 
 # Model def
 inputs = None  # Not interested in inputs for now
-d_model = LinearGaussianSSM(state_dim=2, emission_dim=5)
+d_model = LinearGaussianSSM(state_dim=STATE_DIM, emission_dim=EMISSION_DIM)
 d_params, d_param_props = d_model.initialize(
     key1,
     # Hard coded parameters for tests to match
@@ -57,7 +60,7 @@ key1, key2 = jr.split(jr.PRNGKey(0))
 
 # Model def
 inputs = None  # Not interested in inputs for now
-cd_model = ContDiscreteLinearGaussianSSM(state_dim=2, emission_dim=5)
+cd_model = ContDiscreteLinearGaussianSSM(state_dim=STATE_DIM, emission_dim=EMISSION_DIM)
 cd_params, cd_param_props = cd_model.initialize(
     key1,
     dynamics_weights=-0.1 * jnp.eye(cd_model.state_dim),  # Hard coded here for tests to match with default in linear
@@ -212,7 +215,7 @@ key1, key2 = jr.split(jr.PRNGKey(0))
 
 # Model def
 inputs = None  # Not interested in inputs for now
-cdnl_model = ContDiscreteNonlinearGaussianSSM(state_dim=2, emission_dim=5)
+cdnl_model = ContDiscreteNonlinearGaussianSSM(state_dim=STATE_DIM, emission_dim=EMISSION_DIM)
 
 # TODO: check that these need input as second argument; also check about including bias terms.
 dynamics_function = lambda z,u: cd_params.dynamics.weights @ z
@@ -249,7 +252,7 @@ if not jnp.allclose(cdnl_emissions, cd_emissions):
 print("Running UKF with non-linear model and data from linear model")
 from continuous_discrete_nonlinear_gaussian_ssm import unscented_kalman_filter as cd_ukf
 
-cd_ukf_post = cd_ukf(cdnl_params, cd_emissions, t_emissions, inputs)
+cd_ukf_post = cd_ukf(cdnl_params, cd_emissions, t_emissions=t_emissions, inputs=inputs)
 
 # check that results in cd_ukf_post are similar to results from applying cd_kf (cd_filtered_posterior)
 if not jnp.allclose(cd_ukf_post.filtered_means, cd_filtered_posterior.filtered_means):
