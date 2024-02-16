@@ -17,3 +17,7 @@
     
 - We do not provide a parameter (point)-estimation via EM
 
+
+## TODO:
+
+- Note that even if the model definition seems to allow for time-varying emission weights, the implementation is not ready to do so (dynamax wasn't either)
