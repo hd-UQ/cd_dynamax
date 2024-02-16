@@ -8,6 +8,8 @@ from typing import NamedTuple, Optional, List
 from jax.tree_util import tree_map
 from dynamax.utils.utils import psd_solve
 
+import jax.debug as jdb
+
 # Our codebase
 from continuous_discrete_nonlinear_gaussian_ssm.models import ParamsCDNLGSSM
 from dynamax.linear_gaussian_ssm.inference import (
@@ -127,7 +129,9 @@ def _predict(
 
         # TODO: are these implemented correctly w/ _get_params?
         # possibly time-dependent parameters
-        f_t = _get_params(params.dynamics_function, 2, t)
+        # f_t = _get_params(params.dynamics_function, 2, t)
+        # TODO: reconsider when we want time-varying dynamics functions
+        f_t = params.dynamics_function
         Qc_t = _get_params(params.dynamics_covariance, 2, t)
         L_t = _get_params(params.dynamics_coefficients, 2, t)
 
@@ -137,13 +141,15 @@ def _predict(
 
         # TODO: add controls u
         # f_X_t = vmap(f_t, (0, 0), 0)(X_t, u)
-        f_X_t = vmap(f_t)(X_t)
+        # f_X_t = vmap(f_t)(X_t)
+        f_X_t = vmap(f_t, in_axes=(0, None))(X_t, None)
+        # dimensions of f_X_t are (2*state_dim+1, state_dim)
 
         # dmdt = f_X_t  w_mean
-        dmdt = f_X_t @ w_mean
+        dmdt = f_X_t.T @ w_mean
 
         # dPdt = f_x W X^T + X W f_x^T + L Qc L^T
-        dPdt = f_X_t @ W_matrix @ X_t.T + X_t @ W_matrix @ f_X_t.T + L_t @ Qc_t @ L_t.T
+        dPdt = f_X_t.T @ W_matrix @ X_t + X_t.T @ W_matrix @ f_X_t + L_t @ Qc_t @ L_t.T
 
         return (dmdt, dPdt)
 
@@ -180,8 +186,12 @@ def _condition_on(m, P, h, R, lamb, w_mean, w_cov, W_matrix, u, y):
     """
     n = len(m)
     # Form sigma points and propagate
+    # The shape of sigmas_cond is Sigma Points x State Dimensions
     sigmas_cond = _compute_sigmas(m, P, n, lamb)
     u_s = jnp.array([u] * len(sigmas_cond))
+
+    # Propagate sigma points through emission function
+    # The shape of sigmas_cond_prop is Sigma Points x Observation Dimensions
     sigmas_cond_prop = vmap(h, (0, 0), 0)(sigmas_cond, u_s)
 
     # Compute parameters needed to filter
@@ -193,8 +203,8 @@ def _condition_on(m, P, h, R, lamb, w_mean, w_cov, W_matrix, u, y):
 
     # Sarkka style
     pred_mean_2 = w_mean @ sigmas_cond_prop
-    S = sigmas_cond_prop @ W_matrix @ sigmas_cond_prop.T + R
-    C = sigmas_cond @ W_matrix @ sigmas_cond_prop.T
+    S = sigmas_cond_prop.T @ W_matrix @ sigmas_cond_prop + R
+    C = sigmas_cond.T @ W_matrix @ sigmas_cond_prop
     K_new = psd_solve(S, C.T).T
 
     # Compute log-likelihood of observation
@@ -205,12 +215,28 @@ def _condition_on(m, P, h, R, lamb, w_mean, w_cov, W_matrix, u, y):
     m_cond = m + K @ (y - pred_mean)
     P_cond = P - K @ pred_cov @ K.T
 
-    # TODO: check that K_new is the same as K
-    # TODO: check that pred_mean_2 is the same as pred_mean
-    # TODO: check that S is the same as pred_cov
-    # TODO: check that C is the same as pred_cross
-    # TODO: which code is faster/better?
-    
+    # assert using jax.lax.cond
+    K_is_close = jnp.allclose(K, K_new, atol=1e-5)
+    pred_mean_is_close = jnp.allclose(pred_mean, pred_mean_2, atol=1e-5)
+    S_is_close = jnp.allclose(pred_cov, S, atol=1e-5)
+    C_is_close = jnp.allclose(pred_cross, C, atol=1e-5)
+    lax.cond(K_is_close, lambda: jdb.print("K is close"), lambda: jdb.print("K is not close"))
+    lax.cond(pred_mean_is_close, lambda: jdb.print("pred_mean is close"), lambda: jdb.print("pred_mean is not close"))
+    lax.cond(S_is_close, lambda: jdb.print("S is close"), lambda: jdb.print("S is not close"))
+    lax.cond(C_is_close, lambda: jdb.print("C is close"), lambda: jdb.print("C is not close"))
+
+    jdb.breakpoint()
+
+    # # TODO: check that K_new is the same as K
+    # assert jnp.allclose(K, K_new, atol=1e-5)
+    # # TODO: check that pred_mean_2 is the same as pred_mean
+    # assert jnp.allclose(pred_mean, pred_mean_2, atol=1e-5)
+    # # TODO: check that S is the same as pred_cov
+    # assert jnp.allclose(pred_cov, S, atol=1e-5)
+    # # TODO: check that C is the same as pred_cross
+    # assert jnp.allclose(pred_cross, C, atol=1e-5)
+    # # TODO: which code is faster/better?
+
     return ll, m_cond, P_cond
 
 
@@ -281,6 +307,7 @@ def unscented_kalman_filter(
         u = inputs[t0_idx]
         y = emissions[t0_idx]
 
+        jdb.breakpoint()
         # Condition on this emission
         log_likelihood, filtered_mean, filtered_cov = _condition_on(
             pred_mean, pred_cov, h, R, lamb, w_mean, w_cov, W_matrix, u, y
