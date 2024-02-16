@@ -263,8 +263,8 @@ class ContDiscreteNonlinearGaussianSSM(SSM):
             emission_covariance = jnp.eye(self.emission_dim)
 
         params = ParamsCDNLGSSM(
-            initial_mean=0.2 * jnp.ones(self.state_dim),
-            initial_covariance=jnp.eye(self.state_dim),
+            initial_mean = jnp.zeros(self.state_dim),
+            initial_covariance = jnp.eye(self.state_dim),
             dynamics_function=dynamics_function,
             dynamics_function_jacobian=dynamics_function_jacobian,
             dynamics_coefficients=dynamics_diffusion_coefficient,
