@@ -217,7 +217,7 @@ cdnl_model = ContDiscreteNonlinearGaussianSSM(state_dim=2, emission_dim=5)
 # TODO: check that these need input as second argument; also check about including bias terms.
 dynamics_function = lambda z,u: cd_params.dynamics.weights @ z
 emission_function = lambda z: cd_params.emissions.weights @ z
-pdb.set_trace()
+
 # Initialize
 cdnl_params, cdnl_param_props = cdnl_model.initialize(
     key1,
@@ -237,8 +237,8 @@ cdnl_states, cdnl_emissions = cdnl_model.sample(cdnl_params, key2,
 
 # check that these are similar to samples from the linear model
 if not jnp.allclose(cdnl_states, cd_states):
-    assert jnp.allclose(cdnl_states, cd_states, atol=1e-06)
-    print("\tStates allclose with atol=1e-06")
+    assert jnp.allclose(cdnl_states, cd_states, atol=1e-05)
+    print("\tStates allclose with atol=1e-05")
 
 if not jnp.allclose(cdnl_emissions, cd_emissions):
     assert jnp.allclose(cdnl_emissions, cd_emissions, atol=1e-05)

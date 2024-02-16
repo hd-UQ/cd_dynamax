@@ -9,6 +9,8 @@ import jax.random as jr
 from jax.tree_util import tree_map
 from jaxtyping import Array, Float, PyTree
 
+import jax.debug as jdb
+
 from cdssm_utils import diffeqsolve
 
 from typing import NamedTuple, Tuple, Optional, Union, Callable
@@ -146,13 +148,17 @@ class ParamsCDNLSSM(NamedTuple):
 # CDNLGSSM push-forward is model-specific
 def compute_pushforward(
     x0: Float[Array, "state_dim"],
-    P0: Float[Array, "state_dim state_dim"],
     params: ParamsCDNLGSSM,
     t0: Float,
     t1: Float,
     inputs: Optional[Float[Array, "input_dim"]] = None,
 ) -> Tuple[Float[Array, "state_dim state_dim"], Float[Array, "state_dim state_dim"]]:
 
+    # Define P0: note this is only needed in dynamics_covariance_order>0
+    state_dim = x0.shape[0]
+    P0 = jnp.zeros((state_dim, state_dim))
+    
+    # Initialize
     y0 = (x0, P0)
     def rhs_all(t, y, args):
         x, P = y
@@ -172,10 +178,11 @@ def compute_pushforward(
         # Covariance evolution
         if params.dynamics_covariance_order=='zeroth':
             dPdt = L_t @ Qc_t @ L_t.T
+        
         elif params.dynamics_covariance_order=='first':
             # Evaluate the jacobian of the dynamics function at x and inputs
             F_t=params.dynamics_function_jacobian(x,inputs)
-
+            
             # follow Sarkka thesis eq. 3.153
             #raise ValueError('params.dynamics_covariance_order = {} not implemented yet'.format(params.dynamics_covariance_order))
             dPdt = F_t @ P + P @ F_t.T + L_t @ Qc_t @ L_t.T
@@ -254,13 +261,13 @@ class ContDiscreteNonlinearGaussianSSM(SSM):
         # Compute jacobian of dynamics function
         dynamics_function_jacobian = jacfwd(dynamics_function)
         if dynamics_diffusion_coefficient is None:
-            dynamics_diffusion_coefficient = jnp.eye(self.state_dim)
+            dynamics_diffusion_coefficient = 0.1 * jnp.eye(self.state_dim)
         if dynamics_diffusion_covariance is None:
-            dynamics_diffusion_covariance = jnp.eye(self.state_dim)
+            dynamics_diffusion_covariance = 0.1 * jnp.eye(self.state_dim)
         if emission_function is None:
             emission_function = lambda z, u: z
         if emission_covariance is None:
-            emission_covariance = jnp.eye(self.emission_dim)
+            emission_covariance = 0.1 * jnp.eye(self.emission_dim)
 
         params = ParamsCDNLGSSM(
             initial_mean = jnp.zeros(self.state_dim),
@@ -304,10 +311,8 @@ class ContDiscreteNonlinearGaussianSSM(SSM):
         inputs: Optional[Float[Array, "input_dim"]] = None
     ) -> tfd.Distribution:
         # Push-forward with assumed CDNLGSSM
-        pdb.set_trace()
         mean, covariance = compute_pushforward(
             state,
-            jnp.eye(self.state_dim), # Assume initial identity covariance
             params,
             t0, t1,
             inputs
@@ -315,6 +320,7 @@ class ContDiscreteNonlinearGaussianSSM(SSM):
         # TODO: for CDNLSSM we can not return a specific distribution,
         # unless we solve the Fokker-Planck equation for the model SDE
         # However, we should be able to sample from it!
+        
         return MVN(mean,covariance)
 
     def emission_distribution(
