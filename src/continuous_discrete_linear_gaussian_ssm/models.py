@@ -11,6 +11,8 @@ from tensorflow_probability.substrates.jax.distributions import MultivariateNorm
 from typing import Any, Optional, Tuple, Union
 from typing_extensions import Protocol
 
+import jax.debug as jdb
+
 # Our codebase
 from ssm_temissions import SSM
 from continuous_discrete_linear_gaussian_ssm.inference import cdlgssm_filter, cdlgssm_smoother, cdlgssm_posterior_sample
@@ -211,6 +213,7 @@ class ContDiscreteLinearGaussianSSM(SSM):
         mean = A @ state + params.dynamics.input_weights @ inputs
         if self.has_dynamics_bias:
             mean += params.dynamics.bias
+        
         return MVN(mean, Q)
         
     def emission_distribution(
