@@ -1,4 +1,4 @@
-# Continuous Discrete Nonlinear Gaussian State Space Models
+# Continuous Discrete Linear Gaussian State Space Models
 
 - Implementation of the Continuous-discrete NonLinear Gaussian State Space Models
     - We provide a model class definition
@@ -18,4 +18,6 @@
 - We do not provide a parameter (point)-estimation via EM
     - The m-step requires MLE for continuous time parameters
 
+## TODO:
 
+- Note that even if the model definition seems to allow for time-varying emission weights, the implementation is not ready to do so (dynamax wasn't either)

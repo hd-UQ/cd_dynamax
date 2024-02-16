@@ -9,6 +9,7 @@ import jax.random as jr
 sys.path.append("..")
 from dynamax.linear_gaussian_ssm import LinearGaussianSSM
 from dynamax.utils.utils import monotonically_increasing
+from dynamax.utils.utils import ensure_array_has_batch_dim
 
 # Our codebase
 from continuous_discrete_linear_gaussian_ssm import ContDiscreteLinearGaussianSSM
@@ -214,20 +215,24 @@ inputs = None  # Not interested in inputs for now
 cdnl_model = ContDiscreteNonlinearGaussianSSM(state_dim=2, emission_dim=5)
 
 # TODO: check that these need input as second argument; also check about including bias terms.
-dynamics_function = lambda z: cd_params.dynamics.weights @ z
+dynamics_function = lambda z,u: cd_params.dynamics.weights @ z
 emission_function = lambda z: cd_params.emissions.weights @ z
+pdb.set_trace()
+# Initialize
 cdnl_params, cdnl_param_props = cdnl_model.initialize(
     key1,
     dynamics_function=dynamics_function,
     dynamics_diffusion_coefficient=cd_params.dynamics.diff_coeff,
     dynamics_diffusion_covariance=cd_params.dynamics.diff_cov,
+    dynamics_covariance_order = 'first',
     emission_function=emission_function,
 )
 
 # Simulate from continuous model
 print("Simulating in continuous-discrete time")
 cdnl_states, cdnl_emissions = cdnl_model.sample(cdnl_params, key2, 
-                                                t_emissions=t_emissions, num_timesteps=NUM_TIMESTEPS,
+                                                t_emissions=t_emissions,
+                                                num_timesteps=NUM_TIMESTEPS,
                                                 inputs=inputs)
 
 # check that these are similar to samples from the linear model

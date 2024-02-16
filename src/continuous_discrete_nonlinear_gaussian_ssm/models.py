@@ -2,6 +2,7 @@ import pdb
 from fastprogress.fastprogress import progress_bar
 from functools import partial
 from jax import jit
+from jax import jacfwd
 from jax import vmap
 import jax.numpy as jnp
 import jax.random as jr
@@ -27,14 +28,19 @@ tfb = tfp.bijectors
 from ssm_temissions import SSM
 
 FnStateToState = Callable[ [Float[Array, "state_dim"]], Float[Array, "state_dim"]]
+FnStateToStateByState = Callable[ [Float[Array, "state_dim"]], Float[Array, "state_dim state_dim"]]
 FnStateAndInputToState = Callable[ [Float[Array, "state_dim"], Float[Array, "input_dim"]], Float[Array, "state_dim"]]
+FnStateAndInputToStateByState = Callable[ [Float[Array, "state_dim"], Float[Array, "input_dim"]], Float[Array, "state_dim state_dim"]]
 FnStateToEmission = Callable[ [Float[Array, "state_dim"]], Float[Array, "emission_dim"]]
 FnStateAndInputToEmission = Callable[ [Float[Array, "state_dim"], Float[Array, "input_dim"] ], Float[Array, "emission_dim"]]
 
 def _get_params(x, dim, t):
-    # TODO: This function is defined in many places...should be a utils function
+    # TODO: This function is defined in many places...should be a utils function   
     if callable(x):
-        return x(t)
+        try:
+            return x(t)
+        except:
+            return partial(x,t=t)
     elif x.ndim == dim + 1:
         return x[t]
     else:
@@ -78,6 +84,7 @@ class ParamsCDNLGSSM(NamedTuple):
     initial_covariance: Float[Array, "state_dim state_dim"]
     # f is the deterministic, nonlinear RHS of the state's mean evolution
     dynamics_function: Union[FnStateToState, FnStateAndInputToState]
+    dynamics_function_jacobian: Union[FnStateToStateByState, FnStateAndInputToStateByState]
     # L is the diffusion coefficient matrix of the state's covariance process
     dynamics_coefficients: Float[Array, "state_dim state_dim"]
     # Q is the covariance of the state noise process
@@ -126,6 +133,7 @@ class ParamsCDNLSSM(NamedTuple):
     initial_covariance: Float[Array, "state_dim state_dim"]
     # f as in Sarkka's Equation 3.151
     dynamics_function: Union[FnStateToState, FnStateAndInputToState]
+    dynamics_function_jacobian: Union[FnStateToStateByState, FnStateAndInputToStateByState]
     # L in Sarkka's Equation 3.151
     dynamics_coefficients: Float[Array, "state_dim state_dim"]
     # Q in Sarkka's Equation 3.151
@@ -146,25 +154,31 @@ def compute_pushforward(
 ) -> Tuple[Float[Array, "state_dim state_dim"], Float[Array, "state_dim state_dim"]]:
 
     y0 = (x0, P0)
-
     def rhs_all(t, y, args):
         x, P = y
-
+        
         # possibly time-dependent functions
-        f_t = _get_params(params.dynamics_function, 2, t)
+        # TODO: figure out how to use get_params functionality for time-varying functions
+        #f_t = _get_params(params.dynamics_function, 2, t)
+        f_t = params.dynamics_function
         Qc_t = _get_params(params.dynamics_covariance, 2, t)
         L_t = _get_params(params.dynamics_coefficients, 2, t)
 
         # Mean evolution
-        dxdt = vmap(f_t)(x, inputs)
+        # TODO: figure out how to vectorize f_ts
+        #dxdt = vmap(f_t)(x, inputs)
+        dxdt = f_t(x, inputs)
+
         # Covariance evolution
         if params.dynamics_covariance_order=='zeroth':
             dPdt = L_t @ Qc_t @ L_t.T
         elif params.dynamics_covariance_order=='first':
+            # Evaluate the jacobian of the dynamics function at x and inputs
+            F_t=params.dynamics_function_jacobian(x,inputs)
+
             # follow Sarkka thesis eq. 3.153
-            raise ValueError('params.dynamics_covariance_order = {} not implemented yet'.format(params.dynamics_covariance_order))
-            # TODO: compute F_t=Jacobian of f at x
-            dPdt = F_t @ P + P @ F.T + L_t @ Qc_t @ L_t.T
+            #raise ValueError('params.dynamics_covariance_order = {} not implemented yet'.format(params.dynamics_covariance_order))
+            dPdt = F_t @ P + P @ F_t.T + L_t @ Qc_t @ L_t.T
         else:
             raise ValueError('params.dynamics_covariance_order = {} not implemented yet'.format(params.dynamics_covariance_order))
 
@@ -237,6 +251,8 @@ class ContDiscreteNonlinearGaussianSSM(SSM):
 
         if dynamics_function is None:
             dynamics_function = lambda z, u: -z
+        # Compute jacobian of dynamics function
+        dynamics_function_jacobian = jacfwd(dynamics_function)
         if dynamics_diffusion_coefficient is None:
             dynamics_diffusion_coefficient = jnp.eye(self.state_dim)
         if dynamics_diffusion_covariance is None:
@@ -250,6 +266,7 @@ class ContDiscreteNonlinearGaussianSSM(SSM):
             initial_mean=0.2 * jnp.ones(self.state_dim),
             initial_covariance=jnp.eye(self.state_dim),
             dynamics_function=dynamics_function,
+            dynamics_function_jacobian=dynamics_function_jacobian,
             dynamics_coefficients=dynamics_diffusion_coefficient,
             dynamics_covariance=dynamics_diffusion_covariance,
             dynamics_covariance_order=dynamics_covariance_order,
@@ -261,6 +278,7 @@ class ContDiscreteNonlinearGaussianSSM(SSM):
             initial_mean=ParameterProperties(),
             initial_covariance=ParameterProperties(constrainer=RealToPSDBijector()),
             dynamics_function=ParameterProperties(),
+            dynamics_function_jacobian=ParameterProperties(),
             dynamics_coefficients=ParameterProperties(constrainer=RealToPSDBijector()),
             dynamics_covariance=ParameterProperties(constrainer=RealToPSDBijector()),
             dynamics_covariance_order=dynamics_covariance_order,
@@ -281,11 +299,12 @@ class ContDiscreteNonlinearGaussianSSM(SSM):
         self,
         params: ParamsCDNLGSSM,
         state: Float[Array, "state_dim"],
-        t0: Optional[Float]=None,
-        t1: Optional[Float]=None,
+        t0: Optional[Float] = None,
+        t1: Optional[Float] = None,
         inputs: Optional[Float[Array, "input_dim"]] = None
     ) -> tfd.Distribution:
         # Push-forward with assumed CDNLGSSM
+        pdb.set_trace()
         mean, covariance = compute_pushforward(
             state,
             jnp.eye(self.state_dim), # Assume initial identity covariance
