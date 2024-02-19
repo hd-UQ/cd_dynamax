@@ -221,8 +221,36 @@ cdnl_model = ContDiscreteNonlinearGaussianSSM(state_dim=STATE_DIM, emission_dim=
 dynamics_function = lambda z,u: cd_params.dynamics.weights @ z
 emission_function = lambda z: cd_params.emissions.weights @ z
 
-# Initialize
-cdnl_params, cdnl_param_props = cdnl_model.initialize(
+# Initialize with first order SDE approximation
+cdnl_params_1, cdnl_param_props_1 = cdnl_model.initialize(
+    key1,
+    dynamics_function=dynamics_function,
+    dynamics_diffusion_coefficient=cd_params.dynamics.diff_coeff,
+    dynamics_diffusion_covariance=cd_params.dynamics.diff_cov,
+    dynamics_approx = 'first',
+    emission_function=emission_function,
+)
+
+# Simulate from continuous model
+print("Simulating first order CDNLGSSM in continuous-discrete time")
+cdnl_states_1, cdnl_emissions_1 = cdnl_model.sample(
+                                                cdnl_params_1,
+                                                key2, 
+                                                t_emissions=t_emissions,
+                                                num_timesteps=NUM_TIMESTEPS,
+                                                inputs=inputs)
+
+# check that these are similar to samples from the linear model
+if not jnp.allclose(cdnl_states_1, cd_states):
+    assert jnp.allclose(cdnl_states_1, cd_states, atol=1e-05)
+    print("\tStates allclose with atol=1e-05")
+
+if not jnp.allclose(cdnl_emissions_1, cd_emissions):
+    assert jnp.allclose(cdnl_emissions_1, cd_emissions, atol=1e-05)
+    print("\tEmissions allclose with atol=1e-05")
+
+# Initialize with second order SDE approximation
+cdnl_params_2, cdnl_param_props_2 = cdnl_model.initialize(
     key1,
     dynamics_function=dynamics_function,
     dynamics_diffusion_coefficient=cd_params.dynamics.diff_coeff,
@@ -232,22 +260,117 @@ cdnl_params, cdnl_param_props = cdnl_model.initialize(
 )
 
 # Simulate from continuous model
-print("Simulating in continuous-discrete time")
-cdnl_states, cdnl_emissions = cdnl_model.sample(cdnl_params, key2, 
+print("Simulating second order CDNLGSSM in continuous-discrete time")
+cdnl_states_2, cdnl_emissions_2 = cdnl_model.sample(
+                                                cdnl_params_2,
+                                                key2, 
                                                 t_emissions=t_emissions,
                                                 num_timesteps=NUM_TIMESTEPS,
                                                 inputs=inputs)
 
 # check that these are similar to samples from the linear model
-if not jnp.allclose(cdnl_states, cd_states):
-    assert jnp.allclose(cdnl_states, cd_states, atol=1e-05)
+if not jnp.allclose(cdnl_states_2, cd_states):
+    assert jnp.allclose(cdnl_states_2, cd_states, atol=1e-05)
     print("\tStates allclose with atol=1e-05")
 
-if not jnp.allclose(cdnl_emissions, cd_emissions):
-    assert jnp.allclose(cdnl_emissions, cd_emissions, atol=1e-05)
+if not jnp.allclose(cdnl_emissions_2, cd_emissions):
+    assert jnp.allclose(cdnl_emissions_2, cd_emissions, atol=1e-05)
     print("\tEmissions allclose with atol=1e-05")
-
+    
 pdb.set_trace()
+######## Continuous-discrete EKF
+from continuous_discrete_nonlinear_gaussian_ssm import extended_kalman_filter as cd_ekf
+from continuous_discrete_nonlinear_gaussian_ssm import EKFHyperParams
+
+# Run First order ekf with the non-linear model and data from the first-order CDNLGSSM model
+print("Running first-order EKF with non-linear model and data from first-order CDNLGSSM model")
+
+cd_ekf_11_post = cd_ekf(
+        cdnl_params_1,
+        cdnl_emissions_1,
+        hyperparams = EKFHyperParams(state_order='first', emission_order='first'),
+        t_emissions=t_emissions,
+        inputs=inputs
+    )
+
+# check that results in cd_ekf_1_post are similar to results from applying cd_kf (cd_filtered_posterior)
+if not jnp.allclose(cd_ekf_11_post.filtered_means, cd_filtered_posterior.filtered_means):
+    assert jnp.allclose(cd_ekf_11_post.filtered_means, cd_filtered_posterior.filtered_means, atol=1e-05)
+    print("\tFiltered means allclose with atol=1e-05")
+
+if not jnp.allclose(cd_ekf_11_post.filtered_covariances, cd_filtered_posterior.filtered_covariances):
+    assert jnp.allclose(cd_ekf_11_post.filtered_covariances, cd_filtered_posterior.filtered_covariances, atol=1e-06)
+    print("\tFiltered covariances allclose with atol=1e-06")
+
+print("All first-order EKF tests and first-order CDNLGSSM model passed!")
+
+# Run Second order ekf with the non-linear model and data from the first-order CDNLGSSM model
+print("Running second-order EKF with non-linear model and data from first-order CDNLGSSM model")
+
+cd_ekf_21_post = cd_ekf(
+        cdnl_params_1,
+        cdnl_emissions_1,
+        hyperparams = EKFHyperParams(state_order='second', emission_order='first'),
+        t_emissions=t_emissions,
+        inputs=inputs
+    )
+
+# check that results in cd_ekf_21_post are similar to results from applying cd_kf (cd_filtered_posterior)
+if not jnp.allclose(cd_ekf_21_post.filtered_means, cd_filtered_posterior.filtered_means):
+    assert jnp.allclose(cd_ekf_21_post.filtered_means, cd_filtered_posterior.filtered_means, atol=1e-05)
+    print("\tFiltered means allclose with atol=1e-05")
+
+if not jnp.allclose(cd_ekf_21_post.filtered_covariances, cd_filtered_posterior.filtered_covariances):
+    assert jnp.allclose(cd_ekf_21_post.filtered_covariances, cd_filtered_posterior.filtered_covariances, atol=1e-06)
+    print("\tFiltered covariances allclose with atol=1e-06")
+
+print("All second-order EKF tests and first-order CDNLGSSM model passed!")
+
+# Run First order ekf with the non-linear model and data from the second-order CDNLGSSM model
+print("Running first-order EKF with non-linear model and data from second-order CDNLGSSM model")
+
+cd_ekf_12_post = cd_ekf(
+        cdnl_params_2,
+        cdnl_emissions_2,
+        hyperparams = EKFHyperParams(state_order='first', emission_order='first'),
+        t_emissions=t_emissions,
+        inputs=inputs
+    )
+
+# check that results in cd_ekf_12_post are similar to results from applying cd_kf (cd_filtered_posterior)
+if not jnp.allclose(cd_ekf_12_post.filtered_means, cd_filtered_posterior.filtered_means):
+    assert jnp.allclose(cd_ekf_12_post.filtered_means, cd_filtered_posterior.filtered_means, atol=1e-05)
+    print("\tFiltered means allclose with atol=1e-05")
+
+if not jnp.allclose(cd_ekf_12_post.filtered_covariances, cd_filtered_posterior.filtered_covariances):
+    assert jnp.allclose(cd_ekf_12_post.filtered_covariances, cd_filtered_posterior.filtered_covariances, atol=1e-06)
+    print("\tFiltered covariances allclose with atol=1e-06")
+
+print("All first-order EKF tests and second-order CDNLGSSM model passed!")
+
+# Run Second order ekf with the non-linear model and data from the second-order CDNLGSSM model
+print("Running second-order EKF with non-linear model and data from second-order CDNLGSSM model")
+
+cd_ekf_22_post = cd_ekf(
+        cdnl_params_2,
+        cdnl_emissions_2,
+        hyperparams = EKFHyperParams(state_order='second', emission_order='first'),
+        t_emissions=t_emissions,
+        inputs=inputs
+    )
+
+# check that results in cd_ekf_22_post are similar to results from applying cd_kf (cd_filtered_posterior)
+if not jnp.allclose(cd_ekf_22_post.filtered_means, cd_filtered_posterior.filtered_means):
+    assert jnp.allclose(cd_ekf_22_post.filtered_means, cd_filtered_posterior.filtered_means, atol=1e-05)
+    print("\tFiltered means allclose with atol=1e-05")
+
+if not jnp.allclose(cd_ekf_22_post.filtered_covariances, cd_filtered_posterior.filtered_covariances):
+    assert jnp.allclose(cd_ekf_22_post.filtered_covariances, cd_filtered_posterior.filtered_covariances, atol=1e-06)
+    print("\tFiltered covariances allclose with atol=1e-06")
+
+print("All second-order EKF tests and second-order CDNLGSSM model passed!")
+pdb.set_trace()
+
 # Now, run ukf with the non-linear model and data from the linear model
 print("Running UKF with non-linear model and data from linear model")
 from continuous_discrete_nonlinear_gaussian_ssm import unscented_kalman_filter as cd_ukf

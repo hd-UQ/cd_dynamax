@@ -152,16 +152,13 @@ class ParamsCDNLSSM(NamedTuple):
 # CDNLGSSM push-forward is model-specific
 def compute_pushforward(
     x0: Float[Array, "state_dim"],
+    P0: Float[Array, "state_dim state_dim"],
     params: ParamsCDNLGSSM,
     t0: Float,
     t1: Float,
     inputs: Optional[Float[Array, "input_dim"]] = None,
 ) -> Tuple[Float[Array, "state_dim state_dim"], Float[Array, "state_dim state_dim"]]:
 
-    # Define P0: note this is only needed in dynamics_approx>0
-    state_dim = x0.shape[0]
-    P0 = jnp.zeros((state_dim, state_dim))
-    
     # Initialize
     y0 = (x0, P0)
     def rhs_all(t, y, args):
@@ -339,10 +336,11 @@ class ContDiscreteNonlinearGaussianSSM(SSM):
     ) -> tfd.Distribution:
         # Push-forward with assumed CDNLGSSM
         mean, covariance = compute_pushforward(
-            state,
-            params,
-            t0, t1,
-            inputs
+            x0 = state,
+            P0 = jnp.zeros((state.shape[-1], state.shape[-1])), # TODO: check that last dimension is always state-dimension, even when vectorized
+            params=params,
+            t0=t0, t1=t1,
+            inputs=inputs,
         )
         # TODO: for CDNLSSM we can not return a specific distribution,
         # unless we solve the Fokker-Planck equation for the model SDE
