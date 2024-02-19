@@ -2,7 +2,7 @@ import pdb
 from fastprogress.fastprogress import progress_bar
 from functools import partial
 from jax import jit
-from jax import jacfwd
+from jax import jacfwd, jacrev
 from jax import vmap
 import jax.numpy as jnp
 import jax.random as jr
@@ -31,8 +31,10 @@ from ssm_temissions import SSM
 
 FnStateToState = Callable[ [Float[Array, "state_dim"]], Float[Array, "state_dim"]]
 FnStateToStateByState = Callable[ [Float[Array, "state_dim"]], Float[Array, "state_dim state_dim"]]
+FnStateToStateByStateByState = Callable[ [Float[Array, "state_dim"]], Float[Array, "state_dim state_dim state_dim"]]
 FnStateAndInputToState = Callable[ [Float[Array, "state_dim"], Float[Array, "input_dim"]], Float[Array, "state_dim"]]
 FnStateAndInputToStateByState = Callable[ [Float[Array, "state_dim"], Float[Array, "input_dim"]], Float[Array, "state_dim state_dim"]]
+FnStateAndInputToStateByStateByState = Callable[ [Float[Array, "state_dim"], Float[Array, "input_dim"]], Float[Array, "state_dim state_dim state_dim"]]
 FnStateToEmission = Callable[ [Float[Array, "state_dim"]], Float[Array, "emission_dim"]]
 FnStateAndInputToEmission = Callable[ [Float[Array, "state_dim"], Float[Array, "input_dim"] ], Float[Array, "emission_dim"]]
 
@@ -47,6 +49,7 @@ def _get_params(x, dim, t):
         return x[t]
     else:
         return x
+
 class ParamsCDNLGSSM(NamedTuple):
     """Parameters for a CDNLGSSM model.
 
@@ -70,7 +73,7 @@ class ParamsCDNLGSSM(NamedTuple):
     :param dynamics_function: $f$
     :param dynamics_coefficients: $L$
     :param dynamics_covariance: $Q$
-    :param dynamics_covariance_order: 'zeroth' or 'first'
+    :param dynamics_approx: 'zeroth' or 'first'
     :param emissions_function: $h$
     :param emissions_covariance: $R$
 
@@ -87,13 +90,13 @@ class ParamsCDNLGSSM(NamedTuple):
     # f is the deterministic, nonlinear RHS of the state's mean evolution
     dynamics_function: Union[FnStateToState, FnStateAndInputToState]
     dynamics_function_jacobian: Union[FnStateToStateByState, FnStateAndInputToStateByState]
+    dynamics_function_hessian: Union[FnStateToStateByStateByState, FnStateAndInputToStateByStateByState]
     # L is the diffusion coefficient matrix of the state's covariance process
     dynamics_coefficients: Float[Array, "state_dim state_dim"]
     # Q is the covariance of the state noise process
     dynamics_covariance: Float[Array, "state_dim state_dim"]
-    # Covariance evolution type
-    # TODO: check this works
-    dynamics_covariance_order: str
+    # Dynamics SDE approximation type
+    dynamics_approx: str
     # Emission distribution h
     emission_function: Union[FnStateToEmission, FnStateAndInputToEmission]
     emission_covariance: Float[Array, "emission_dim emission_dim"]
@@ -136,6 +139,7 @@ class ParamsCDNLSSM(NamedTuple):
     # f as in Sarkka's Equation 3.151
     dynamics_function: Union[FnStateToState, FnStateAndInputToState]
     dynamics_function_jacobian: Union[FnStateToStateByState, FnStateAndInputToStateByState]
+    dynamics_function_hessian: Union[FnStateToStateByStateByState, FnStateAndInputToStateByStateByState]
     # L in Sarkka's Equation 3.151
     dynamics_coefficients: Float[Array, "state_dim state_dim"]
     # Q in Sarkka's Equation 3.151
@@ -154,7 +158,7 @@ def compute_pushforward(
     inputs: Optional[Float[Array, "input_dim"]] = None,
 ) -> Tuple[Float[Array, "state_dim state_dim"], Float[Array, "state_dim state_dim"]]:
 
-    # Define P0: note this is only needed in dynamics_covariance_order>0
+    # Define P0: note this is only needed in dynamics_approx>0
     state_dim = x0.shape[0]
     P0 = jnp.zeros((state_dim, state_dim))
     
@@ -170,24 +174,40 @@ def compute_pushforward(
         Qc_t = _get_params(params.dynamics_covariance, 2, t)
         L_t = _get_params(params.dynamics_coefficients, 2, t)
 
-        # Mean evolution
-        # TODO: figure out how to vectorize f_ts
-        #dxdt = vmap(f_t)(x, inputs)
-        dxdt = f_t(x, inputs)
-
-        # Covariance evolution
-        if params.dynamics_covariance_order=='zeroth':
+       
+        # Different SDE approximations
+        if params.dynamics_approx=='zeroth':
+            # Mean evolution
+            # TODO: figure out how to vectorize via vmap
+            dxdt = f_t(x, inputs)            
+            # Covariance evolution
             dPdt = L_t @ Qc_t @ L_t.T
         
-        elif params.dynamics_covariance_order=='first':
+        # following Sarkka thesis eq. 3.153
+        elif params.dynamics_approx=='first':
             # Evaluate the jacobian of the dynamics function at x and inputs
             F_t=params.dynamics_function_jacobian(x,inputs)
             
-            # follow Sarkka thesis eq. 3.153
-            #raise ValueError('params.dynamics_covariance_order = {} not implemented yet'.format(params.dynamics_covariance_order))
+            # Mean evolution
+            # TODO: figure out how to vectorize via vmap
+            dxdt = f_t(x, inputs)
+            # Covariance evolution
+            dPdt = F_t @ P + P @ F_t.T + L_t @ Qc_t @ L_t.T
+        
+        # follow Sarkka thesis eq. 3.155
+        elif params.dynamics_approx=='second':
+            # Evaluate the jacobian of the dynamics function at x and inputs
+            F_t=params.dynamics_function_jacobian(x,inputs)
+            # Evaluate the Hessian of the dynamics function at x and inputs
+            H_t=params.dynamics_function_hessian(x,inputs)
+        
+            # Mean evolution
+            # TODO: figure out how to vectorize via vmap
+            dxdt = f_t(x, inputs) + 0.5*jnp.trace(H_t @ P)
+            # Covariance evolution
             dPdt = F_t @ P + P @ F_t.T + L_t @ Qc_t @ L_t.T
         else:
-            raise ValueError('params.dynamics_covariance_order = {} not implemented yet'.format(params.dynamics_covariance_order))
+            raise ValueError('params.dynamics_approx = {} not implemented yet'.format(params.dynamics_approx))
 
         return (dxdt, dPdt)
     
@@ -251,15 +271,20 @@ class ContDiscreteNonlinearGaussianSSM(SSM):
         dynamics_function: Optional[Union[FnStateToState, FnStateAndInputToState]] = None,
         dynamics_diffusion_coefficient: Optional[Float[Array, "state_dim state_dim"]] = None,
         dynamics_diffusion_covariance: Optional[Float[Array, "state_dim state_dim"]] = None,
-        dynamics_covariance_order: Optional[str] = 'zeroth',
+        dynamics_approx: Optional[str] = 'zeroth',
         emission_function: Optional[Union[FnStateToEmission, FnStateAndInputToEmission]] = None,
         emission_covariance: Optional[Float[Array, "emission_dim emission_dim"]] = None
     ) -> Tuple[ParamsCDNLGSSM, PyTree]:
 
         if dynamics_function is None:
             dynamics_function = lambda z, u: -z
-        # Compute jacobian of dynamics function
+        
+        # TODO: double check these compute jacobian and hessian with respect to states only
+        # Compute jacobian and Hesisan of dynamics function (computed here once, for computational benefits)
         dynamics_function_jacobian = jacfwd(dynamics_function)
+        # Based on these recommendationshttps://jax.readthedocs.io/en/latest/notebooks/autodiff_cookbook.html#jacobians-and-hessians-using-jacfwd-and-jacrev
+        dynamics_function_hessian = jacfwd(jacrev(dynamics_function))
+        
         if dynamics_diffusion_coefficient is None:
             dynamics_diffusion_coefficient = 0.1 * jnp.eye(self.state_dim)
         if dynamics_diffusion_covariance is None:
@@ -274,9 +299,10 @@ class ContDiscreteNonlinearGaussianSSM(SSM):
             initial_covariance = jnp.eye(self.state_dim),
             dynamics_function=dynamics_function,
             dynamics_function_jacobian=dynamics_function_jacobian,
+            dynamics_function_hessian=dynamics_function_hessian,
             dynamics_coefficients=dynamics_diffusion_coefficient,
             dynamics_covariance=dynamics_diffusion_covariance,
-            dynamics_covariance_order=dynamics_covariance_order,
+            dynamics_approx=dynamics_approx,
             emission_function=emission_function,
             emission_covariance=emission_covariance,
         )
@@ -286,9 +312,10 @@ class ContDiscreteNonlinearGaussianSSM(SSM):
             initial_covariance=ParameterProperties(constrainer=RealToPSDBijector()),
             dynamics_function=ParameterProperties(),
             dynamics_function_jacobian=ParameterProperties(),
+            dynamics_function_hessian=ParameterProperties(),
             dynamics_coefficients=ParameterProperties(constrainer=RealToPSDBijector()),
             dynamics_covariance=ParameterProperties(constrainer=RealToPSDBijector()),
-            dynamics_covariance_order=dynamics_covariance_order,
+            dynamics_approx=dynamics_approx,
             emission_function=ParameterProperties(),
             emission_covariance=ParameterProperties(constrainer=RealToPSDBijector()),
         )

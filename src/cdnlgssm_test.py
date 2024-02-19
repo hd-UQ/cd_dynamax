@@ -227,7 +227,7 @@ cdnl_params, cdnl_param_props = cdnl_model.initialize(
     dynamics_function=dynamics_function,
     dynamics_diffusion_coefficient=cd_params.dynamics.diff_coeff,
     dynamics_diffusion_covariance=cd_params.dynamics.diff_cov,
-    dynamics_covariance_order = 'first',
+    dynamics_approx = 'second',
     emission_function=emission_function,
 )
 
@@ -247,7 +247,7 @@ if not jnp.allclose(cdnl_emissions, cd_emissions):
     assert jnp.allclose(cdnl_emissions, cd_emissions, atol=1e-05)
     print("\tEmissions allclose with atol=1e-05")
 
-
+pdb.set_trace()
 # Now, run ukf with the non-linear model and data from the linear model
 print("Running UKF with non-linear model and data from linear model")
 from continuous_discrete_nonlinear_gaussian_ssm import unscented_kalman_filter as cd_ukf
