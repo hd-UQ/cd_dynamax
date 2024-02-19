@@ -157,7 +157,9 @@ def _predict(
     y0 = (m, P)
     sol = diffeqsolve(rhs_all, t0=t0, t1=t1, y0=y0)
     m_pred, P_pred = sol[0][-1], sol[1][-1]
-
+    jdb.print('m_pred={}', m_pred)
+    jdb.print('P_pred={}', P_pred)
+    jdb.breakpoint()
     # According to Sarkka's algo 3.24, we only need to return m_pred and P_pred (not P_cross) in continuous-discrete
     # return m_pred, P_pred, P_cross
     return m_pred, P_pred
@@ -224,8 +226,6 @@ def _condition_on(m, P, h, R, lamb, w_mean, w_cov, W_matrix, u, y):
     lax.cond(pred_mean_is_close, lambda: jdb.print("pred_mean is close"), lambda: jdb.print("pred_mean is not close"))
     lax.cond(S_is_close, lambda: jdb.print("S is close"), lambda: jdb.print("S is not close"))
     lax.cond(C_is_close, lambda: jdb.print("C is close"), lambda: jdb.print("C is not close"))
-
-    jdb.breakpoint()
 
     # # TODO: check that K_new is the same as K
     # assert jnp.allclose(K, K_new, atol=1e-5)
@@ -307,7 +307,6 @@ def unscented_kalman_filter(
         u = inputs[t0_idx]
         y = emissions[t0_idx]
 
-        jdb.breakpoint()
         # Condition on this emission
         log_likelihood, filtered_mean, filtered_cov = _condition_on(
             pred_mean, pred_cov, h, R, lamb, w_mean, w_cov, W_matrix, u, y
@@ -318,8 +317,10 @@ def unscented_kalman_filter(
 
         # Predict the next state, based on UKF predict
         # TODO: Make sure we return at least these two!
+        jdb.breakpoint()
         pred_mean, pred_cov = _predict(filtered_mean, filtered_cov, params, t0, t1, lamb, w_mean, w_cov, W_matrix, u)
 
+        jdb.breakpoint()
         # Build carry and output states
         carry = (ll, pred_mean, pred_cov)
         outputs = {
