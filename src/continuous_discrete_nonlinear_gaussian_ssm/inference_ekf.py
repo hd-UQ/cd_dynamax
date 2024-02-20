@@ -1,7 +1,7 @@
 import jax.numpy as jnp
 import jax.random as jr
 from jax import lax
-from jax import jacfwd
+from jax import jacfwd,jacrev
 from tensorflow_probability.substrates.jax.distributions import MultivariateNormalFullCovariance as MVN
 from jaxtyping import Array, Float
 from typing import NamedTuple, List, Optional
@@ -11,10 +11,12 @@ from dynamax.utils.utils import psd_solve, symmetrize
 from dynamax.types import PRNGKey
 
 # Dynamax shared code
-from dynamax.linear_gaussian_ssm.inference import ParamsLGSSMInitial, ParamsLGSSMEmissions, PosteriorGSSMFiltered, PosteriorGSSMSmoothed
+from dynamax.linear_gaussian_ssm.inference import PosteriorGSSMFiltered, PosteriorGSSMSmoothed
 
 # Our codebase
+# Param definition
 from continuous_discrete_nonlinear_gaussian_ssm.models import ParamsCDNLGSSM
+# Diffrax based diff-eq solver
 from cdssm_utils import diffeqsolve
 
 # Helper functions
@@ -66,21 +68,20 @@ def _predict(
     def rhs_all(t, y, args):
         x, P = y
         
-        # possibly time-dependent functions
-        # TODO: figure out how to use get_params functionality for time-varying functions
-        #f_t = _get_params(params.dynamics_function, 2, t)
-        f_t = params.dynamics_function
-        Qc_t = _get_params(params.dynamics_covariance, 2, t)
-        L_t = _get_params(params.dynamics_coefficients, 2, t)
+        # TODO: possibly time- and parameter-dependent functions
+        f_t=params.dynamics.drift_function
+        
+        # Get time-varying parameters
+        Qc_t = _get_params(params.dynamics.diffusion_cov, 2, t)
+        L_t = _get_params(params.dynamics.diffusion_coefficient, 2, t)
 
        
         # following Sarkka thesis eq. 3.158
         if hyperparams.state_order=='first':
             # Evaluate the jacobian of the dynamics function at x and inputs
-            F_t=params.dynamics_function_jacobian(x,u)
+            F_t=jacfwd(f_t)(x,u)
             
             # Mean evolution
-            # TODO: figure out how to vectorize via vmap
             dxdt = f_t(x, u)
             # Covariance evolution
             dPdt = F_t @ P + P @ F_t.T + L_t @ Qc_t @ L_t.T
@@ -88,17 +89,17 @@ def _predict(
         # follow Sarkka thesis eq. 3.159
         elif hyperparams.state_order=='second':
             # Evaluate the jacobian of the dynamics function at x and inputs
-            F_t=params.dynamics_function_jacobian(x,u)
+            F_t=jacfwd(f_t)(x,u)
             # Evaluate the Hessian of the dynamics function at x and inputs
-            H_t=params.dynamics_function_hessian(x,u)
+            # Based on these recommendationshttps://jax.readthedocs.io/en/latest/notebooks/autodiff_cookbook.html#jacobians-and-hessians-using-jacfwd-and-jacrev
+            H_t=jacfwd(jacrev(f_t))(x,u)
         
             # Mean evolution
-            # TODO: figure out how to vectorize via vmap
             dxdt = f_t(x, u) + 0.5*jnp.trace(H_t @ P)
             # Covariance evolution
             dPdt = F_t @ P + P @ F_t.T + L_t @ Qc_t @ L_t.T
         else:
-            raise ValueError('params.dynamics_approx = {} not implemented yet'.format(params.dynamics_approx))
+            raise ValueError('EKF hyperparams.state_order = {} not implemented yet'.format(hyperparams.state_order))
 
         return (dxdt, dPdt)
     
@@ -202,7 +203,7 @@ def extended_kalman_filter(
     t0_idx = jnp.arange(num_timesteps)
     
     # Only emission function
-    h = params.emission_function
+    h = params.emissions.emission_function
     # First order EKF update implemented for now
     # TODO: consider second-order EKF updates
     H = jacfwd(h)
@@ -215,8 +216,8 @@ def extended_kalman_filter(
 
         # TODO:
         # Get parameters and inputs for time t0
-        Q = _get_params(params.dynamics_covariance, 2, t0)
-        R = _get_params(params.emission_covariance, 2, t0)
+        Q = _get_params(params.dynamics.diffusion_cov, 2, t0)
+        R = _get_params(params.emissions.emission_cov, 2, t0)
         u = inputs[t0_idx]
         y = emissions[t0_idx]
 
@@ -246,7 +247,7 @@ def extended_kalman_filter(
         return carry, outputs
 
     # Run the extended Kalman filter
-    carry = (0.0, params.initial_mean, params.initial_covariance)
+    carry = (0.0, params.initial.mean, params.initial.cov)
     (ll, *_), outputs = lax.scan(_step, carry, (t0, t1, t0_idx))
     outputs = {"marginal_loglik": ll, **outputs}
     posterior_filtered = PosteriorGSSMFiltered(
@@ -344,8 +345,8 @@ def extended_kalman_smoother(
 
         # TODO:
         # Get parameters and inputs for time t0
-        Q = _get_params(params.dynamics_covariance, 2, t0)
-        R = _get_params(params.emission_covariance, 2, t0)
+        Q = _get_params(params.dynamics.diffusion_cov, 2, t0)
+        R = _get_params(params.emissions.emission_cov, 2, t0)
         u = inputs[t0_idx]
         F_x = F(filtered_mean, u)
 
@@ -442,7 +443,7 @@ def extended_kalman_posterior_sample(
 
         # TODO:
         # Get parameters and inputs for time t0
-        Q = _get_params(params.dynamics_covariance, 2, t0)
+        Q = _get_params(params.dynamics.diffusion_cov, 2, t0)
         u = inputs[t0_idx]
 
         # Condition on next state

@@ -68,7 +68,7 @@ cd_params, cd_param_props = cd_model.initialize(
     key1,
     dynamics_weights=-0.1*jnp.eye(cd_model.state_dim), # Hard coded here for tests to match with default in linear
     dynamics_diffusion_coefficient = 0.5 * jnp.eye(cd_model.state_dim),
-    dynamics_diffusion_covariance = 0.5 * jnp.eye(cd_model.state_dim),
+    dynamics_diffusion_cov = 0.5 * jnp.eye(cd_model.state_dim),
 )
 
 # Simulate from continuous model

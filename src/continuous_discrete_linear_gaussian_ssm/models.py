@@ -13,12 +13,6 @@ from typing_extensions import Protocol
 
 import jax.debug as jdb
 
-# Our codebase
-from ssm_temissions import SSM
-from continuous_discrete_linear_gaussian_ssm.inference import cdlgssm_filter, cdlgssm_smoother, cdlgssm_posterior_sample
-from continuous_discrete_linear_gaussian_ssm.inference import compute_pushforward
-from continuous_discrete_linear_gaussian_ssm.inference import ParamsCDLGSSM, ParamsCDLGSSMDynamics
-
 # From dynamax
 from dynamax.parameters import ParameterProperties, ParameterSet
 from dynamax.types import PRNGKey, Scalar
@@ -27,12 +21,23 @@ from dynamax.utils.distributions import MatrixNormalInverseWishart as MNIW
 from dynamax.utils.distributions import NormalInverseWishart as NIW
 from dynamax.utils.distributions import mniw_posterior_update, niw_posterior_update
 from dynamax.utils.utils import pytree_stack, psd_solve
+
+# Our codebase
+from ssm_temissions import SSM
+# To avoid unnecessary redefinitions of code,
+# We import parameters and posteriors that can be reused from LGSSM first
 from dynamax.linear_gaussian_ssm.inference import ParamsLGSSMInitial, ParamsLGSSMEmissions, PosteriorGSSMFiltered, PosteriorGSSMSmoothed
+# Param definition
+from continuous_discrete_linear_gaussian_ssm.inference import ParamsCDLGSSMDynamics, ParamsCDLGSSM
+from continuous_discrete_linear_gaussian_ssm.inference import cdlgssm_filter, cdlgssm_smoother, cdlgssm_posterior_sample
+from continuous_discrete_linear_gaussian_ssm.inference import compute_pushforward
+
+# And define the rest later
+
 
 class SuffStatsCDLGSSM(Protocol):
     """A :class:`NamedTuple` with sufficient statistics for CDLGSSM parameter estimation."""
     pass
-
     
 class ContDiscreteLinearGaussianSSM(SSM):
     r"""
@@ -99,32 +104,32 @@ class ContDiscreteLinearGaussianSSM(SSM):
         self,
         key: PRNGKey =jr.PRNGKey(0),
         initial_mean: Optional[Float[Array, "state_dim"]]=None,
-        initial_covariance=None,
+        initial_cov=None,
         dynamics_weights=None,
         dynamics_bias=None,
         dynamics_input_weights=None,
         dynamics_diffusion_coefficient=None,
-        dynamics_diffusion_covariance=None,
+        dynamics_diffusion_cov=None,
         emission_weights=None,
         emission_bias=None,
         emission_input_weights=None,
-        emission_covariance=None
+        emission_cov=None
     ) -> Tuple[ParamsCDLGSSM, ParamsCDLGSSM]:
         r"""Initialize model parameters that are set to None, and their corresponding properties.
 
         Args:
             key: Random number key. Defaults to jr.PRNGKey(0).
             initial_mean: parameter $m$. Defaults to None.
-            initial_covariance: parameter $S$. Defaults to None.
+            initial_cov: parameter $S$. Defaults to None.
             dynamics_weights: parameter $F$. Defaults to None.
             dynamics_bias: parameter $b$. Defaults to None.
             dynamics_input_weights: parameter $B$. Defaults to None.
             dynamics_diffusion_coefficient: parameter $L$. Defaults to None.
-            dynamics_diffusion_covariance: parameter $Q$. Defaults to None.
+            dynamics_diffusion_cov: parameter $Q$. Defaults to None.
             emission_weights: parameter $H$. Defaults to None.
             emission_bias: parameter $d$. Defaults to None.
             emission_input_weights: parameter $D$. Defaults to None.
-            emission_covariance: parameter $R$. Defaults to None.
+            emission_cov: parameter $R$. Defaults to None.
 
         Returns:
             Tuple[ParamsCDLGSSM, ParamsCDLGSSM]: parameters and their properties.
@@ -132,16 +137,16 @@ class ContDiscreteLinearGaussianSSM(SSM):
 
         # Arbitrary default values, for demo purposes.
         _initial_mean = jnp.zeros(self.state_dim)
-        _initial_covariance = jnp.eye(self.state_dim)
+        _initial_cov = jnp.eye(self.state_dim)
         _dynamics_weights = -0.1 * jnp.eye(self.state_dim)
         _dynamics_input_weights = jnp.zeros((self.state_dim, self.input_dim))
         _dynamics_bias = jnp.zeros((self.state_dim,)) if self.has_dynamics_bias else None
         _dynamics_diffusion_coefficient = 0.1 * jnp.eye(self.state_dim)
-        _dynamics_diffusion_covariance = 0.1 * jnp.eye(self.state_dim)
+        _dynamics_diffusion_cov = 0.1 * jnp.eye(self.state_dim)
         _emission_weights = jr.normal(key, (self.emission_dim, self.state_dim))
         _emission_input_weights = jnp.zeros((self.emission_dim, self.input_dim))
         _emission_bias = jnp.zeros((self.emission_dim,)) if self.has_emissions_bias else None
-        _emission_covariance = 0.1 * jnp.eye(self.emission_dim)
+        _emission_cov = 0.1 * jnp.eye(self.emission_dim)
 
         # Only use the values above if the user hasn't specified their own
         default = lambda x, x0: x if x is not None else x0
@@ -150,20 +155,20 @@ class ContDiscreteLinearGaussianSSM(SSM):
         params = ParamsCDLGSSM(
             initial=ParamsLGSSMInitial(
                 mean=default(initial_mean, _initial_mean),
-                cov=default(initial_covariance, _initial_covariance)
+                cov=default(initial_cov, _initial_cov)
                 ),
             dynamics=ParamsCDLGSSMDynamics(
                 weights=default(dynamics_weights, _dynamics_weights),
                 bias=default(dynamics_bias, _dynamics_bias),
                 input_weights=default(dynamics_input_weights, _dynamics_input_weights),
-                diff_coeff=default(dynamics_diffusion_coefficient, _dynamics_diffusion_coefficient),
-                diff_cov=default(dynamics_diffusion_covariance, _dynamics_diffusion_covariance)
+                diffusion_coefficient=default(dynamics_diffusion_coefficient, _dynamics_diffusion_coefficient),
+                diffusion_cov=default(dynamics_diffusion_cov, _dynamics_diffusion_cov)
                 ),
             emissions=ParamsLGSSMEmissions(
                 weights=default(emission_weights, _emission_weights),
                 bias=default(emission_bias, _emission_bias),
                 input_weights=default(emission_input_weights, _emission_input_weights),
-                cov=default(emission_covariance, _emission_covariance)
+                cov=default(emission_cov, _emission_cov)
                 )
             )
         
@@ -176,8 +181,8 @@ class ContDiscreteLinearGaussianSSM(SSM):
                 weights=ParameterProperties(),
                 bias=ParameterProperties(),
                 input_weights=ParameterProperties(),
-                diff_coeff=ParameterProperties(),
-                diff_cov=ParameterProperties(constrainer=RealToPSDBijector())),
+                diffusion_coefficient=ParameterProperties(),
+                diffusion_cov=ParameterProperties(constrainer=RealToPSDBijector())),
             emissions=ParamsLGSSMEmissions(
                 weights=ParameterProperties(),
                 bias=ParameterProperties(),
@@ -389,8 +394,8 @@ class ContDiscreteLinearGaussianSSM(SSM):
         S = (sum_x0x0T - jnp.outer(sum_x0, sum_x0)) / N
         m = sum_x0 / N
 
-        # TODO: What's the m-step MLE for diff_cov and diff_coeff?
-        raise ValueError('m_step not implemented yet: what is the MLE for diff_cov and diff_coeff?')
+        # TODO: What's the m-step MLE for diffusion_cov and diffusion_coefficient?
+        raise ValueError('m_step not implemented yet: what is the MLE for diffusion_cov and diffusion_coefficient?')
         
         FB, Q = fit_linear_regression(*dynamics_stats)
         F = FB[:, :self.state_dim]
@@ -404,7 +409,7 @@ class ContDiscreteLinearGaussianSSM(SSM):
         
         params = ParamsCDLGSSM(
             initial=ParamsLGSSMInitial(mean=m, cov=S),
-            # TODO: this will crash, as we should provide diff_cov and diff_coeff
+            # TODO: this will crash, as we should provide diffusion_cov and diffusion_coefficient
             dynamics=ParamsCDLGSSMDynamics(weights=F, bias=b, input_weights=B, cov=Q),
             emissions=ParamsLGSSMEmissions(weights=H, bias=d, input_weights=D, cov=R)
         )

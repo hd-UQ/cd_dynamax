@@ -3,7 +3,6 @@ from fastprogress.fastprogress import progress_bar
 from functools import partial
 from jax import jit
 from jax import jacfwd, jacrev
-from jax import vmap
 import jax.numpy as jnp
 import jax.random as jr
 from jax.tree_util import tree_map
@@ -18,8 +17,6 @@ import tensorflow_probability.substrates.jax as tfp
 from tensorflow_probability.substrates.jax.distributions import MultivariateNormalFullCovariance as MVN
 import tensorflow_probability.substrates.jax.distributions as tfd
 
-# from continuous_discrete_nonlinear_gaussian_ssm.inference import ParamsCDNLGSSM
-
 from dynamax.parameters import ParameterProperties, ParameterSet
 from dynamax.utils.bijectors import RealToPSDBijector
 
@@ -28,6 +25,10 @@ tfb = tfp.bijectors
 
 # Our codebase
 from ssm_temissions import SSM
+# To avoid unnecessary redefinitions of code,
+# We import parameters and posteriors that can be reused from LGSSM first
+# And define the rest later
+from dynamax.linear_gaussian_ssm.inference import ParamsLGSSMInitial
 
 FnStateToState = Callable[ [Float[Array, "state_dim"]], Float[Array, "state_dim"]]
 FnStateToStateByState = Callable[ [Float[Array, "state_dim"]], Float[Array, "state_dim state_dim"]]
@@ -38,8 +39,8 @@ FnStateAndInputToStateByStateByState = Callable[ [Float[Array, "state_dim"], Flo
 FnStateToEmission = Callable[ [Float[Array, "state_dim"]], Float[Array, "emission_dim"]]
 FnStateAndInputToEmission = Callable[ [Float[Array, "state_dim"], Float[Array, "input_dim"] ], Float[Array, "emission_dim"]]
 
+# TODO: This function is defined in many places... unclear whether we need to redefine, or move to utils   
 def _get_params(x, dim, t):
-    # TODO: This function is defined in many places...should be a utils function   
     if callable(x):
         try:
             return x(t)
@@ -50,16 +51,16 @@ def _get_params(x, dim, t):
     else:
         return x
 
-class ParamsCDNLGSSM(NamedTuple):
-    """Parameters for a CDNLGSSM model.
+# Continuous non-linear Gaussian dynamic parameters
+# TODO: function definitions within parameter classes breaks fit_sgd: where should they be placed?
+class ParamsCDNLGSSMDynamics(NamedTuple):
+    r"""Parameters of the state dynamics of a CDNLGSSM model.
 
     This model does not obey an SDE as in Sarkaa's equation (3.151):
         the solution to 3.151 is not necessarily a Gaussian Process
             (note there are cases where that is indeed the case)
 
-    We instead assume a model of the form
-    $$ dz=f(z,u_t,t)dt  $$
-    $$ dP=L(t) Q_c L(t) $$ or $$ dP = F_t @ P + P @ F.T + L(t) Q_c_t @ L_t.T $$
+    We instead assume an approximation to the model of zero-th, first or second order
 
     The resulting transition and emission distributions are
     $$p(z_1) = N(z_1 | m, S)$$
@@ -68,87 +69,111 @@ class ParamsCDNLGSSM(NamedTuple):
 
     If you have no inputs, the dynamics and emission functions do not to take $u_t$ as an argument.
 
-    :param initial_mean: $m$
-    :param initial_covariance: $S$
-    :param dynamics_function: $f$
-    :param dynamics_coefficients: $L$
-    :param dynamics_covariance: $Q$
-    :param dynamics_approx: 'zeroth' or 'first'
-    :param emissions_function: $h$
-    :param emissions_covariance: $R$
+    The tuple doubles as a container for the ParameterProperties.
+
+    :param drift_function: $f$
+    :param drift_parameters: parameters $\theta$ of the drift_function
+    :param diffusion_coefficient: $L$
+    :param diffusion_cov: $Q$
+    :param dynamics_approx: 'zeroth', 'first' or 'second'
 
     """
-
-    # TODO: Do we want to break this up like ParamsCDLGSSM?:
-    #   - Initial
-    #   - Dynamics
-    #   - Emission
-
-    # Initial state distribution
-    initial_mean: Float[Array, "state_dim"]
-    initial_covariance: Float[Array, "state_dim state_dim"]
-    # f is the deterministic, nonlinear RHS of the state's mean evolution
-    dynamics_function: Union[FnStateToState, FnStateAndInputToState]
-    dynamics_function_jacobian: Union[FnStateToStateByState, FnStateAndInputToStateByState]
-    dynamics_function_hessian: Union[FnStateToStateByStateByState, FnStateAndInputToStateByStateByState]
-    # L is the diffusion coefficient matrix of the state's covariance process
-    dynamics_coefficients: Float[Array, "state_dim state_dim"]
-    # Q is the covariance of the state noise process
-    dynamics_covariance: Float[Array, "state_dim state_dim"]
+    # the deterministic drift $f$ of the nonlinear RHS of the state
+    drift_function: Union[FnStateToState, FnStateAndInputToState]
+    # TODO: How to define learnable parameters for emission function?
+    #drift_parameters: Union[Float[Array], ParameterProperties] 
+    # the coefficient matrix L of the state's diffusion process
+    diffusion_coefficient: Union[Float[Array, "state_dim state_dim"], Float[Array, "ntime state_dim state_dim"], ParameterProperties]
+    # The covariance matrix Q of the state noise process
+    diffusion_cov: Union[Float[Array, "state_dim state_dim"], Float[Array, "ntime state_dim state_dim"], Float[Array, "state_dim_triu"], ParameterProperties]
+    
     # Dynamics SDE approximation type
-    dynamics_approx: str
-    # Emission distribution h
-    emission_function: Union[FnStateToEmission, FnStateAndInputToEmission]
-    emission_covariance: Float[Array, "emission_dim emission_dim"]
+    approx_type: str
 
+# Continuous non-linear dynamic parameters
+class ParamsCDNLSSMDynamics(NamedTuple):
+    r"""Parameters of the state dynamics of a CDNLGSSM model.
 
-class ParamsCDNLSSM(NamedTuple):
-    """Parameters for a CDNLSSM model.
-
-    A continuous-discrete nonlinear model, with a state driven by an SDE
-        as in Sarkka's Equation 3.151
-
-    Note that such process is not necessarily a Gaussian Process
-        although there are certain cases where that is indeed the case
-
-    The resulting transition and emission distributions are
-    $$p(z_1) = N(z_1 | m, S)$$
-    $$p(z_t | z_{t-1}, u_t) $$ as given by the Fokker-Planck equation
-    $$p(y_t | z_t) = N(y_t | h(z_t, u_t), R_t)$$
+    This model does obey the SDE as in Sarkaa's equation (3.151):
+        the solution to 3.151 is not necessarily a Gaussian Process
+            (note there are cases where that is indeed the case)
 
     If you have no inputs, the dynamics and emission functions do not to take $u_t$ as an argument.
 
-    :param initial_mean: $m$
-    :param initial_covariance: $S$
-    :param dynamics_function: $f$
-    :param dynamics_coefficients: $L$
-    :param dynamics_covariance: $Q$
-    :param emissions_function: $h$
-    :param emissions_covariance: $R$
+    The tuple doubles as a container for the ParameterProperties.
+
+    :param drift_function: $f$
+    :param drift_parameters: parameters $\theta$ of the drift_function
+    :param diffusion_coefficient: $L$
+    :param diffusion_cov: $Q$
 
     """
+    # the deterministic drift $f$ of the nonlinear RHS of the state
+    drift_function: Union[FnStateToState, FnStateAndInputToState]
+    # TODO: How to define learnable parameters for dynamics drift function?
+    #drift_parameters: Union[Float[Array], ParameterProperties] 
+    # the coefficient matrix L of the state's diffusion process
+    diffusion_coefficient: Union[Float[Array, "state_dim state_dim"], Float[Array, "ntime state_dim state_dim"], ParameterProperties]
+    # The covariance matrix Q of the state noise process
+    diffusion_cov: Union[Float[Array, "state_dim state_dim"], Float[Array, "ntime state_dim state_dim"], Float[Array, "state_dim_triu"], ParameterProperties]
+    
+# Discrete non-linear emission parameters
+# TODO: function definitions within parameter classes breaks fit_sgd: where should they be placed?
+class ParamsCDNLGSSMEmissions(NamedTuple):
+    r"""Parameters of the state dynamics
 
-    # TODO: Do we want to break this up like ParamsCDLGSSM?:
-    #   - InitialStateParams
-    #   - DynamicsParams
-    #   - EmissionParams
+    $$p(z_{t+1} \mid z_t, u_t) = \mathcal{N}(z_{t+1} \mid A z_t + B u_t + b, Q)$$
 
-    # Initial state distribution
-    initial_mean: Float[Array, "state_dim"]
-    initial_covariance: Float[Array, "state_dim state_dim"]
-    # f as in Sarkka's Equation 3.151
-    dynamics_function: Union[FnStateToState, FnStateAndInputToState]
-    dynamics_function_jacobian: Union[FnStateToStateByState, FnStateAndInputToStateByState]
-    dynamics_function_hessian: Union[FnStateToStateByStateByState, FnStateAndInputToStateByStateByState]
-    # L in Sarkka's Equation 3.151
-    dynamics_coefficients: Float[Array, "state_dim state_dim"]
-    # Q in Sarkka's Equation 3.151
-    dynamics_covariance: Float[Array, "state_dim state_dim"]
+    The tuple doubles as a container for the ParameterProperties.
+
+    :param drift_function: $f$
+    :param drift_parameters: parameters $\theta$ of the drift_function
+    :param diffusion_coefficient: $L$
+    :param diffusion_cov: $Q$
+    :param dynamics_approx: 'zeroth', 'first' or 'second'
+
+    """
     # Emission distribution h
     emission_function: Union[FnStateToEmission, FnStateAndInputToEmission]
-    emission_covariance: Float[Array, "emission_dim emission_dim"]
+    # TODO: How to define learnable parameters for emission function?
+    # emission_parameters: Union[Float[Array], ParameterProperties] 
+    # The covariance matrix R of the observation noise process
+    emission_cov: Union[Float[Array, "emission_dim emission_dim"], ParameterProperties]
 
+# CDNLGSSM parameters are different to CDLGSSM due to nonlinearities
+class ParamsCDNLGSSM(NamedTuple):
+    r"""Parameters of a linear Gaussian SSM.
 
+    :param initial: initial distribution parameters
+    :param dynamics: dynamics distribution parameters
+    :param emissions: emission distribution parameters
+
+    The assumed transition and emission distributions are
+    $$p(z_1) = N(z_1 | m, S)$$
+    $$p(z_t | z_{t-1}, u_t) = N(z_t | m_t, P_t)$$
+    $$p(y_t | z_t) = N(y_t | h(z_t, u_t), R_t)$$
+
+    """
+    initial: ParamsLGSSMInitial
+    dynamics: ParamsCDNLGSSMDynamics
+    emissions: ParamsCDNLGSSMEmissions 
+
+# CDNLSSM parameters are different to CDNLGSSM due to non-gaussian transitions
+class ParamsCDNLGSSM(NamedTuple):
+    r"""Parameters of a linear Gaussian SSM.
+
+    :param initial: initial distribution parameters
+    :param dynamics: dynamics distribution parameters
+    :param emissions: emission distribution parameters
+
+    The assumed transition and emission distributions are
+    $$p(z_1) = N(z_1 | m, S)$$
+    
+    """
+    initial: ParamsLGSSMInitial
+    dynamics: ParamsCDNLSSMDynamics
+    emissions: ParamsCDNLGSSMEmissions 
+    
 # CDNLGSSM push-forward is model-specific
 def compute_pushforward(
     x0: Float[Array, "state_dim"],
@@ -164,47 +189,44 @@ def compute_pushforward(
     def rhs_all(t, y, args):
         x, P = y
         
-        # possibly time-dependent functions
-        # TODO: figure out how to use get_params functionality for time-varying functions
-        #f_t = _get_params(params.dynamics_function, 2, t)
-        f_t = params.dynamics_function
-        Qc_t = _get_params(params.dynamics_covariance, 2, t)
-        L_t = _get_params(params.dynamics_coefficients, 2, t)
+        # TODO: possibly time- and parameter-dependent functions
+        f_t=params.dynamics.drift_function
+        
+        # Get time-varying parameters
+        Qc_t = _get_params(params.dynamics.diffusion_cov, 2, t0)
+        L_t = _get_params(params.dynamics.diffusion_coefficient, 2, t0)
 
-       
         # Different SDE approximations
-        if params.dynamics_approx=='zeroth':
+        if params.dynamics.approx_type=='zeroth':
             # Mean evolution
-            # TODO: figure out how to vectorize via vmap
             dxdt = f_t(x, inputs)            
             # Covariance evolution
             dPdt = L_t @ Qc_t @ L_t.T
         
         # following Sarkka thesis eq. 3.153
-        elif params.dynamics_approx=='first':
+        elif params.dynamics.approx_type=='first':
             # Evaluate the jacobian of the dynamics function at x and inputs
-            F_t=params.dynamics_function_jacobian(x,inputs)
-            
+            F_t=jacfwd(f_t)(x,inputs)
+        
             # Mean evolution
-            # TODO: figure out how to vectorize via vmap
             dxdt = f_t(x, inputs)
             # Covariance evolution
             dPdt = F_t @ P + P @ F_t.T + L_t @ Qc_t @ L_t.T
         
         # follow Sarkka thesis eq. 3.155
-        elif params.dynamics_approx=='second':
+        elif params.dynamics.approx_type=='second':
             # Evaluate the jacobian of the dynamics function at x and inputs
-            F_t=params.dynamics_function_jacobian(x,inputs)
+            F_t=jacfwd(f_t)(x,inputs)
             # Evaluate the Hessian of the dynamics function at x and inputs
-            H_t=params.dynamics_function_hessian(x,inputs)
+            # Based on these recommendationshttps://jax.readthedocs.io/en/latest/notebooks/autodiff_cookbook.html#jacobians-and-hessians-using-jacfwd-and-jacrev
+            H_t=jacfwd(jacrev(f_t))(x,inputs)
         
             # Mean evolution
-            # TODO: figure out how to vectorize via vmap
             dxdt = f_t(x, inputs) + 0.5*jnp.trace(H_t @ P)
             # Covariance evolution
             dPdt = F_t @ P + P @ F_t.T + L_t @ Qc_t @ L_t.T
         else:
-            raise ValueError('params.dynamics_approx = {} not implemented yet'.format(params.dynamics_approx))
+            raise ValueError('params.dynamics.approx_type = {} not implemented yet'.format(params.dynamics.approx_type))
 
         return (dxdt, dPdt)
     
@@ -265,66 +287,83 @@ class ContDiscreteNonlinearGaussianSSM(SSM):
     def initialize(
         self,
         key: Float[Array, "key"],
-        dynamics_function: Optional[Union[FnStateToState, FnStateAndInputToState]] = None,
+        initial_mean: Optional[Float[Array, "state_dim"]]=None,
+        initial_cov: Optional[Float[Array, "state_dim state_dim"]] = None,
+        dynamics_drift_function: Optional[Union[FnStateToState, FnStateAndInputToState]] = None,
+        #dynamics_drift_parameters = None,
         dynamics_diffusion_coefficient: Optional[Float[Array, "state_dim state_dim"]] = None,
-        dynamics_diffusion_covariance: Optional[Float[Array, "state_dim state_dim"]] = None,
-        dynamics_approx: Optional[str] = 'zeroth',
+        dynamics_diffusion_cov: Optional[Float[Array, "state_dim state_dim"]] = None,
+        dynamics_approx_type: Optional[str] = 'zeroth',
         emission_function: Optional[Union[FnStateToEmission, FnStateAndInputToEmission]] = None,
-        emission_covariance: Optional[Float[Array, "emission_dim emission_dim"]] = None
+        #emission_parameters = None,
+        emission_cov: Optional[Float[Array, "emission_dim emission_dim"]] = None
     ) -> Tuple[ParamsCDNLGSSM, PyTree]:
 
-        if dynamics_function is None:
-            dynamics_function = lambda z, u: -z
-        
-        # TODO: double check these compute jacobian and hessian with respect to states only
-        # Compute jacobian and Hesisan of dynamics function (computed here once, for computational benefits)
-        dynamics_function_jacobian = jacfwd(dynamics_function)
-        # Based on these recommendationshttps://jax.readthedocs.io/en/latest/notebooks/autodiff_cookbook.html#jacobians-and-hessians-using-jacfwd-and-jacrev
-        dynamics_function_hessian = jacfwd(jacrev(dynamics_function))
-        
-        if dynamics_diffusion_coefficient is None:
-            dynamics_diffusion_coefficient = 0.1 * jnp.eye(self.state_dim)
-        if dynamics_diffusion_covariance is None:
-            dynamics_diffusion_covariance = 0.1 * jnp.eye(self.state_dim)
-        if emission_function is None:
-            emission_function = lambda z, u: z
-        if emission_covariance is None:
-            emission_covariance = 0.1 * jnp.eye(self.emission_dim)
+        # Arbitrary default values, for demo purposes.
+        # Initial
+        _initial_mean = jnp.zeros(self.state_dim)
+        _initial_cov = jnp.eye(self.state_dim)
+        # Dynamics
+        _dynamics_drift_function = lambda z, u: -z
+        #_dynamics_drift_parameters = -1.
+        _dynamics_diffusion_coefficient = 0.1 * jnp.eye(self.state_dim)
+        _dynamics_diffusion_cov = 0.1 * jnp.eye(self.state_dim)
+        _dynamics_approx_type = 'second'
+        # Emission
+        _emission_function = lambda z, u: z
+        #_emission_parameters = 1.
+        _emission_cov = 0.1 * jnp.eye(self.emission_dim)
 
+        # Only use the values above if the user hasn't specified their own
+        default = lambda x, x0: x if x is not None else x0
+
+        # Create nested dictionary of params
         params = ParamsCDNLGSSM(
-            initial_mean = jnp.zeros(self.state_dim),
-            initial_covariance = jnp.eye(self.state_dim),
-            dynamics_function=dynamics_function,
-            dynamics_function_jacobian=dynamics_function_jacobian,
-            dynamics_function_hessian=dynamics_function_hessian,
-            dynamics_coefficients=dynamics_diffusion_coefficient,
-            dynamics_covariance=dynamics_diffusion_covariance,
-            dynamics_approx=dynamics_approx,
-            emission_function=emission_function,
-            emission_covariance=emission_covariance,
-        )
-
+            initial=ParamsLGSSMInitial(
+                mean=default(initial_mean, _initial_mean),
+                cov=default(initial_cov, _initial_cov)
+                ),
+            dynamics=ParamsCDNLGSSMDynamics(
+                drift_function=default(dynamics_drift_function, _dynamics_drift_function),
+                #dynamics_drift_parameters=default(dynamics_drift_parameters, _dynamics_drift_parameters),
+                diffusion_coefficient=default(dynamics_diffusion_coefficient, _dynamics_diffusion_coefficient),
+                diffusion_cov=default(dynamics_diffusion_cov, _dynamics_diffusion_cov),
+                approx_type=default(dynamics_approx_type, _dynamics_approx_type)
+                ),
+            emissions=ParamsCDNLGSSMEmissions(
+                emission_function=default(emission_function, _emission_function),
+                #emission_parameters=default(emission_parameters, _emission_parameters),
+                emission_cov=default(emission_cov, _emission_cov)
+                )
+            )
+        
+        # The keys of param_props must match those of params!
         props = ParamsCDNLGSSM(
-            initial_mean=ParameterProperties(),
-            initial_covariance=ParameterProperties(constrainer=RealToPSDBijector()),
-            dynamics_function=ParameterProperties(),
-            dynamics_function_jacobian=ParameterProperties(),
-            dynamics_function_hessian=ParameterProperties(),
-            dynamics_coefficients=ParameterProperties(constrainer=RealToPSDBijector()),
-            dynamics_covariance=ParameterProperties(constrainer=RealToPSDBijector()),
-            dynamics_approx=dynamics_approx,
-            emission_function=ParameterProperties(),
-            emission_covariance=ParameterProperties(constrainer=RealToPSDBijector()),
-        )
-
+            initial=ParamsLGSSMInitial(
+                mean=ParameterProperties(),
+                cov=ParameterProperties(constrainer=RealToPSDBijector())
+                ),
+            dynamics=ParamsCDNLGSSMDynamics(
+                drift_function=ParameterProperties(),
+                #dynamics_drift_parameters=ParameterProperties(),
+                diffusion_coefficient=ParameterProperties(),
+                diffusion_cov=ParameterProperties(constrainer=RealToPSDBijector()),
+                approx_type=ParameterProperties(trainable=False)
+                ),
+            emissions=ParamsCDNLGSSMEmissions(
+                emission_function=ParameterProperties(),
+                #emission_parameters=ParameterProperties(),
+                emission_cov=ParameterProperties(constrainer=RealToPSDBijector())
+                )
+            )
         return params, props
-
+    
     def initial_distribution(
         self,
         params: ParamsCDNLGSSM,
         inputs: Optional[Float[Array, "input_dim"]] = None
     ) -> tfd.Distribution:
-        return MVN(params.initial_mean, params.initial_covariance)
+        return MVN(params.initial.mean, params.initial.cov)
 
     def transition_distribution(
         self,
@@ -354,9 +393,9 @@ class ContDiscreteNonlinearGaussianSSM(SSM):
         state: Float[Array, "state_dim"],
         inputs: Optional[Float[Array, "input_dim"]] = None
      ) -> tfd.Distribution:
-        h = params.emission_function
+        h = params.emissions.emission_function
         if inputs is None:
             mean = h(state)
         else:
             mean = h(state, inputs)
-        return MVN(mean, params.emission_covariance)
+        return MVN(mean, params.emissions.emission_cov)

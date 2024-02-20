@@ -14,19 +14,29 @@ from dynamax.types import PRNGKey, Scalar
 
 import jax.debug as jdb
 
+# Our codebase
+
 # Diffrax based diff-eq solver
 from cdssm_utils import diffeqsolve
 
 # To avoid unnecessary redefinitions of code,
 # We import those that can be reused from LGSSM first
+from dynamax.linear_gaussian_ssm.inference import ParamsLGSSMInitial, ParamsLGSSMEmissions
 # And define the rest later
-# Initial state's distribution can be imported
-from dynamax.linear_gaussian_ssm.inference import ParamsLGSSMInitial
-# Emission distribution can be imported
-from dynamax.linear_gaussian_ssm.inference import ParamsLGSSMEmissions
 # Filtering and smoothing classes are equivalent
 from dynamax.linear_gaussian_ssm.inference import PosteriorGSSMFiltered
 from dynamax.linear_gaussian_ssm.inference import PosteriorGSSMSmoothed
+
+# Helper functions
+# _get_params = lambda x, dim, t: x[t] if x.ndim == dim + 1 else x
+def _get_params(x, dim, t):
+    if callable(x):
+        return x(t)
+    elif x.ndim == dim + 1:
+        return x[t]
+    else:
+        return x
+_zeros_if_none = lambda x, shape: x if x is not None else jnp.zeros(shape)
 
 # Continuous dynamic distributions are different than discrete ones, we define them here
 class ParamsCDLGSSMDynamics(NamedTuple):
@@ -45,8 +55,8 @@ class ParamsCDLGSSMDynamics(NamedTuple):
     weights: Union[Float[Array, "state_dim state_dim"], Float[Array, "ntime state_dim state_dim"], ParameterProperties]
     bias: Union[Float[Array, "state_dim"], Float[Array, "ntime state_dim"], ParameterProperties]
     input_weights: Union[Float[Array, "state_dim input_dim"], Float[Array, "ntime state_dim input_dim"], ParameterProperties]
-    diff_coeff: Union[Float[Array, "state_dim state_dim"], Float[Array, "ntime state_dim state_dim"], ParameterProperties]
-    diff_cov: Union[Float[Array, "state_dim state_dim"], Float[Array, "ntime state_dim state_dim"], Float[Array, "state_dim_triu"], ParameterProperties]
+    diffusion_coefficient: Union[Float[Array, "state_dim state_dim"], Float[Array, "ntime state_dim state_dim"], ParameterProperties]
+    diffusion_cov: Union[Float[Array, "state_dim state_dim"], Float[Array, "ntime state_dim state_dim"], Float[Array, "state_dim_triu"], ParameterProperties]
 
 # CDLGSSM parameters are different to LGSSM due to different dynamics
 class ParamsCDLGSSM(NamedTuple):
@@ -60,17 +70,6 @@ class ParamsCDLGSSM(NamedTuple):
     initial: ParamsLGSSMInitial
     dynamics: ParamsCDLGSSMDynamics
     emissions: ParamsLGSSMEmissions
-
-# Helper functions
-# _get_params = lambda x, dim, t: x[t] if x.ndim == dim + 1 else x
-def _get_params(x, dim, t):
-    if callable(x):
-        return x(t)
-    elif x.ndim == dim + 1:
-        return x[t]
-    else:
-        return x
-_zeros_if_none = lambda x, shape: x if x is not None else jnp.zeros(shape)
 
 # CD push-forwards are inference specific
 def compute_pushforward(
@@ -90,8 +89,8 @@ def compute_pushforward(
 
         # possibly time-dependent weights
         F_t = _get_params(params.dynamics.weights, 2, t)
-        Qc_t = _get_params(params.dynamics.diff_cov, 2, t)
-        L_t = _get_params(params.dynamics.diff_coeff, 2, t)
+        Qc_t = _get_params(params.dynamics.diffusion_cov, 2, t)
+        L_t = _get_params(params.dynamics.diffusion_coefficient, 2, t)
 
         # TODO: Do we want a bias term here?
         dAdt = F_t @ A
@@ -105,7 +104,7 @@ def compute_pushforward(
     
     # Original trick to pass discrete vs continuous tests, simply uncomment the below 2 lines.
     #A = params.dynamics.weights
-    #Q = params.dynamics.diff_cov
+    #Q = params.dynamics.diffusion_cov
     # Second trick to pass tests
     #jdb.breakpoint()
     #print('{:.32}'.format(A[0,0]))
@@ -139,8 +138,8 @@ def make_cdlgssm_params(initial_mean,
             weights=dynamics_weights,
             bias=_zeros_if_none(dynamics_bias,state_dim),
             input_weights=_zeros_if_none(dynamics_input_weights, (state_dim, input_dim)),
-            diff_coeff=dynamics_diffusion_coeff,
-            diff_cov=dynamics_diffusion_cov,
+            diffusion_coefficient=dynamics_diffusion_coeff,
+            diffusion_cov=dynamics_diffusion_cov,
         ),
         emissions=ParamsLGSSMEmissions(
             weights=emissions_weights,
@@ -219,8 +218,8 @@ def preprocess_params_and_inputs(params, num_timesteps, inputs):
     assert params.initial.mean is not None
     assert params.initial.cov is not None
     assert params.dynamics.weights is not None
-    assert params.dynamics.diff_coeff is not None
-    assert params.dynamics.diff_cov is not None
+    assert params.dynamics.diffusion_coefficient is not None
+    assert params.dynamics.diffusion_cov is not None
     assert params.emissions.weights is not None
     assert params.emissions.cov is not None
 
@@ -245,8 +244,8 @@ def preprocess_params_and_inputs(params, num_timesteps, inputs):
             weights=params.dynamics.weights,
             bias=dynamics_bias,
             input_weights=dynamics_input_weights,
-            diff_coeff=params.dynamics.diff_coeff,
-            diff_cov=params.dynamics.diff_cov),
+            diffusion_coefficient=params.dynamics.diffusion_coefficient,
+            diffusion_cov=params.dynamics.diffusion_cov),
         emissions=ParamsLGSSMEmissions(
             weights=params.emissions.weights,
             bias=emissions_bias,
