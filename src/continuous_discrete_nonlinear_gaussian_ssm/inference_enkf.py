@@ -39,7 +39,7 @@ _get_params = lambda x, dim, t: x[t] if x.ndim == dim + 1 else x
 _outer = vmap(lambda x, y: jnp.atleast_2d(x).T @ jnp.atleast_2d(y), 0, 0)
 _process_fn = lambda f, u: (lambda x, y: f(x)) if u is None else f
 _process_input = lambda x, y: jnp.zeros((y,)) if x is None else x
-
+# Using sum of _outers to compute covariance to avoid degenerate dimensionality cases
 
 # TODO: Revise and implement push-forward here
 def _predict(
@@ -117,9 +117,9 @@ def _condition_on(key, x, h, R, u, y, perturb_measurements=True):
     y_pred_mean = jnp.mean(y_ensemble, axis=0)
 
     # compute predicted covariance of measurements as outer product of differences from mean
-    y_pred_cov = jnp.cov(y_ensemble, rowvar=False)
     # represents "HPH^T" in Kalman gain computation
-    # y_pred_cov = jnp.sum(_outer(y_ensemble - y_pred_mean, y_ensemble - y_pred_mean), axis=0) / (n_particles - 1)
+    # y_pred_cov = jnp.cov(y_ensemble, rowvar=False)
+    y_pred_cov = jnp.sum(_outer(y_ensemble - y_pred_mean, y_ensemble - y_pred_mean), axis=0) / (n_particles - 1)
 
     # Compute log-likelihood of observation
     ll = MVN(y_pred_mean, y_pred_cov).log_prob(y)
@@ -220,18 +220,20 @@ def ensemble_kalman_filter(
 
         # compute Gaussian statistics
         filtered_mean = jnp.mean(filtered_x_ens, axis=0)
-        # filtered_cov = jnp.sum(_outer(filtered_x_ens - filtered_mean, filtered_x_ens - filtered_mean), axis=0) / (
-        #     hyperparams.N_particles - 1
-        # )
-        filtered_cov = jnp.cov(filtered_x_ens, rowvar=False)
+        filtered_cov = jnp.sum(_outer(filtered_x_ens - filtered_mean, filtered_x_ens - filtered_mean), axis=0) / (
+            hyperparams.N_particles - 1
+        )
+        # filtered_cov = jnp.cov(filtered_x_ens, rowvar=False)
 
         # Predict the next state, based on Ensemble prediction
         pred_x_ens = _predict(key_predict, filtered_x_ens, params, t0, t1, u)
 
         # compute Gaussian statistics
         pred_mean = jnp.mean(pred_x_ens, axis=0)
-        pred_cov = jnp.cov(pred_x_ens, rowvar=False)
-        # pred_cov = jnp.sum(_outer(pred_x_ens - pred_mean, pred_x_ens - pred_mean), axis=0) / (hyperparams.N_particles - 1)
+        pred_cov = jnp.sum(_outer(pred_x_ens - pred_mean, pred_x_ens - pred_mean), axis=0) / (
+            hyperparams.N_particles - 1
+        )
+        # pred_cov = jnp.cov(pred_x_ens, rowvar=False)
 
         # Build carry and output states
         carry = (ll, pred_x_ens)
@@ -260,7 +262,8 @@ def ensemble_kalman_filter(
     # compute ll and outputs using a for loop instead of lax.scan to debug
     (ll, *_), outputs = lax.scan(_step, carry, (key_times, t0, t1, t0_idx))
     # for i in range(num_timesteps):
-    #     carry, outputs = _step(carry, (key_times[i], t0[i], t1[i], t0_idx[i]))
+    # print(i)
+    # carry, outputs = _step(carry, (key_times[i], t0[i], t1[i], t0_idx[i]))
     # ll, _, _ = carry
 
     outputs = {"marginal_loglik": ll, **outputs}
