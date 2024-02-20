@@ -52,7 +52,6 @@ d_sgd_fitted_filtered_posterior = lgssm_filter(d_sgd_fitted_params, d_emissions,
 
 print("************* Continuous-Discrete LGSSM *************")
 # Continuous-Discrete model
-NUM_TIMESTEPS = 100
 t_emissions = jnp.arange(NUM_TIMESTEPS)[:, None]
 
 # Randomness
@@ -209,7 +208,6 @@ print("All fitting tests passed!")
 
 ########### Now make these into non-linear models ########
 print("************* Continuous-Discrete Non-linear GSSM *************")
-
 # Randomness
 key1, key2 = jr.split(jr.PRNGKey(0))
 

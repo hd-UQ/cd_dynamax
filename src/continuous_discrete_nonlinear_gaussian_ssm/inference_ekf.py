@@ -31,7 +31,7 @@ class EKFHyperParams(NamedTuple):
 
     state_order: str = 'second'
     emission_order: str = 'first'
-
+    smooth_order: str = 'first'
 
 def _predict(
     m, P, # Current mean and covariance
@@ -66,7 +66,7 @@ def _predict(
     y0 = (m, P)
     # Predicted mean and covariance evolution, by using the EKF state order approximations
     def rhs_all(t, y, args):
-        x, P = y
+        m, P = y
         
         # TODO: possibly time- and parameter-dependent functions
         f_t=params.dynamics.drift_function
@@ -78,30 +78,30 @@ def _predict(
        
         # following Sarkka thesis eq. 3.158
         if hyperparams.state_order=='first':
-            # Evaluate the jacobian of the dynamics function at x and inputs
-            F_t=jacfwd(f_t)(x,u)
+            # Evaluate the jacobian of the dynamics function at m and inputs
+            F_t=jacfwd(f_t)(m,u)
             
             # Mean evolution
-            dxdt = f_t(x, u)
+            dmdt = f_t(m, u)
             # Covariance evolution
             dPdt = F_t @ P + P @ F_t.T + L_t @ Qc_t @ L_t.T
         
         # follow Sarkka thesis eq. 3.159
         elif hyperparams.state_order=='second':
-            # Evaluate the jacobian of the dynamics function at x and inputs
-            F_t=jacfwd(f_t)(x,u)
-            # Evaluate the Hessian of the dynamics function at x and inputs
+            # Evaluate the jacobian of the dynamics function at m and inputs
+            F_t=jacfwd(f_t)(m,u)
+            # Evaluate the Hessian of the dynamics function at m and inputs
             # Based on these recommendationshttps://jax.readthedocs.io/en/latest/notebooks/autodiff_cookbook.html#jacobians-and-hessians-using-jacfwd-and-jacrev
-            H_t=jacfwd(jacrev(f_t))(x,u)
+            H_t=jacfwd(jacrev(f_t))(m,u)
         
             # Mean evolution
-            dxdt = f_t(x, u) + 0.5*jnp.trace(H_t @ P)
+            dmdt = f_t(m, u) + 0.5*jnp.trace(H_t @ P)
             # Covariance evolution
             dPdt = F_t @ P + P @ F_t.T + L_t @ Qc_t @ L_t.T
         else:
             raise ValueError('EKF hyperparams.state_order = {} not implemented yet'.format(hyperparams.state_order))
 
-        return (dxdt, dPdt)
+        return (dmdt, dPdt)
     
     sol = diffeqsolve(rhs_all, t0=t0, t1=t1, y0=y0)
     return sol[0][-1], sol[1][-1]
@@ -281,12 +281,75 @@ def iterated_extended_kalman_filter(
     filtered_posterior = extended_kalman_filter(params, emissions, t_emissions, num_iter, hyperparams, inputs)
     return filtered_posterior
 
+def _smooth(
+    m_filter, P_filter, # Filtered mean and covariance
+    m_smooth, P_smooth, # Smoothed mean and covariance
+    params: ParamsCDNLGSSM,  # All necessary CD dynamic params
+    t0: Float,
+    t1: Float,
+    u,
+    hyperparams
+    ):
+    r"""smooth the next mean and covariance using EKF smoothing equations
+        where the evolution of m and P are computed based on
+            First order smoothing approximation as in Equation 3.163
+            (No second order in Sarkka)
 
+    Args:
+        m (D_hid,): next mean.
+        P (D_hid,D_hid): next covariance.
+        params: parameters of CD nonlinear dynamics, containing dynamics RHS function, coeff matrix and Brownian covariance matrix.
+        t0: initial time-instant
+        t1: final time-instant
+        u (D_in,): inputs.
+        hyperparams: EKF hyperparameters
+
+    Returns:
+        mu_smooth (D_hid,): smoothed mean.
+        Sigma_smooth (D_hid,D_hid): smoothed covariance.
+    """
+    
+    # Initialize
+    y0 = (m_smooth, P_smooth)
+    # Predicted mean and covariance evolution, by using the EKF state order approximations
+    def rhs_all(t, y, args):
+        m_smooth, P_smooth = y
+        m_filter, P_filter = args
+        
+        # TODO: possibly time- and parameter-dependent functions
+        f_t=params.dynamics.drift_function
+        
+        # Get time-varying parameters
+        Qc_t = _get_params(params.dynamics.diffusion_cov, 2, t)
+        L_t = _get_params(params.dynamics.diffusion_coefficient, 2, t)
+
+        # following Sarkka thesis eq. 3.163
+        if hyperparams.smooth_order=='first':
+            # Evaluate the jacobian of the dynamics function at m and inputs
+            F_t=jacfwd(f_t)(m_filter,u)
+            
+            # Auxiliary matrix, used in both mean and covariance
+            # Inverse product computed via psd_solve
+            aux_matrix=psd_solve(P_filter, (P_filter @ F_t + L_t @ Qc_t @ L_t.T))
+
+            # Mean evolution
+            dmsmoothdt = f_t(m_filter, u) + aux_matrix.T @ (m_smooth-m_filter)
+            # Covariance evolution
+            dPsmoothdt = aux_matrix.T @ P_smooth + P_smooth @ aux_matrix - L_t @ Qc_t @ L_t.T
+        else:
+            raise ValueError('EKF hyperparams.smooth_order = {} not implemented yet'.format(hyperparams.smooth_order))
+
+        return (dmsmoothdt, dPsmoothdt)
+    
+    sol = diffeqsolve(rhs_all, t0=t0, t1=t1, y0=y0, args=(m_filter, P_filter))
+    return sol[0][-1], sol[1][-1]
+    
 def extended_kalman_smoother(
     params: ParamsCDNLGSSM,
     emissions:  Float[Array, "ntime emission_dim"],
     t_emissions: Optional[Float[Array, "num_timesteps 1"]]=None,
     filtered_posterior: Optional[PosteriorGSSMFiltered] = None,
+    hyperparams: EKFHyperParams = EKFHyperParams(),
     inputs: Optional[Float[Array, "ntime input_dim"]] = None
 ) -> PosteriorGSSMSmoothed:
     r"""Run an extended Kalman (RTS) smoother.
@@ -296,6 +359,7 @@ def extended_kalman_smoother(
         emissions: observation sequence.
         t_emissions: continuous-time specific time instants of observations: if not None, it is an array 
         filtered_posterior: optional output from filtering step.
+        hyperparams: hyper-parameters of the EKF, related to the approximation order
         inputs: optional array of inputs.
 
     Returns:
@@ -304,60 +368,49 @@ def extended_kalman_smoother(
     """
     # Figure out timestamps, as vectors to scan over
     # t_emissions is of shape num_timesteps \times 1
-    # t0 and t1 are num_timesteps \times 0
+    # t0 and t1 are num_timesteps-1 \times 0
     if t_emissions is not None:
         num_timesteps = t_emissions.shape[0]
-        t0 = tree_map(lambda x: x[:,0], t_emissions)
-        t1 = tree_map(
-                lambda x: jnp.concatenate(
-                    (
-                        t_emissions[1:,0],
-                        jnp.array([t_emissions[-1,0]+1]) # NB: t_{N+1} is simply t_{N}+1 
-                    )
-                ),
-                t_emissions
-            )
+        t0 = tree_map(lambda x: x[0:-1,0], t_emissions)
+        t1 = tree_map(lambda x: x[1:,0], t_emissions)
     else:
         num_timesteps = len(emissions)
-        t0 = jnp.arange(num_timesteps)
-        t1 = jnp.arange(1,num_timesteps+1)
+        t0 = jnp.arange(num_timesteps-1)
+        t1 = jnp.arange(1,num_timesteps)
     
-    t0_idx = jnp.arange(num_timesteps)
+    t0_idx = jnp.arange(num_timesteps-1)
 
-    # Get filtered posterior
+    # Get filtered EKF posterior
     if filtered_posterior is None:
-        filtered_posterior = extended_kalman_filter(params, emissions, t_emissions, inputs=inputs)
+        filtered_posterior = extended_kalman_filter(
+            params,
+            emissions,
+            t_emissions=t_emissions,
+            hyperparams=hyperparams,
+            inputs=inputs
+        )
     ll = filtered_posterior.marginal_loglik
     filtered_means = filtered_posterior.filtered_means
     filtered_covs = filtered_posterior.filtered_covariances
 
-    # TODO: use compute_push_forward instead, and let autodiff do the magic? How about time-instants?
-    # Dynamics and emission functions and their Jacobians
-    f = params.dynamics_function
-    F = jacfwd(f)
-    f, F = (_process_fn(fn, inputs) for fn in (f, F))
+    # Process inputs
     inputs = _process_input(inputs, num_timesteps)
 
+    # Run the smoother backward in time
     def _step(carry, args):
         # Unpack the inputs
         smoothed_mean_next, smoothed_cov_next = carry
         t0, t1, t0_idx, filtered_mean, filtered_cov = args
 
-        # TODO:
-        # Get parameters and inputs for time t0
-        Q = _get_params(params.dynamics.diffusion_cov, 2, t0)
-        R = _get_params(params.emissions.emission_cov, 2, t0)
-        u = inputs[t0_idx]
-        F_x = F(filtered_mean, u)
-
-        # Prediction step
-        m_pred = f(filtered_mean, u)
-        S_pred = Q + F_x @ filtered_cov @ F_x.T
-        G = psd_solve(S_pred, F_x @ filtered_cov).T
-
-        # Compute smoothed mean and covariance
-        smoothed_mean = filtered_mean + G @ (smoothed_mean_next - m_pred)
-        smoothed_cov = filtered_cov + G @ (smoothed_cov_next - S_pred) @ G.T
+        # Smooth mean and covariance based on continuous-time solution
+        smoothed_mean, smoothed_cov = _smooth(
+            m_filter=filtered_mean, P_filter=filtered_cov, # Filtered 
+            m_smooth=smoothed_mean_next, P_smooth=smoothed_cov_next, # Smoothed 
+            params=params,
+            t0=t0,t1=t1,
+            u = inputs[t0_idx],
+            hyperparams = hyperparams,
+        )
 
         return (smoothed_mean, smoothed_cov), (smoothed_mean, smoothed_cov)
 
@@ -366,7 +419,7 @@ def extended_kalman_smoother(
     args = (
         t0[::-1], t1[::-1],
         t0_idx[::-1],
-        filtered_means[:-1][::-1], filtered_covs[:-1][::-1]
+        filtered_means[1:][::-1], filtered_covs[1:][::-1]
     )
     _, (smoothed_means, smoothed_covs) = lax.scan(_step, init_carry, args)
 
@@ -381,6 +434,37 @@ def extended_kalman_smoother(
         smoothed_covariances=smoothed_covs,
     )
 
+def iterated_extended_kalman_smoother(
+    params: ParamsCDNLGSSM,
+    emissions:  Float[Array, "ntime emission_dim"],
+    t_emissions: Optional[Float[Array, "num_timesteps 1"]]=None,
+    num_iter: int = 2,
+    hyperparams: EKFHyperParams = EKFHyperParams(),
+    inputs: Optional[Float[Array, "ntime input_dim"]] = None
+) -> PosteriorGSSMSmoothed:
+    r"""Run an iterated extended Kalman smoother (IEKS).
+
+    Args:
+        params: model parameters.
+        emissions: observation sequence.
+        t_emissions: continuous-time specific time instants of observations: if not None, it is an array 
+        num_iter: number of linearizations around posterior for update step (default 2).
+        hyperparams: EKFHyperParams = EKFHyperParams(),
+        inputs: optional array of inputs.
+
+    Returns:
+        post: posterior object.
+
+    """
+
+    def _step(carry, _):
+        # Relinearize around smoothed posterior from previous iteration
+        smoothed_prior = carry
+        smoothed_posterior = extended_kalman_smoother(params, emissions, t_emissions, smoothed_prior, hyperparams, inputs)
+        return smoothed_posterior, None
+
+    smoothed_posterior, _ = lax.scan(_step, None, jnp.arange(num_iter))
+    return smoothed_posterior
 
 def extended_kalman_posterior_sample(
     key: PRNGKey,
@@ -466,33 +550,3 @@ def extended_kalman_posterior_sample(
     states = jnp.row_stack([reversed_states[::-1], last_state])
     return states
 
-
-def iterated_extended_kalman_smoother(
-    params: ParamsCDNLGSSM,
-    emissions:  Float[Array, "ntime emission_dim"],
-    t_emissions: Optional[Float[Array, "num_timesteps 1"]]=None,
-    num_iter: int = 2,
-    inputs: Optional[Float[Array, "ntime input_dim"]] = None
-) -> PosteriorGSSMSmoothed:
-    r"""Run an iterated extended Kalman smoother (IEKS).
-
-    Args:
-        params: model parameters.
-        emissions: observation sequence.
-        t_emissions: continuous-time specific time instants of observations: if not None, it is an array 
-        num_iter: number of linearizations around posterior for update step (default 2).
-        inputs: optional array of inputs.
-
-    Returns:
-        post: posterior object.
-
-    """
-
-    def _step(carry, _):
-        # Relinearize around smoothed posterior from previous iteration
-        smoothed_prior = carry
-        smoothed_posterior = extended_kalman_smoother(params, emissions, t_emissions, smoothed_prior, inputs)
-        return smoothed_posterior, None
-
-    smoothed_posterior, _ = lax.scan(_step, None, jnp.arange(num_iter))
-    return smoothed_posterior
