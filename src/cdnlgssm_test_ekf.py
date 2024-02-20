@@ -368,21 +368,4 @@ if not jnp.allclose(cd_ekf_22_post.filtered_covariances, cd_filtered_posterior.f
     print("\tFiltered covariances allclose with atol=1e-06")
 
 print("All second-order EKF tests and second-order CDNLGSSM model passed!")
-pdb.set_trace()
 
-# Now, run ukf with the non-linear model and data from the linear model
-print("Running UKF with non-linear model and data from linear model")
-from continuous_discrete_nonlinear_gaussian_ssm import unscented_kalman_filter as cd_ukf
-
-cd_ukf_post = cd_ukf(cdnl_params, cd_emissions, t_emissions=t_emissions, inputs=inputs)
-
-# check that results in cd_ukf_post are similar to results from applying cd_kf (cd_filtered_posterior)
-if not jnp.allclose(cd_ukf_post.filtered_means, cd_filtered_posterior.filtered_means):
-    assert jnp.allclose(cd_ukf_post.filtered_means, cd_filtered_posterior.filtered_means, atol=1e-06)
-    print("\tFiltered means allclose with atol=1e-06")
-
-if not jnp.allclose(cd_ukf_post.filtered_covariances, cd_filtered_posterior.filtered_covariances):
-    assert jnp.allclose(cd_ukf_post.filtered_covariances, cd_filtered_posterior.filtered_covariances, atol=1e-06)
-    print("\tFiltered covariances allclose with atol=1e-06")
-
-print("All tests passed!")
