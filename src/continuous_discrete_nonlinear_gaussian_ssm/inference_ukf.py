@@ -8,13 +8,9 @@ from typing import NamedTuple, Optional, List
 from jax.tree_util import tree_map
 from dynamax.utils.utils import psd_solve
 
-import jax.debug as jdb
-
 # Our codebase
 from continuous_discrete_nonlinear_gaussian_ssm.models import ParamsCDNLGSSM
 from dynamax.linear_gaussian_ssm.inference import (
-    ParamsLGSSMInitial,
-    ParamsLGSSMEmissions,
     PosteriorGSSMFiltered,
     PosteriorGSSMSmoothed,
 )
@@ -72,6 +68,7 @@ def _compute_weights(n, alpha, beta, lamb):
     Returns:
         w_mean (2*n+1,): 2n+1 weights to compute predicted mean.
         w_cov (2*n+1,): 2n+1 weights to compute predicted covariance.
+        W_matrix (2*n+1,2*n+1): matrix of weights defined by combining w_mean and w_cov as in eq. 3.82 of Saarka's Thesis.
     """
 
     # These follow eq. 3.69-3.70 in Sarkka's thesis
@@ -79,9 +76,9 @@ def _compute_weights(n, alpha, beta, lamb):
     w_mean = jnp.concatenate((jnp.array([lamb / (n + lamb)]), jnp.ones(2 * n) * factor))
     w_cov = jnp.concatenate((jnp.array([lamb / (n + lamb) + (1 - alpha**2 + beta)]), jnp.ones(2 * n) * factor))
 
+    # These follow eq. 3.81-3.82 in Sarkka's thesis
     # W =  (I - [w_mean , \dots, w_mean]) diag(w_cov) (I - [w_mean , \dots, w_mean])^T
-    # TODO: make sure this correctly implements the above line (and eq. 3.82 in Saarka's thesis)
-    I_w = jnp.eye(2 * n + 1) - jnp.ones((2 * n + 1, 1)) @ w_mean[None, :]
+    I_w = jnp.eye(2 * n + 1) - w_mean[:, None]
     W_matrix = I_w @ jnp.diag(w_cov) @ I_w.T
 
     return w_mean, w_cov, W_matrix
@@ -125,15 +122,10 @@ def _predict(
     # weights are defined in eq. 3.69;
     # the related weight vector w_m and matrix W are defined in eq 3.81-3.82;
     def rhs_all(t, y, args):
-        # TODO: Do we need to use tensordot instead of @?
-
-        # TODO: are these implemented correctly w/ _get_params?
-        # possibly time-dependent parameters
-        # f_t = _get_params(params.dynamics_function, 2, t)
         # TODO: reconsider when we want time-varying dynamics functions
-        f_t = params.dynamics_function
-        Qc_t = _get_params(params.dynamics_covariance, 2, t)
-        L_t = _get_params(params.dynamics_coefficients, 2, t)
+        f_t = params.dynamics.drift_function
+        Qc_t = _get_params(params.dynamics.diffusion_cov, 2, t)
+        L_t = _get_params(params.dynamics.diffusion_coefficient, 2, t)
 
         # create sigma points X_t
         m_t, P_t = y
@@ -141,15 +133,15 @@ def _predict(
 
         # TODO: add controls u
         # f_X_t = vmap(f_t, (0, 0), 0)(X_t, u)
-        # f_X_t = vmap(f_t)(X_t)
         f_X_t = vmap(f_t, in_axes=(0, None))(X_t, None)
         # dimensions of f_X_t are (2*state_dim+1, state_dim)
 
         # dmdt = f_X_t  w_mean
         dmdt = f_X_t.T @ w_mean
 
-        # dPdt = f_x W X^T + X W f_x^T + L Qc L^T
-        dPdt = f_X_t.T @ W_matrix @ X_t + X_t.T @ W_matrix @ f_X_t + L_t @ Qc_t @ L_t.T
+        # dPdt = f_x W X^T + X W f_x^T + L Qc L^T (Transposes flipped due to shape of f_X_t and X_t)
+        foo = f_X_t.T @ W_matrix @ X_t
+        dPdt = foo + foo.T + L_t @ Qc_t @ L_t.T
 
         return (dmdt, dPdt)
 
@@ -157,16 +149,14 @@ def _predict(
     y0 = (m, P)
     sol = diffeqsolve(rhs_all, t0=t0, t1=t1, y0=y0)
     m_pred, P_pred = sol[0][-1], sol[1][-1]
-    jdb.print('m_pred={}', m_pred)
-    jdb.print('P_pred={}', P_pred)
-    jdb.breakpoint()
     # According to Sarkka's algo 3.24, we only need to return m_pred and P_pred (not P_cross) in continuous-discrete
-    # return m_pred, P_pred, P_cross
     return m_pred, P_pred
 
 
-def _condition_on(m, P, h, R, lamb, w_mean, w_cov, W_matrix, u, y):
+def _condition_on(m, P, h, R, lamb, w_mean, w_cov, u, y):
     """Condition a Gaussian potential on a new observation
+
+    Duplicate of the _condition_on function in discrete case of inference_ukf.py
 
     Args:
         m (D_hid,): prior mean.
@@ -176,7 +166,6 @@ def _condition_on(m, P, h, R, lamb, w_mean, w_cov, W_matrix, u, y):
         lamb (float): lamb = alpha**2 *(n + kappa) - n.
         w_mean (2*D_hid+1,): 2n+1 weights to compute predicted mean.
         w_cov (2*D_hid+1,): 2n+1 weights to compute predicted covariance.
-        W_matrix (2*D_hid+1,2*D_hid+1): matrix of weights defined by combining w_mean and w_cov as in eq. 3.82 of Saarka's Thesis.
         u (D_in,): inputs.
         y (D_obs,): observation.black
 
@@ -188,26 +177,14 @@ def _condition_on(m, P, h, R, lamb, w_mean, w_cov, W_matrix, u, y):
     """
     n = len(m)
     # Form sigma points and propagate
-    # The shape of sigmas_cond is Sigma Points x State Dimensions
     sigmas_cond = _compute_sigmas(m, P, n, lamb)
     u_s = jnp.array([u] * len(sigmas_cond))
-
-    # Propagate sigma points through emission function
-    # The shape of sigmas_cond_prop is Sigma Points x Observation Dimensions
     sigmas_cond_prop = vmap(h, (0, 0), 0)(sigmas_cond, u_s)
 
     # Compute parameters needed to filter
-    # TODO: check that this follows Saarka thesis eq 3.184
-    # Saarka presents this as a matrix multiplication, but we can also do it as a tensordot as Peter did (copied below)
     pred_mean = jnp.tensordot(w_mean, sigmas_cond_prop, axes=1)
     pred_cov = jnp.tensordot(w_cov, _outer(sigmas_cond_prop - pred_mean, sigmas_cond_prop - pred_mean), axes=1) + R
     pred_cross = jnp.tensordot(w_cov, _outer(sigmas_cond - m, sigmas_cond_prop - pred_mean), axes=1)
-
-    # Sarkka style
-    pred_mean_2 = w_mean @ sigmas_cond_prop
-    S = sigmas_cond_prop.T @ W_matrix @ sigmas_cond_prop + R
-    C = sigmas_cond.T @ W_matrix @ sigmas_cond_prop
-    K_new = psd_solve(S, C.T).T
 
     # Compute log-likelihood of observation
     ll = MVN(pred_mean, pred_cov).log_prob(y)
@@ -216,27 +193,6 @@ def _condition_on(m, P, h, R, lamb, w_mean, w_cov, W_matrix, u, y):
     K = psd_solve(pred_cov, pred_cross.T).T  # Filter gain
     m_cond = m + K @ (y - pred_mean)
     P_cond = P - K @ pred_cov @ K.T
-
-    # assert using jax.lax.cond
-    K_is_close = jnp.allclose(K, K_new, atol=1e-5)
-    pred_mean_is_close = jnp.allclose(pred_mean, pred_mean_2, atol=1e-5)
-    S_is_close = jnp.allclose(pred_cov, S, atol=1e-5)
-    C_is_close = jnp.allclose(pred_cross, C, atol=1e-5)
-    lax.cond(K_is_close, lambda: jdb.print("K is close"), lambda: jdb.print("K is not close"))
-    lax.cond(pred_mean_is_close, lambda: jdb.print("pred_mean is close"), lambda: jdb.print("pred_mean is not close"))
-    lax.cond(S_is_close, lambda: jdb.print("S is close"), lambda: jdb.print("S is not close"))
-    lax.cond(C_is_close, lambda: jdb.print("C is close"), lambda: jdb.print("C is not close"))
-
-    # # TODO: check that K_new is the same as K
-    # assert jnp.allclose(K, K_new, atol=1e-5)
-    # # TODO: check that pred_mean_2 is the same as pred_mean
-    # assert jnp.allclose(pred_mean, pred_mean_2, atol=1e-5)
-    # # TODO: check that S is the same as pred_cov
-    # assert jnp.allclose(pred_cov, S, atol=1e-5)
-    # # TODO: check that C is the same as pred_cross
-    # assert jnp.allclose(pred_cross, C, atol=1e-5)
-    # # TODO: which code is faster/better?
-
     return ll, m_cond, P_cond
 
 
@@ -262,6 +218,7 @@ def unscented_kalman_filter(
         t_emissions: continuous-time specific time instants of observations: if not None, it is an array
         hyperparams: hyper-parameters.
         inputs: optional array of inputs.
+        output_fields: list of fields to include in the output.
 
     Returns:
         filtered_posterior: posterior object.
@@ -286,7 +243,7 @@ def unscented_kalman_filter(
 
     t0_idx = jnp.arange(num_timesteps)
 
-    state_dim = params.dynamics_covariance.shape[0]
+    state_dim = params.dynamics.diffusion_cov.shape[0]
 
     # Compute lambda and weights from from hyperparameters
     alpha, beta, kappa = hyperparams.alpha, hyperparams.beta, hyperparams.kappa
@@ -294,7 +251,7 @@ def unscented_kalman_filter(
     w_mean, w_cov, W_matrix = _compute_weights(state_dim, alpha, beta, lamb)
 
     # Only emission function
-    h = params.emission_function
+    h = params.emissions.emission_function
     h = _process_fn(h, inputs)
     inputs = _process_input(inputs, num_timesteps)
 
@@ -303,24 +260,21 @@ def unscented_kalman_filter(
         t0, t1, t0_idx = args
 
         # Get parameters and inputs for time t0
-        R = _get_params(params.emission_covariance, 2, t0)
+        R = _get_params(params.emissions.emission_cov, 2, t0)
         u = inputs[t0_idx]
         y = emissions[t0_idx]
 
         # Condition on this emission
         log_likelihood, filtered_mean, filtered_cov = _condition_on(
-            pred_mean, pred_cov, h, R, lamb, w_mean, w_cov, W_matrix, u, y
+            pred_mean, pred_cov, h, R, lamb, w_mean, w_cov, u, y
         )
 
         # Update the log likelihood
         ll += log_likelihood
 
         # Predict the next state, based on UKF predict
-        # TODO: Make sure we return at least these two!
-        jdb.breakpoint()
         pred_mean, pred_cov = _predict(filtered_mean, filtered_cov, params, t0, t1, lamb, w_mean, w_cov, W_matrix, u)
 
-        jdb.breakpoint()
         # Build carry and output states
         carry = (ll, pred_mean, pred_cov)
         outputs = {
@@ -334,8 +288,12 @@ def unscented_kalman_filter(
         return carry, outputs
 
     # Run the Unscented Kalman Filter
-    carry = (0.0, params.initial_mean, params.initial_covariance)
+    carry = (0.0, params.initial.mean, params.initial.cov)
     (ll, *_), outputs = lax.scan(_step, carry, (t0, t1, t0_idx))
+    # for i in range(num_timesteps):
+    #     carry, outputs = _step(carry, (t0[i], t1[i], t0_idx[i]))
+    # ll, _, _ = carry
+
     outputs = {"marginal_loglik": ll, **outputs}
     posterior_filtered = PosteriorGSSMFiltered(
         **outputs,
@@ -352,6 +310,7 @@ def unscented_kalman_smoother(
 ) -> PosteriorGSSMSmoothed:
     """Run a unscented Kalman (RTS) smoother.
 
+    #TODO: NOT YET IMPLEMENTED.
     Args:
         params: model parameters.
         emissions: array of observations.
@@ -362,6 +321,8 @@ def unscented_kalman_smoother(
         nlgssm_posterior: posterior object.
 
     """
+
+    raise NotImplementedError("Unscented Kalman Smoother not yet implemented in continuous-discrete case.")
     # Figure out timestamps, as vectors to scan over
     # t_emissions is of shape num_timesteps \times 1
     # t0 and t1 are num_timesteps \times 0
@@ -381,7 +342,7 @@ def unscented_kalman_smoother(
 
     t0_idx = jnp.arange(num_timesteps)
 
-    state_dim = params.dynamics_covariance.shape[0]
+    state_dim = params.dynamics.diffusion_cov.shape[0]
 
     # Run the unscented Kalman filter
     ukf_posterior = unscented_kalman_filter(params, emissions, t_emissions, hyperparams, inputs)
@@ -395,7 +356,7 @@ def unscented_kalman_smoother(
     w_mean, w_cov, W_matrix = _compute_weights(state_dim, alpha, beta, lamb)
 
     # Only emission functions
-    h = params.emission_function
+    h = params.emissions.emission_function
     h = _process_fn(h, inputs)
     inputs = _process_input(inputs, num_timesteps)
 
@@ -405,7 +366,7 @@ def unscented_kalman_smoother(
         t0, t1, t0_idx, filtered_mean, filtered_cov = args
 
         # Get parameters and inputs for time t0
-        R = _get_params(params.emission_covariance, 2, t0)
+        R = _get_params(params.emissions.emission_cov, 2, t0)
         u = inputs[t0_idx]
         y = emissions[t0_idx]
 
