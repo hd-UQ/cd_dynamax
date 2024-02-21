@@ -454,7 +454,8 @@ def cdlgssm_smoother(
     inputs: Optional[Float[Array, "num_timesteps input_dim"]]=None
 ) -> PosteriorGSSMSmoothed:
     r"""Run forward-filtering, backward-smoother to compute expectations
-    under the posterior distribution on latent states. Technically, this
+    under the posterior distribution on latent states. 
+    Technically, this
     implements the Rauch-Tung-Striebel (RTS) smoother.
 
     Args:

@@ -10,6 +10,8 @@ from jax.tree_util import tree_map
 from dynamax.utils.utils import psd_solve, symmetrize
 from dynamax.types import PRNGKey
 
+import jax.debug as jdb
+
 # Dynamax shared code
 from dynamax.linear_gaussian_ssm.inference import PosteriorGSSMFiltered, PosteriorGSSMSmoothed
 
@@ -330,7 +332,7 @@ def _smooth(
             
             # Auxiliary matrix, used in both mean and covariance
             # Inverse product computed via psd_solve
-            aux_matrix=psd_solve(P_filter, (P_filter @ F_t + L_t @ Qc_t @ L_t.T))
+            aux_matrix=psd_solve(P_filter, (P_filter @ F_t.T + L_t @ Qc_t @ L_t.T))
 
             # Mean evolution
             dmsmoothdt = f_t(m_filter, u) + aux_matrix.T @ (m_smooth-m_filter)
@@ -340,8 +342,11 @@ def _smooth(
             raise ValueError('EKF hyperparams.smooth_order = {} not implemented yet'.format(hyperparams.smooth_order))
 
         return (dmsmoothdt, dPsmoothdt)
-    
-    sol = diffeqsolve(rhs_all, t0=t0, t1=t1, y0=y0, args=(m_filter, P_filter))
+    #jdb.breakpoint()
+    # Recall that we solve the rhs in reverse:
+    # from t1 to t0, and y0 contains initial conditions at t1
+    sol = diffeqsolve(rhs_all, t0=t1, t1=t0, y0=y0, args=(m_filter, P_filter))
+    #jdb.breakpoint()
     return sol[0][-1], sol[1][-1]
     
 def extended_kalman_smoother(
