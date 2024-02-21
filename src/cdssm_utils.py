@@ -24,6 +24,7 @@ def diffeqsolve(
     t0: float,
     t1: float,
     y0: jnp.ndarray,
+    reverse: bool = False,
     args = None,
     solver: dfx.AbstractSolver = None,
     stepsize_controller: dfx.AbstractStepSizeController = dfx.ConstantStepSize(),
@@ -42,7 +43,7 @@ def diffeqsolve(
 
     # allow for reverse-time integration
     # if t1 < t0, we assume that initial condition y0 is at t1
-    if t1 < t0:
+    if reverse:
         t0_new = 0
         t1_new = t1 - t0
         drift_new = reverse_rhs(drift, t1, y0)
