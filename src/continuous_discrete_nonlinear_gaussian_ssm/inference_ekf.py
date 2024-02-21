@@ -357,7 +357,8 @@ def extended_kalman_smoother(
     hyperparams: EKFHyperParams = EKFHyperParams(),
     inputs: Optional[Float[Array, "ntime input_dim"]] = None
 ) -> PosteriorGSSMSmoothed:
-    r"""Run an extended Kalman (RTS) smoother.
+    r"""Run an extended Kalman smoother,
+        as described in Algorithm 3.23 in Sarkka's thesis
 
     Args:
         params: model parameters.
