@@ -344,8 +344,8 @@ def _smooth(
         return (dmsmoothdt, dPsmoothdt)
     #jdb.breakpoint()
     # Recall that we solve the rhs in reverse:
-    # from t1 to t0, and y0 contains initial conditions at t1
-    sol = diffeqsolve(rhs_all, t0=t1, t1=t0, y0=y0, args=(m_filter, P_filter))
+    # from t1 to t0, BUT y0 contains initial conditions at t1
+    sol = diffeqsolve(rhs_all, t0=t0, t1=t1, y0=y0, reverse=True, args=(m_filter, P_filter))
     #jdb.breakpoint()
     return sol[0][-1], sol[1][-1]
     
@@ -428,7 +428,18 @@ def extended_kalman_smoother(
         filtered_means[1:][::-1], filtered_covs[1:][::-1]
     )
     _, (smoothed_means, smoothed_covs) = lax.scan(_step, init_carry, args)
-
+    '''
+    carry=init_carry
+    for i in jnp.arange(num_timesteps-1):
+        carry, (smoothed_means, smoothed_covs) = _step(
+            carry,
+            (t0[::-1][i],
+            t1[::-1][i],
+            t0_idx[::-1][i],
+            filtered_means[1:][::-1][i], filtered_covs[1:][::-1][i])
+        )
+    '''
+    
     # Reverse the arrays and return
     smoothed_means = jnp.row_stack((smoothed_means[::-1], filtered_means[-1][None, ...]))
     smoothed_covs = jnp.row_stack((smoothed_covs[::-1], filtered_covs[-1][None, ...]))
