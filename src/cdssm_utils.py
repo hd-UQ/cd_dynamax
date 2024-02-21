@@ -2,6 +2,21 @@
 import diffrax as dfx
 import jax.numpy as jnp
 
+
+def reverse_rhs(rhs, t1, ref_var):
+    if rhs is None:
+        return None
+
+    if isinstance(ref_var, tuple):
+        def rev_rhs(s, y, args):
+            foo = rhs(t1 - s, y, args)
+            return tuple(-f for f in foo)
+    else:
+        def rev_rhs(s, y, args):
+            return -rhs(t1 - s, y, args)
+
+    return rev_rhs
+
 # Solve a differential equation
 #   given a RHS. t0, t1, and initital conditions y0
 def diffeqsolve(
@@ -25,20 +40,33 @@ def diffeqsolve(
         else:
             solver = dfx.Heun()
 
+    # allow for reverse-time integration
+    # if t1 < t0, we assume that initial condition y0 is at t1
+    if t1 < t0:
+        t0_new = 0
+        t1_new = t1 - t0
+        drift_new = reverse_rhs(drift, t1, y0)
+        diffusion_new = reverse_rhs(diffusion, t1, y0)
+    else:
+        t0_new = t0
+        t1_new = t1
+        drift_new = drift
+        diffusion_new = diffusion
+
     # set DE terms
-    if diffusion is None:
-        terms = dfx.ODETerm(drift)
+    if diffusion_new is None:
+        terms = dfx.ODETerm(drift_new)
     else:
         bm = dfx.UnsafeBrownianPath(shape=y0.shape, key=key)
-        terms = dfx.MultiTerm(dfx.ODETerm(drift), dfx.ControlTerm(diffusion, bm))
+        terms = dfx.MultiTerm(dfx.ODETerm(drift_new), dfx.ControlTerm(diffusion_new, bm))
 
     # return a specific solver
     sol = dfx.diffeqsolve(
         terms,
         solver=solver,
         stepsize_controller=stepsize_controller,
-        t0=t0,
-        t1=t1,
+        t0=t0_new,
+        t1=t1_new,
         y0=y0,
         args=args,
         dt0=dt0,
