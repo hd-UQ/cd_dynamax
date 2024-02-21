@@ -1,28 +1,42 @@
 # To dos
 
 - Understand what info version of code is for, and implement if needed
-
-- Nonlinear transition function using diffrax (get this to work on nonlinear ssm ipynb notebooks) (DONE)
-    - [ekf_ukf_pendulum_diffrax.ipynb](./notebooks/ekf_ukf_pendulum_diffrax.ipynb)
-        - It takes nonlinear SSM pynotebook and uses difrax for nonlinear pushforward
-        - We can take inspiration from these, to devise continuous-discrete nonlinear ssm code later 
-    
-    - No parameter estimation yet!
-    
+- Can we get optax.Adam to ignore parameters that are not tensors? Somehow we need to be passing dynamics_function in params in non-linear setting.
+  
 ## Extend dynamax to deal with irregular sampling
-- add non-regular interval capability to dynamax codebase
-    - Done within continuous-discrete linear codebase (DONE)
-        - [cdlgssm_tracking.ipynb](./src/cdlgssm_tracking.ipynb)
-    - If it works, replicate for continuous-discrete nonlinear codebase
-        - Implement continuous-discrete nonlinear codebase with non-regular intervals (t_emissions)
-        - Implement continuous-discrete nonlinear pushforward in dyfrax
-        - Implement continuous-discrete nonlinear filters
-            - implement 3DVAR
-            - implement Sarkka's solutions for UKF
-            - implement Sarkka's solutions for EKF
-    
-- linear transition function using diffrax (DONE)
-    - NOTE that linear transition function using exact continuous solutions is non-trivial (discarded)
+- Continuous-dscrete extension for linear gaussian systems is done. 
+  - Test passes for regular sampling [cdlgssm_test_filter](./src/cdlgssm_test_filter.py).
+  - Irregular sampling demo in [cdlgssm_tracking](./src/example_notebooks/cdlgssm_tracking.ipynb).
+- Continuous-discrete filtering extension implemented for non-linear gaussian systems.
+  - Implemented UKF, EKF, and EnKF.
+  - Tests pass for linear case with regular sampling [cdnlgssm_test_filter_linear_TRegular](./src/cdnlgssm_test_filter_linear_TRegular.py).
+  - Pending:
+    - Test to show that {d-EKFs / d-UKF } == {cd-EKFs / cd-UKF} for linear system.
+    - Improve EnKF:
+      - try to get consistency on Linear Gaussian case.
+      - can build jacobian-based observation H within EnKF (instead of particle approximations)
+    - Notebook w/ pendulum at regular time intervals showing cd-UKF, cd-EKF, cd-EnKF vs d-UKF, d-EKF. 
+      - Check why our simulation differs from original notebook?
+    - Notebook w/ pendulum at irregular time intervals using cd-UKF, cd-EKF, cd-EnKF
+- Continuous-discrete smoothing extension implemented for non-linear gaussian systems.
+  - Implemented EKS.
+  - Pending: 
+    - UKS
+    - EnKS
+    - Test to show that discrete KS vs d-EKS vs d-UKS vs CD KS 1 vs CD KS 2 vs CD Extended KS 1 vs CD UKS in linear system case
+    - Notebook w/ pendulum showing at regular time interval cd-UKS, cd-EKS vs d-UKS, d-EKS
+    - Notebook w/ pendulum showing at irregular time intervals cd-UKS and cd-EKS
+
+## Code optimization (All Pending)
+- build a lax_scan_debug function that behaves like lax.scan but actually just implements a for loop for easy debugging
+- Matt needs to un-install dynamax so that he can change dynamax code and have it work
+- add predicted_means/covs to lgssm_filter (in dynamax code)
+- Diffeqsolve
+  — debug feature
+  - pass *kwargs
+- Build compare() for tests that just takes objects rather than arrays…can make tests even more succinct this way. e.g. compare(cd_ukf_object, d_ukf_object) will compare all identically-named attributes
+- Use the improved compare() in all tests.
+
 
 ## Extend our codebase to incorporate continuous-time inputs
 - Currently, the codebase supports inputs only at measurement times
@@ -39,7 +53,7 @@
 ## Parameter estimation
 - Parameter estimation for the linear gaussian case
     - SGD
-        - TODO: Add notebook showcasing parameter estimation accuracy
+        - TODO: Add notebook showcasing parameter estimation accuracy (port from add_validation branch)
     - EM is not implemented
         - The m-step requires MLE for continuous-time linear parameters 
         - EM will not be trivial for nonlinear ssms
