@@ -32,6 +32,7 @@ def diffeqsolve(
     dt0: float = 0.01,
     diffusion = None,
     key = None,
+    **kwargs
 ) -> jnp.ndarray:
 
     # set solver to default if not provided
@@ -73,6 +74,7 @@ def diffeqsolve(
         dt0=dt0,
         saveat=dfx.SaveAt(t1=True),
         adjoint=adjoint,
+        **kwargs
     ).ys
 
     return sol
