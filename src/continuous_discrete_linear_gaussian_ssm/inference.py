@@ -410,7 +410,7 @@ def cdlgssm_filter(
         num_timesteps = len(emissions)
         t0 = jnp.arange(num_timesteps)
         t1 = jnp.arange(1,num_timesteps+1)
-    
+
     t0_idx = jnp.arange(num_timesteps)
 
     inputs = jnp.zeros((num_timesteps, 0)) if inputs is None else inputs
@@ -438,12 +438,17 @@ def cdlgssm_filter(
         F, Q = compute_pushforward(params, t0, t1)
         pred_mean, pred_cov = _predict(filtered_mean, filtered_cov, F, B, b, Q, u)
 
-        return (ll, pred_mean, pred_cov), (filtered_mean, filtered_cov)
+        return (ll, pred_mean, pred_cov), (filtered_mean, filtered_cov, pred_mean, pred_cov)
 
     # Run the Kalman filter
     carry = (0.0, params.initial.mean, params.initial.cov)
-    (ll, _, _), (filtered_means, filtered_covs) = lax.scan(_step, carry, (t0, t1, t0_idx))
-    return PosteriorGSSMFiltered(marginal_loglik=ll, filtered_means=filtered_means, filtered_covariances=filtered_covs)
+    (ll, _, _), (filtered_means, filtered_covs, pred_means, pred_covs) = lax.scan(_step, carry, (t0, t1, t0_idx))
+    return PosteriorGSSMFiltered(marginal_loglik=ll,
+        filtered_means=filtered_means,
+        filtered_covariances=filtered_covs,
+        predicted_means=pred_means,
+        predicted_covariances=pred_covs
+    )
 
 # Smoothing equations in continuous-time
 def _smooth(

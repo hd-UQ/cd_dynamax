@@ -66,7 +66,6 @@ class ParamsLGSSMEmissions(NamedTuple):
     cov: Union[Float[Array, "emission_dim emission_dim"], Float[Array, "ntime emission_dim emission_dim"], Float[Array, "emission_dim_triu"], ParameterProperties]
 
 
-
 class ParamsLGSSM(NamedTuple):
     r"""Parameters of a linear Gaussian SSM.
 
@@ -410,12 +409,17 @@ def lgssm_filter(
         # Predict the next state
         pred_mean, pred_cov = _predict(filtered_mean, filtered_cov, F, B, b, Q, u)
 
-        return (ll, pred_mean, pred_cov), (filtered_mean, filtered_cov)
+        return (ll, pred_mean, pred_cov), (filtered_mean, filtered_cov, pred_mean, pred_cov)
 
     # Run the Kalman filter
     carry = (0.0, params.initial.mean, params.initial.cov)
-    (ll, _, _), (filtered_means, filtered_covs) = lax.scan(_step, carry, jnp.arange(num_timesteps))
-    return PosteriorGSSMFiltered(marginal_loglik=ll, filtered_means=filtered_means, filtered_covariances=filtered_covs)
+    (ll, _, _), (filtered_means, filtered_covs, pred_means, pred_covs) = lax.scan(_step, carry, jnp.arange(num_timesteps))
+    return PosteriorGSSMFiltered(marginal_loglik=ll,
+        filtered_means=filtered_means,
+        filtered_covariances=filtered_covs,
+        predicted_means=pred_means,
+        predicted_covariances=pred_covs
+    )
 
 
 @preprocess_args
