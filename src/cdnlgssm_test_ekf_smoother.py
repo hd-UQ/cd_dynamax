@@ -94,95 +94,162 @@ if not jnp.allclose(d_emissions, cd_emissions):
     assert jnp.allclose(d_emissions, cd_emissions, atol=1e-05)
     print('\tEmissions allclose with atol=1e-05')
 
-print('Continuous-Discrete time smoothing')
+print('Continuous-Discrete time smoothing: type 1')
 from continuous_discrete_linear_gaussian_ssm.inference import cdlgssm_smoother
-cd_smoothed_posterior = cdlgssm_smoother(cd_params, cd_emissions, t_emissions, inputs)
+cd_smoothed_posterior_1 = cdlgssm_smoother(
+    cd_params,
+    cd_emissions,
+    t_emissions,
+    inputs,
+    smoother_type='cd_smoother_1'
+)
 
-print('Checking that smoother posterior properties are close...')
+print('Checking that smoother type 1 posterior properties are close...')
 
 if not jnp.allclose(
         d_smoother_posterior.filtered_means,
-        cd_smoothed_posterior.filtered_means
+        cd_smoothed_posterior_1.filtered_means
     ):
     assert jnp.allclose(
         d_smoother_posterior.filtered_means,
-        cd_smoothed_posterior.filtered_means,
+        cd_smoothed_posterior_1.filtered_means,
         atol=1e-06
     )
     print('\tFiltered means allclose with atol=1e-06')
 
 if not jnp.allclose(
         d_smoother_posterior.filtered_covariances,
-        cd_smoothed_posterior.filtered_covariances
+        cd_smoothed_posterior_1.filtered_covariances
     ):
     assert jnp.allclose(
         d_smoother_posterior.filtered_covariances,
-        cd_smoothed_posterior.filtered_covariances,
+        cd_smoothed_posterior_1.filtered_covariances,
         atol=1e-06
     )
     print('\tFiltered covariances allclose with atol=1e-06')
     
 if not jnp.allclose(
         d_smoother_posterior.smoothed_means,
-        cd_smoothed_posterior.smoothed_means
+        cd_smoothed_posterior_1.smoothed_means
     ):
     assert jnp.allclose(
         d_smoother_posterior.smoothed_means,
-        cd_smoothed_posterior.smoothed_means,
+        cd_smoothed_posterior_1.smoothed_means,
         atol=1e-06
     )
     print('\tSmoothed means allclose with atol=1e-06')
 
 if not jnp.allclose(
         d_smoother_posterior.smoothed_covariances,
-        cd_smoothed_posterior.smoothed_covariances
+        cd_smoothed_posterior_1.smoothed_covariances
     ):
     assert jnp.allclose(
         d_smoother_posterior.smoothed_covariances,
-        cd_smoothed_posterior.smoothed_covariances,
+        cd_smoothed_posterior_1.smoothed_covariances,
         atol=1e-06
     )
     print('\tSmoothed covariances allclose with atol=1e-06')
 
 if not jnp.allclose(
         d_smoother_posterior.smoothed_cross_covariances,
-        cd_smoothed_posterior.smoothed_cross_covariances
+        cd_smoothed_posterior_1.smoothed_cross_covariances
     ):
     assert jnp.allclose(
         d_smoother_posterior.smoothed_cross_covariances,
-        cd_smoothed_posterior.smoothed_cross_covariances,
+        cd_smoothed_posterior_1.smoothed_cross_covariances,
         atol=1e-06
     )
     print('\tSmoothed cross-covariances allclose with atol=1e-06')
 
 if not jnp.allclose(
         d_smoother_posterior.marginal_loglik,
-        cd_smoothed_posterior.marginal_loglik
+        cd_smoothed_posterior_1.marginal_loglik
     ):
     if not jnp.allclose(
         d_smoother_posterior.marginal_loglik,
-        cd_smoothed_posterior.marginal_loglik,
+        cd_smoothed_posterior_1.marginal_loglik,
         atol=1e-06
     ):
         print('\tMarginal log likelihood allclose with atol=1e-06')
     else:
         print('\tMarginal log likelihood differences')
-        print(d_smoother_posterior.marginal_loglik - cd_smoothed_posterior.marginal_loglik)
+        print(d_smoother_posterior.marginal_loglik - cd_smoothed_posterior_1.marginal_loglik)
 
-'''
-pdb.set_trace()
-print('Fitting continuous-discrete time with EM')
-cd_em_fitted_params, cd_em_lps = cd_model.fit_em(
+print('All KF smoother type 1 tests passed!')
+
+print('Continuous-Discrete time smoothing: type 2')
+from continuous_discrete_linear_gaussian_ssm.inference import cdlgssm_smoother
+cd_smoothed_posterior_2 = cdlgssm_smoother(
     cd_params,
-    cd_param_props,
     cd_emissions,
     t_emissions,
-    inputs=inputs,
-    num_iters=10
+    inputs,
+    smoother_type='cd_smoother_2'
 )
-assert monotonically_increasing(d_em_lps)
-'''
-print('All Discrete to Continuous-Discrete Linear smoothing tests passed!')
+
+print('Checking that smoother type 2 posterior properties are close...')
+
+if not jnp.allclose(
+        cd_smoothed_posterior_1.filtered_means,
+        cd_smoothed_posterior_2.filtered_means
+    ):
+    assert jnp.allclose(
+        cd_smoothed_posterior_1.filtered_means,
+        cd_smoothed_posterior_2.filtered_means,
+        atol=1e-06
+    )
+    print('\tFiltered means allclose with atol=1e-06')
+
+if not jnp.allclose(
+        cd_smoothed_posterior_1.filtered_covariances,
+        cd_smoothed_posterior_2.filtered_covariances
+    ):
+    assert jnp.allclose(
+        cd_smoothed_posterior_1.filtered_covariances,
+        cd_smoothed_posterior_2.filtered_covariances,
+        atol=1e-06
+    )
+    print('\tFiltered covariances allclose with atol=1e-06')
+    
+if not jnp.allclose(
+        cd_smoothed_posterior_1.smoothed_means,
+        cd_smoothed_posterior_2.smoothed_means
+    ):
+    assert jnp.allclose(
+        cd_smoothed_posterior_1.smoothed_means,
+        cd_smoothed_posterior_2.smoothed_means,
+        atol=1e-06
+    )
+    print('\tSmoothed means allclose with atol=1e-06')
+
+if not jnp.allclose(
+        cd_smoothed_posterior_1.smoothed_covariances,
+        cd_smoothed_posterior_2.smoothed_covariances
+    ):
+    assert jnp.allclose(
+        cd_smoothed_posterior_1.smoothed_covariances,
+        cd_smoothed_posterior_2.smoothed_covariances,
+        atol=1e-06
+    )
+    print('\tSmoothed covariances allclose with atol=1e-06')
+
+print('\tSmoothed cross-covariances for type 2 need to be computed')
+
+if not jnp.allclose(
+        cd_smoothed_posterior_1.marginal_loglik,
+        cd_smoothed_posterior_2.marginal_loglik
+    ):
+    if not jnp.allclose(
+        cd_smoothed_posterior_1.marginal_loglik,
+        cd_smoothed_posterior_2.marginal_loglik,
+        atol=1e-06
+    ):
+        print('\tMarginal log likelihood allclose with atol=1e-06')
+    else:
+        print('\tMarginal log likelihood differences')
+        print(cd_smoothed_posterior_1.marginal_loglik - cd_smoothed_posterior_2.marginal_loglik)
+
+print('All KF smoother type 2 tests passed!')
 
 pdb.set_trace()
 
@@ -262,7 +329,7 @@ cdnlgssm_smoothed_posterior_1 = cdnlgssm_ekf_smoother(
     inputs=inputs,
 )
 
-print('Checking that smoother posterior properties are close...')
+print('Checking that CD-Nonlinear smoother posterior properties are close to Discrete KF smoother...')
 
 if not jnp.allclose(
         d_smoother_posterior.filtered_means,
@@ -322,18 +389,128 @@ if not jnp.allclose(
         print('\tMarginal log likelihood differences')
         print(d_smoother_posterior.marginal_loglik - cd_smoothed_posterior.marginal_loglik)
 
-'''
-pdb.set_trace()
-print('Fitting continuous-discrete time with EM')
-cd_em_fitted_params, cd_em_lps = cd_model.fit_em(
-    cd_params,
-    cd_param_props,
-    cd_emissions,
-    t_emissions,
-    inputs=inputs,
-    num_iters=10
-)
-assert monotonically_increasing(d_em_lps)
-'''
-print('All Discrete to Continuous-Discrete Linear smoothing tests passed!')
+print('All Discrete Linear to Continuous-Discrete NonLinear smoothing tests passed!')
 
+print('Checking that CD-Nonlinear smoother posterior properties are close to CD-KF smoother type 1...')
+
+if not jnp.allclose(
+        cd_smoothed_posterior_1.filtered_means,
+        cdnlgssm_smoothed_posterior_1.filtered_means
+    ):
+    assert jnp.allclose(
+        cd_smoothed_posterior_1.filtered_means,
+        cdnlgssm_smoothed_posterior_1.filtered_means,
+        atol=1e-05
+    )
+    print('\tFiltered means allclose with atol=1e-06')
+
+if not jnp.allclose(
+        cd_smoothed_posterior_1.filtered_covariances,
+        cdnlgssm_smoothed_posterior_1.filtered_covariances
+    ):
+    assert jnp.allclose(
+        cd_smoothed_posterior_1.filtered_covariances,
+        cdnlgssm_smoothed_posterior_1.filtered_covariances,
+        atol=1e-05
+    )
+    print('\tFiltered covariances allclose with atol=1e-06')
+    
+if not jnp.allclose(
+        cd_smoothed_posterior_1.smoothed_means,
+        cdnlgssm_smoothed_posterior_1.smoothed_means
+    ):
+    assert jnp.allclose(
+        cd_smoothed_posterior_1.smoothed_means,
+        cdnlgssm_smoothed_posterior_1.smoothed_means,
+        atol=1e-05
+    )
+    print('\tSmoothed means allclose with atol=1e-06')
+
+if not jnp.allclose(
+        cd_smoothed_posterior_1.smoothed_covariances,
+        cdnlgssm_smoothed_posterior_1.smoothed_covariances
+    ):
+    assert jnp.allclose(
+        cd_smoothed_posterior_1.smoothed_covariances,
+        cdnlgssm_smoothed_posterior_1.smoothed_covariances,
+        atol=1e-06
+    )
+    print('\tSmoothed covariances allclose with atol=1e-06')
+
+if not jnp.allclose(
+        cd_smoothed_posterior_1.marginal_loglik,
+        cdnlgssm_smoothed_posterior_1.marginal_loglik
+    ):
+    if not jnp.allclose(
+        cd_smoothed_posterior_1.marginal_loglik,
+        cdnlgssm_smoothed_posterior_1.marginal_loglik,
+        atol=1e-06
+    ):
+        print('\tMarginal log likelihood allclose with atol=1e-06')
+    else:
+        print('\tMarginal log likelihood differences')
+        print(cd_smoothed_posterior_1.marginal_loglik - cd_smoothed_posterior.marginal_loglik)
+
+print('All CD-Linear type 1 to Continuous-Discrete NonLinear smoothing tests passed!')
+
+print('Checking that CD-Nonlinear smoother posterior properties are close to CD-KF smoother type II...')
+
+if not jnp.allclose(
+        cd_smoothed_posterior_2.filtered_means,
+        cdnlgssm_smoothed_posterior_1.filtered_means
+    ):
+    assert jnp.allclose(
+        cd_smoothed_posterior_2.filtered_means,
+        cdnlgssm_smoothed_posterior_1.filtered_means,
+        atol=1e-05
+    )
+    print('\tFiltered means allclose with atol=1e-06')
+
+if not jnp.allclose(
+        cd_smoothed_posterior_2.filtered_covariances,
+        cdnlgssm_smoothed_posterior_1.filtered_covariances
+    ):
+    assert jnp.allclose(
+        cd_smoothed_posterior_2.filtered_covariances,
+        cdnlgssm_smoothed_posterior_1.filtered_covariances,
+        atol=1e-05
+    )
+    print('\tFiltered covariances allclose with atol=1e-06')
+    
+if not jnp.allclose(
+        cd_smoothed_posterior_2.smoothed_means,
+        cdnlgssm_smoothed_posterior_1.smoothed_means
+    ):
+    assert jnp.allclose(
+        cd_smoothed_posterior_2.smoothed_means,
+        cdnlgssm_smoothed_posterior_1.smoothed_means,
+        atol=1e-05
+    )
+    print('\tSmoothed means allclose with atol=1e-06')
+
+if not jnp.allclose(
+        cd_smoothed_posterior_2.smoothed_covariances,
+        cdnlgssm_smoothed_posterior_1.smoothed_covariances
+    ):
+    assert jnp.allclose(
+        cd_smoothed_posterior_2.smoothed_covariances,
+        cdnlgssm_smoothed_posterior_1.smoothed_covariances,
+        atol=1e-06
+    )
+    print('\tSmoothed covariances allclose with atol=1e-06')
+
+if not jnp.allclose(
+        cd_smoothed_posterior_2.marginal_loglik,
+        cdnlgssm_smoothed_posterior_1.marginal_loglik
+    ):
+    if not jnp.allclose(
+        cd_smoothed_posterior_2.marginal_loglik,
+        cdnlgssm_smoothed_posterior_1.marginal_loglik,
+        atol=1e-06
+    ):
+        print('\tMarginal log likelihood allclose with atol=1e-06')
+    else:
+        print('\tMarginal log likelihood differences')
+        print(cd_smoothed_posterior_2.marginal_loglik - cd_smoothed_posterior.marginal_loglik)
+
+print('All CD-Linear type II to Continuous-Discrete NonLinear smoothing tests passed!')

@@ -445,18 +445,76 @@ def cdlgssm_filter(
     (ll, _, _), (filtered_means, filtered_covs) = lax.scan(_step, carry, (t0, t1, t0_idx))
     return PosteriorGSSMFiltered(marginal_loglik=ll, filtered_means=filtered_means, filtered_covariances=filtered_covs)
 
+# Smoothing equations in continuous-time
+def _smooth(
+    m_filter, P_filter, # Filtered mean and covariance
+    m_smooth, P_smooth, # Smoothed mean and covariance
+    params: ParamsCDLGSSM,  # All necessary CD dynamic params
+    t0: Float,
+    t1: Float,
+    u,
+    ):
+    r"""smooth the next mean and covariance using EKF smoothing equations
+        where the evolution of m and P are computed based on
+            Equations 3.149 in Sarkka's Thesis
 
-@preprocess_args
+    Args:
+        m_filter (D_hid,): filtered mean at t1.
+        P_filter (D_hid,D_hid): filtered covariance at t1.
+        m_smooth (D_hid,): smooth mean at t1.
+        P_smooth (D_hid,D_hid): smoothed covariance at t1.
+        params: parameters of CD nonlinear dynamics, containing dynamics RHS function, coeff matrix and Brownian covariance matrix.
+        t0: initial time-instant
+        t1: final time-instant
+        u (D_in,): inputs.
+
+    Returns:
+        mu_smooth (D_hid,): smoothed mean at t0.
+        Sigma_smooth (D_hid,D_hid): smoothed covariance at t0.
+    """
+    
+    # Initialize
+    y0 = (m_smooth, P_smooth)
+    # Smoothed mean and covariance evolution
+    def rhs_all(t, y, args):
+        m_smooth, P_smooth = y
+        m_filter, P_filter = args
+        
+        # possibly time-dependent weights
+        F_t = _get_params(params.dynamics.weights, 2, t)
+        Qc_t = _get_params(params.dynamics.diffusion_cov, 2, t)
+        L_t = _get_params(params.dynamics.diffusion_coefficient, 2, t)
+  
+        # Auxiliary matrix, used in both mean and covariance
+        # Inverse product computed via psd_solve
+        aux_matrix=psd_solve(P_filter, L_t @ Qc_t @ L_t.T).T
+
+        # Mean evolution
+        dmsmoothdt = F_t @ m_smooth + aux_matrix @ (m_smooth-m_filter)
+        # Covariance evolution
+        dPsmoothdt = (F_t + aux_matrix) @ P_smooth + P_smooth @ (F_t + aux_matrix) - L_t @ Qc_t @ L_t.T
+
+        return (dmsmoothdt, dPsmoothdt)
+    #jdb.breakpoint()
+    # Recall that we solve the rhs in reverse:
+    # from t1 to t0, BUT y0 contains initial conditions at t1
+    sol = diffeqsolve(rhs_all, t0=t0, t1=t1, y0=y0, reverse=True, args=(m_filter, P_filter))
+    #jdb.breakpoint()
+    return sol[0][-1], sol[1][-1]
+    
+#TODO: fix preprocess_args to accommodate smoother_type if it is really necessary
+#@preprocess_args
 def cdlgssm_smoother(
     params: ParamsCDLGSSM,
     emissions: Float[Array, "num_timesteps emission_dim"],
     t_emissions: Optional[Float[Array, "num_timesteps 1"]]=None,
-    inputs: Optional[Float[Array, "num_timesteps input_dim"]]=None
+    inputs: Optional[Float[Array, "num_timesteps input_dim"]]=None,
+    smoother_type: Optional[str]='cd_smoother_1'
 ) -> PosteriorGSSMSmoothed:
     r"""Run forward-filtering, backward-smoother to compute expectations
     under the posterior distribution on latent states. 
-    Technically, this
-    implements the Rauch-Tung-Striebel (RTS) smoother.
+    Technically, this implements the Rauch-Tung-Striebel (RTS) smoother,
+    as described in Sarkka's thesis: Algorithm 3.17
 
     Args:
         params: an CDLGSSMParams instance (or object with the same fields)
@@ -486,31 +544,53 @@ def cdlgssm_smoother(
     # Run the Kalman filter
     filtered_posterior = cdlgssm_filter(params, emissions, t_emissions, inputs)
     ll, filtered_means, filtered_covs, *_ = filtered_posterior
-    
-    # Run the smoother backward in time
-    def _step(carry, args):
+
+    print('Running KF smoother type = {}'.format(smoother_type))
+    # Run the smoother type 1 (Sarkka's Algorithm 3.17) backward in time
+    def _step_1(carry, args):
         # Unpack the inputs
         smoothed_mean_next, smoothed_cov_next = carry
         t0, t1, t0_idx, filtered_mean, filtered_cov = args
 
-        # Shorthand: get parameters and inputs for time index t
+        print('Running KF smoother type 1')
+        # Get the discretization matrices
         F, Q = compute_pushforward(params, t0, t1)
         # TODO: when smoothing, shall we use t0 or t1 for inputs?
         B = _get_params(params.dynamics.input_weights, 2, t0)
         b = _get_params(params.dynamics.bias, 1, t0)
         u = inputs[t0_idx]
 
-        # This is like the Kalman gain but in reverse
-        # See Eq 8.11 of Saarka's "Bayesian Filtering and Smoothing"
-        # TODO: make sure that computation of G is correct in CD-Kalman Smoother case
-        G = psd_solve(Q + F @ filtered_cov @ F.T, F @ filtered_cov).T
+        # Computation of C in CD-Kalman Smoother in Equation 3.148
+        C = psd_solve(Q + F @ filtered_cov @ F.T, F @ filtered_cov).T
 
-        # Compute the smoothed mean and covariance
-        smoothed_mean = filtered_mean + G @ (smoothed_mean_next - F @ filtered_mean - B @ u - b)
-        smoothed_cov = filtered_cov + G @ (smoothed_cov_next - F @ filtered_cov @ F.T - Q) @ G.T
+        # Compute the smoothed mean and covariance as in Equation 3.148
+        smoothed_mean = filtered_mean + C @ (smoothed_mean_next - F @ filtered_mean - B @ u - b)
+        smoothed_cov = filtered_cov + C @ (smoothed_cov_next - F @ filtered_cov @ F.T - Q) @ C.T
 
         # Compute the smoothed expectation of z_t z_{t+1}^T
-        smoothed_cross = G @ smoothed_cov_next + jnp.outer(smoothed_mean, smoothed_mean_next)
+        # TODO: revise smoothed CD cross-covariance across time 
+        smoothed_cross = C @ smoothed_cov_next + jnp.outer(smoothed_mean, smoothed_mean_next)
+
+        return (smoothed_mean, smoothed_cov), (smoothed_mean, smoothed_cov, smoothed_cross)
+        
+    # Run the smoother type 2 (Sarkka's Algorithm 3.18) backward in time
+    def _step_2(carry, args):
+        # Unpack the inputs
+        smoothed_mean_next, smoothed_cov_next = carry
+        t0, t1, t0_idx, filtered_mean, filtered_cov = args
+
+        print('Running KF smoother type 2')
+        # Compute the smoothed mean and covariance by solving Equation 3.149
+        smoothed_mean, smoothed_cov = _smooth(
+            m_filter=filtered_mean, P_filter=filtered_cov, # Filtered 
+            m_smooth=smoothed_mean_next, P_smooth=smoothed_cov_next, # Smoothed 
+            params=params,
+            t0=t0,t1=t1,
+            u = inputs[t0_idx]
+        )
+
+        # TODO: Can we compute the smoothed expectation of z_t z_{t+1}^T
+        smoothed_cross = jnp.nan*jnp.ones(filtered_cov.shape)
 
         return (smoothed_mean, smoothed_cov), (smoothed_mean, smoothed_cov, smoothed_cross)
 
@@ -522,6 +602,15 @@ def cdlgssm_smoother(
         t0_idx[::-1],
         filtered_means[:-1][::-1], filtered_covs[:-1][::-1]
     )
+    # Which Continuous-smoother type do we want?
+    if smoother_type == 'cd_smoother_1':
+        _step=_step_1
+    elif smoother_type == 'cd_smoother_2':
+        _step=_step_2
+    else:
+        raise ValueError('CD Kalman Smoother type = {} not implemented yet'.format(smoother_type))
+        
+    # Run the smoother steps via lax
     _, (smoothed_means, smoothed_covs, smoothed_cross) = lax.scan(_step, init_carry, args)
 
     # Reverse the arrays and return

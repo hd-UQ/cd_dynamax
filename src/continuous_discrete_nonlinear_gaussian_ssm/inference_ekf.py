@@ -298,8 +298,10 @@ def _smooth(
             (No second order in Sarkka)
 
     Args:
-        m (D_hid,): next mean.
-        P (D_hid,D_hid): next covariance.
+        m_filter (D_hid,): filtered mean at t1.
+        P_filter (D_hid,D_hid): filtered covariance at t1.
+        m_smooth (D_hid,): smooth mean at t1.
+        P_smooth (D_hid,D_hid): smoothed covariance at t1.
         params: parameters of CD nonlinear dynamics, containing dynamics RHS function, coeff matrix and Brownian covariance matrix.
         t0: initial time-instant
         t1: final time-instant
@@ -307,13 +309,14 @@ def _smooth(
         hyperparams: EKF hyperparameters
 
     Returns:
-        mu_smooth (D_hid,): smoothed mean.
-        Sigma_smooth (D_hid,D_hid): smoothed covariance.
+        mu_smooth (D_hid,): smoothed mean at t0.
+        Sigma_smooth (D_hid,D_hid): smoothed covariance at t0.
     """
     
     # Initialize
     y0 = (m_smooth, P_smooth)
-    # Predicted mean and covariance evolution, by using the EKF state order approximations
+    # Smoothed mean and covariance evolution
+    # by using the EKF state order approximations
     def rhs_all(t, y, args):
         m_smooth, P_smooth = y
         m_filter, P_filter = args
