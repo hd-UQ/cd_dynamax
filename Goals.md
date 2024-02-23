@@ -1,7 +1,6 @@
 # To dos
-
+- For SIAM UQ conference, show HMC working in a cd-linear setting assuming linear and non-linear models (i.e., show that EKF reproduces results of basic KF approach)
 - Understand what info version of code is for, and implement if needed
-- Can we get optax.Adam to ignore parameters that are not tensors? Somehow we need to be passing dynamics_function in params in non-linear setting.
   
 ## Extend dynamax to deal with irregular sampling
 - Continuous-dscrete extension for linear gaussian systems is done. 
@@ -28,14 +27,50 @@
     - Notebook w/ pendulum showing at irregular time intervals cd-UKS and cd-EKS
 
 ## Code optimization (All Pending)
-- build a lax_scan_debug function that behaves like lax.scan but actually just implements a for loop for easy debugging
-- Matt needs to un-install dynamax so that he can change dynamax code and have it work
-- add predicted_means/covs to lgssm_filter (in dynamax code)
-- Diffeqsolve
-  — debug feature
-  - pass *kwargs
 - Build compare() for tests that just takes objects rather than arrays…can make tests even more succinct this way. e.g. compare(cd_ukf_object, d_ukf_object) will compare all identically-named attributes
 - Use the improved compare() in all tests.
+- pass *kwargs to diffeqsolve
+
+-Pending:
+  - Add new filtering functionalities to __init__
+  - Be consistent when calling filters (always use `model.filter`, don't call inference files directly from a script)
+  - build a lax_scan_debug function that behaves like lax.scan but actually just implements a for loop for easy debugging
+  - Matt needs to un-install dynamax so that he can change dynamax code and have it work
+  - add predicted_means/covs to lgssm_filter (in dynamax code)
+  - use `output_fields` in filters to control granularity of returned posterior
+  - Diffeqsolve
+    — debug feature
+
+## Parameter estimation
+- Fit SGD works for continuous-discrete linear and non-linear models so we can compute MLE model parameter estimates based on different filtering algorithms
+- Pending: 
+  - Check that parameter estimates are consistent between cd-l and cd-nl for linear models with no bias terms (=None).
+  - Generalize learnable function params property to deal with multiple parameters (e.g., weights and biases).
+- Parameter estimation for the linear gaussian case
+    - SGD
+        - TODO: Add notebook showcasing parameter estimation accuracy (port from add_validation branch)
+    - EM is not implemented
+        - The m-step requires MLE for continuous-time linear parameters 
+        - EM will not be trivial for nonlinear ssms
+    - ContDiscreteLinearGaussianConjugateSSM:
+        - Shall we keep this and modify it for continuous-time linear paraemeters
+        - Pending: Are there conjugate priors for the continuous-discrete linear case?
+- 
+
+- Uncertainty Quantification for the continuous-discrete linear/non-linear gaussian case:
+  - using Monte Carlo
+  - using HMC
+
+- hierarchical parameter estimation for the linear gaussian case
+    - Incorporate priors over parameters
+    - Define prior hyperparameters as new dynamax "parameters"
+    - Use Monte Carlo to average over many realizations of parameters
+    - Let SGD learn hyperparameters of prior via MC-based loss
+
+- parameter estimation for 1 non-linear pendulum
+- hierarchical parameter estimation for multiple non-linear pendula
+
+- Check the conjugate version of the model class, and decide how to proceed
 
 
 ## Extend our codebase to incorporate continuous-time inputs
@@ -49,29 +84,6 @@
   - allow for input times to be different from measurement times
   - extend to continuous coupling of $u(t)$ to the state and measurement dynamics---how?
     - Do we interpolate $u(t)$ between input-measurement times?
-
-## Parameter estimation
-- Parameter estimation for the linear gaussian case
-    - SGD
-        - TODO: Add notebook showcasing parameter estimation accuracy (port from add_validation branch)
-    - EM is not implemented
-        - The m-step requires MLE for continuous-time linear parameters 
-        - EM will not be trivial for nonlinear ssms
-    - ContDiscreteLinearGaussianConjugateSSM:
-        - Shall we keep this and modify it for continuous-time linear paraemeters
-
-- Uncertainty Quantification for the continuous-discrete linear gaussian case using Monte Carlo
-
-- hierarchical parameter estimation for the linear gaussian case
-    - Incorporate priors over parameters
-    - Define prior hyperparameters as new dynamax "parameters"
-    - Use Monte Carlo to average over many realizations of parameters
-    - Let SGD learn hyperparameters of prior via MC-based loss
-
-- parameter estimation for 1 non-linear pendulum
-- hierarchical parameter estimation for multiple non-linear pendula
-
-- Check the conjugate version of the model class, and decide how to proceed
 
 ## New non-linear models
 - lorenz
