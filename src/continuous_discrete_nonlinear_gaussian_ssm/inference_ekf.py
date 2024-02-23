@@ -71,33 +71,36 @@ def _predict(
         m, P = y
         
         # TODO: possibly time- and parameter-dependent functions
-        f_t=params.dynamics.drift_function
-        
+        f=params.dynamics.drift.f
+
         # Get time-varying parameters
-        Qc_t = _get_params(params.dynamics.diffusion_cov, 2, t)
-        L_t = _get_params(params.dynamics.diffusion_coefficient, 2, t)
+        Qc_t = params.dynamics.diffusion_cov.f(None,u,t)
+        L_t = params.dynamics.diffusion_coefficient.f(None,u,t)
+        # Get time-varying parameters
+        #Qc_t = _get_params(params.dynamics.diffusion_cov, 2, t)
+        #L_t = _get_params(params.dynamics.diffusion_coefficient, 2, t)
 
        
         # following Sarkka thesis eq. 3.158
         if hyperparams.state_order=='first':
             # Evaluate the jacobian of the dynamics function at m and inputs
-            F_t=jacfwd(f_t)(m,u)
+            F_t=jacfwd(f)(m,u,t)
             
             # Mean evolution
-            dmdt = f_t(m, u)
+            dmdt = f(m, u,t)
             # Covariance evolution
             dPdt = F_t @ P + P @ F_t.T + L_t @ Qc_t @ L_t.T
         
         # follow Sarkka thesis eq. 3.159
         elif hyperparams.state_order=='second':
             # Evaluate the jacobian of the dynamics function at m and inputs
-            F_t=jacfwd(f_t)(m,u)
+            F_t=jacfwd(f)(m,u,t)
             # Evaluate the Hessian of the dynamics function at m and inputs
             # Based on these recommendationshttps://jax.readthedocs.io/en/latest/notebooks/autodiff_cookbook.html#jacobians-and-hessians-using-jacfwd-and-jacrev
-            H_t=jacfwd(jacrev(f_t))(m,u)
+            H_t=jacfwd(jacrev(f))(m,u,t)
         
             # Mean evolution
-            dmdt = f_t(m, u) + 0.5*jnp.trace(H_t @ P)
+            dmdt = f(m,u,t) + 0.5*jnp.trace(H_t @ P)
             # Covariance evolution
             dPdt = F_t @ P + P @ F_t.T + L_t @ Qc_t @ L_t.T
         else:
@@ -111,7 +114,7 @@ def _predict(
 # Condition on observations for EKF
 # Based on first order approximation, as in Equation 3.59
 # TODO: implement second order EKF, as in Equation 3.63
-def _condition_on(m, P, h, H, R, u, y, num_iter, hyperparams):
+def _condition_on(m, P, h, H, R, u, y, t, num_iter, hyperparams):
     r"""Condition a Gaussian potential on a new observation.
 
        p(z_t | y_t, u_t, y_{1:t-1}, u_{1:t-1})
@@ -134,6 +137,7 @@ def _condition_on(m, P, h, H, R, u, y, num_iter, hyperparams):
          R (D_obs,D_obs): emission covariance matrix.
          u (D_in,): inputs.
          y (D_obs,): observation.
+         t () : time instant to condition on
          num_iter (int): number of re-linearizations around posterior for update step.
 
      Returns:
@@ -142,11 +146,11 @@ def _condition_on(m, P, h, H, R, u, y, num_iter, hyperparams):
     """
     def _step(carry, _):
         prior_mean, prior_cov = carry
-        H_x = H(prior_mean, u)
+        H_x = H(prior_mean, u, t)
         S = R + H_x @ prior_cov @ H_x.T
         K = psd_solve(S, H_x @ prior_cov).T
         posterior_cov = prior_cov - K @ S @ K.T
-        posterior_mean = prior_mean + K @ (y - h(prior_mean, u))
+        posterior_mean = prior_mean + K @ (y - h(prior_mean, u, t))
         return (posterior_mean, posterior_cov), None
 
     # Iterate re-linearization over posterior mean and covariance
@@ -205,11 +209,11 @@ def extended_kalman_filter(
     t0_idx = jnp.arange(num_timesteps)
     
     # Only emission function
-    h = params.emissions.emission_function
+    h = params.emissions.emission_function.f
     # First order EKF update implemented for now
     # TODO: consider second-order EKF updates
     H = jacfwd(h)
-    h, H = (_process_fn(fn, inputs) for fn in (h, H))
+    #h, H = (_process_fn(fn, inputs) for fn in (h, H))
     inputs = _process_input(inputs, num_timesteps)
     
     def _step(carry, args):
@@ -218,19 +222,21 @@ def extended_kalman_filter(
 
         # TODO:
         # Get parameters and inputs for time t0
-        Q = _get_params(params.dynamics.diffusion_cov, 2, t0)
-        R = _get_params(params.emissions.emission_cov, 2, t0)
+        #Q = _get_params(params.dynamics.diffusion_cov, 2, t0)
+        #R = _get_params(params.emissions.emission_cov, 2, t0)
         u = inputs[t0_idx]
         y = emissions[t0_idx]
+        Q = params.dynamics.diffusion_cov.f(None,u,t0)
+        R = params.emissions.emission_cov.f(None,u,t0)
 
         # Update the log likelihood
         # According to first order EKF update
         # TODO: incorporate second order EKF updates!
-        H_x = H(pred_mean, u)
-        ll += MVN(h(pred_mean, u), H_x @ pred_cov @ H_x.T + R).log_prob(jnp.atleast_1d(y))
+        H_x = H(pred_mean, u, t0)
+        ll += MVN(h(pred_mean, u, t0), H_x @ pred_cov @ H_x.T + R).log_prob(jnp.atleast_1d(y))
 
         # Condition on this emission
-        filtered_mean, filtered_cov = _condition_on(pred_mean, pred_cov, h, H, R, u, y, num_iter, hyperparams)
+        filtered_mean, filtered_cov = _condition_on(pred_mean, pred_cov, h, H, R, u, y, t0, num_iter, hyperparams)
 
         # Predict the next state based on EKF approximations
         pred_mean, pred_cov = _predict(filtered_mean, filtered_cov, params, t0, t1, u, hyperparams)
@@ -322,23 +328,25 @@ def _smooth(
         m_filter, P_filter = args
         
         # TODO: possibly time- and parameter-dependent functions
-        f_t=params.dynamics.drift_function
-        
+        f=params.dynamics.drift.f
+
         # Get time-varying parameters
-        Qc_t = _get_params(params.dynamics.diffusion_cov, 2, t)
-        L_t = _get_params(params.dynamics.diffusion_coefficient, 2, t)
+        Qc_t = params.dynamics.diffusion_cov.f(None,u,t)
+        L_t = params.dynamics.diffusion_coefficient.f(None,u,t)
+        #Qc_t = _get_params(params.dynamics.diffusion_cov, 2, t)
+        #L_t = _get_params(params.dynamics.diffusion_coefficient, 2, t)
 
         # following Sarkka thesis eq. 3.163
         if hyperparams.smooth_order=='first':
             # Evaluate the jacobian of the dynamics function at m and inputs
-            F_t=jacfwd(f_t)(m_filter,u)
+            F_t=jacfwd(f)(m_filter,u,t)
             
             # Auxiliary matrix, used in both mean and covariance
             # Inverse product computed via psd_solve
             aux_matrix=psd_solve(P_filter, (P_filter @ F_t.T + L_t @ Qc_t @ L_t.T))
 
             # Mean evolution
-            dmsmoothdt = f_t(m_filter, u) + aux_matrix.T @ (m_smooth-m_filter)
+            dmsmoothdt = f(m_filter,u,t) + aux_matrix.T @ (m_smooth-m_filter)
             # Covariance evolution
             dPsmoothdt = aux_matrix.T @ P_smooth + P_smooth @ aux_matrix - L_t @ Qc_t @ L_t.T
         else:
@@ -547,11 +555,12 @@ def extended_kalman_posterior_sample(
 
         # TODO:
         # Get parameters and inputs for time t0
-        Q = _get_params(params.dynamics.diffusion_cov, 2, t0)
+        #Q = _get_params(params.dynamics.diffusion_cov, 2, t0)
         u = inputs[t0_idx]
+        Q = params.dynamics.diffusion_cov.f(None,u,t0)
 
         # Condition on next state
-        smoothed_mean, smoothed_cov = _condition_on(filtered_mean, filtered_cov, f, F, Q, u, next_state, 1)
+        smoothed_mean, smoothed_cov = _condition_on(filtered_mean, filtered_cov, f, F, Q, u, next_state, t0, 1)
         state = MVN(smoothed_mean, smoothed_cov).sample(seed=key)
         return state, state
 
