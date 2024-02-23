@@ -86,7 +86,7 @@ print("Discrete time filtering: pre-fit")
 from dynamax.linear_gaussian_ssm.inference import lgssm_filter
 
 d_filtered_posterior = lgssm_filter(d_params, d_emissions, inputs)
-pdb.set_trace()
+
 print("Fitting discrete time with SGD")
 d_sgd_fitted_params, d_sgd_lps = d_model.fit_sgd(d_params, d_param_props, d_emissions, inputs=inputs, num_epochs=10)
 
@@ -147,6 +147,7 @@ compare(d_filtered_posterior.filtered_covariances, cd_filtered_posterior.filtere
 print("************* Continuous-Discrete Non-linear GSSM *************")
 from continuous_discrete_nonlinear_gaussian_ssm import extended_kalman_filter as cd_ekf
 from continuous_discrete_nonlinear_gaussian_ssm import EKFHyperParams
+from continuous_discrete_nonlinear_gaussian_ssm.models import LearnableFunction,ConstantLearnableFunction,LinearLearnableFunction
 
 # Randomness
 key1, key2 = jr.split(jr.PRNGKey(0))
@@ -156,18 +157,26 @@ inputs = None  # Not interested in inputs for now
 cdnl_model = ContDiscreteNonlinearGaussianSSM(state_dim=STATE_DIM, emission_dim=EMISSION_DIM)
 
 # TODO: check that these need input as second argument; also check about including bias terms.
-dynamics_drift_function = lambda z, u: cd_params.dynamics.weights @ z
-emission_function = lambda z: cd_params.emissions.weights @ z
+#dynamics_drift_function = lambda z, u: cd_params.dynamics.weights @ z
+#emission_function = lambda z: cd_params.emissions.weights @ z
 
 for dynamics_approx_type in ["first", "second"]:
         # Initialize with first/second order SDE approximation
         cdnl_params_1, cdnl_param_props_1 = cdnl_model.initialize(
             key1,
-            dynamics_drift_function=dynamics_drift_function,
-            dynamics_diffusion_coefficient=cd_params.dynamics.diffusion_coefficient,
-            dynamics_diffusion_cov=cd_params.dynamics.diffusion_cov,
+            dynamics_drift=LinearLearnableFunction(
+                params=cd_params.dynamics.weights
+            ),
+            dynamics_diffusion_coefficient=ConstantLearnableFunction(
+                params=cd_params.dynamics.diffusion_coefficient
+            ),
+            dynamics_diffusion_cov=ConstantLearnableFunction(
+                params=cd_params.dynamics.diffusion_cov
+            ),
             dynamics_approx_type=dynamics_approx_type,
-            emission_function=emission_function,
+            emission_function=LinearLearnableFunction(
+                params=cd_params.emissions.weights
+            ),
         )
 
         # Simulate from continuous model
@@ -203,8 +212,18 @@ for dynamics_approx_type in ["first", "second"]:
             print("\tComparing filtered covariances...")
             compare(cd_ekf_11_post.filtered_covariances, cd_filtered_posterior.filtered_covariances, do_det=True)
 
+            print("Fitting continuous-discrete Non-linear model with SGD")
+            cd_sgd_fitted_params, cd_sgd_lps = cdnl_model.fit_sgd(
+                cdnl_params_1,
+                cdnl_param_props_1,
+                cdnl_emissions_1,
+                t_emissions=t_emissions,
+                inputs=inputs,
+                num_epochs=10
+            )
 print("All EKF tests and CDNLGSSM model passed!")
 
+pdb.set_trace()
 ######## Continuous-discrete Unscented Kalman Filter
 from continuous_discrete_nonlinear_gaussian_ssm import unscented_kalman_filter as cd_ukf
 from continuous_discrete_nonlinear_gaussian_ssm import UKFHyperParams
