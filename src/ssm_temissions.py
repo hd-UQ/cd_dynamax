@@ -275,9 +275,10 @@ class SSM(ABC):
     def marginal_log_prob(
         self,
         params: ParameterSet,
+        filter_hyperparams: Optional[Any],
         emissions: Float[Array, "ntime emission_dim"],
         t_emissions: Optional[Float[Array, "num_timesteps 1"]]=None,
-        inputs: Optional[Float[Array, "ntime input_dim"]]=None
+        inputs: Optional[Float[Array, "ntime input_dim"]]=None,
     ) -> Scalar:
         r"""Compute log marginal likelihood of observations, $\log \sum_{z_{1:T}} p(y_{1:T}, z_{1:T} \mid \theta)$.
 
@@ -296,9 +297,10 @@ class SSM(ABC):
     def filter(
         self,
         params: ParameterSet,
+        filter_hyperparams: Optional[Union[Any]],
         emissions: Float[Array, "ntime emission_dim"],
         t_emissions: Optional[Float[Array, "num_timesteps 1"]]=None,
-        inputs: Optional[Float[Array, "ntime input_dim"]]=None
+        inputs: Optional[Float[Array, "ntime input_dim"]]=None,
     ) -> Posterior:
         r"""Compute filtering distributions, $p(z_t \mid y_{1:t}, u_{1:t}, \theta)$ for $t=1,\ldots,T$.
 
@@ -317,9 +319,10 @@ class SSM(ABC):
     def smoother(
         self,
         params: ParameterSet,
+        filter_hyperparams: Optional[Union[Any]],
         emissions: Float[Array, "ntime emission_dim"],
         t_emissions: Optional[Float[Array, "num_timesteps 1"]]=None,
-        inputs: Optional[Float[Array, "ntime input_dim"]]=None
+        inputs: Optional[Float[Array, "ntime input_dim"]]=None,
     ) -> Posterior:
         r"""Compute smoothing distribution, $p(z_t \mid y_{1:T}, u_{1:T}, \theta)$ for $t=1,\ldots,T$.
 
@@ -445,6 +448,7 @@ class SSM(ABC):
         props: PropertySet,
         emissions: Union[Float[Array, "num_timesteps emission_dim"],
                          Float[Array, "num_batches num_timesteps emission_dim"]],
+        filter_hyperparams: Optional[Any],
         t_emissions: Optional[Union[Float[Array, "num_timesteps 1"],
                         Float[Array, "num_batches num_timesteps 1"]]]=None,
         inputs: Optional[Union[Float[Array, "num_timesteps input_dim"],
@@ -496,7 +500,7 @@ class SSM(ABC):
             params = from_unconstrained(unc_params, props)
             minibatch_emissions, minibatch_t_emissions, minibatch_inputs = minibatch
             scale = len(batch_emissions) / len(minibatch_emissions)
-            minibatch_lls = vmap(partial(self.marginal_log_prob, params))(minibatch_emissions, minibatch_t_emissions, minibatch_inputs)
+            minibatch_lls = vmap(partial(self.marginal_log_prob, params, filter_hyperparams))(minibatch_emissions, minibatch_t_emissions, minibatch_inputs)
             lp = self.log_prior(params) + minibatch_lls.sum() * scale
             return -lp / batch_emissions.size
 

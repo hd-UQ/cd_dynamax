@@ -160,7 +160,7 @@ cdnl_model = ContDiscreteNonlinearGaussianSSM(state_dim=STATE_DIM, emission_dim=
 #dynamics_drift_function = lambda z, u: cd_params.dynamics.weights @ z
 #emission_function = lambda z: cd_params.emissions.weights @ z
 
-for dynamics_approx_type in ["first", "second"]:
+for dynamics_approx_order in [1., 2.]:
         # Initialize with first/second order SDE approximation
         cdnl_params_1, cdnl_param_props_1 = cdnl_model.initialize(
             key1,
@@ -173,14 +173,14 @@ for dynamics_approx_type in ["first", "second"]:
             dynamics_diffusion_cov=ConstantLearnableFunction(
                 params=cd_params.dynamics.diffusion_cov
             ),
-            dynamics_approx_type=dynamics_approx_type,
+            dynamics_approx_order=dynamics_approx_order,
             emission_function=LinearLearnableFunction(
                 params=cd_params.emissions.weights
             ),
         )
 
         # Simulate from continuous model
-        print(f"Simulating {dynamics_approx_type} order CDNLGSSM in continuous-discrete time")
+        print(f"Simulating {dynamics_approx_order} order CDNLGSSM in continuous-discrete time")
         cdnl_states_1, cdnl_emissions_1 = cdnl_model.sample(
             cdnl_params_1, key2, t_emissions=t_emissions, num_timesteps=NUM_TIMESTEPS, inputs=inputs
         )
@@ -196,7 +196,7 @@ for dynamics_approx_type in ["first", "second"]:
         for state_order in ["first", "second"]:
             # Run First order ekf with the non-linear model and data from the first-order CDNLGSSM model
             # print("Running first-order EKF with non-linear model class and data from first-order CDNLGSSM model")
-            print(f"Running {state_order}-order EKF with non-linear model class and data from {dynamics_approx_type}-order CDNLGSSM model")
+            print(f"Running {state_order}-order EKF with non-linear model class and data from {dynamics_approx_order}-order CDNLGSSM model")
             cd_ekf_11_post = cd_ekf(
                 cdnl_params_1,
                 cdnl_emissions_1,
@@ -217,10 +217,13 @@ for dynamics_approx_type in ["first", "second"]:
                 cdnl_params_1,
                 cdnl_param_props_1,
                 cdnl_emissions_1,
+                filter_hyperparams=EKFHyperParams(state_order=state_order, emission_order="first"),
                 t_emissions=t_emissions,
                 inputs=inputs,
                 num_epochs=10
             )
+            
+            
 print("All EKF tests and CDNLGSSM model passed!")
 
 pdb.set_trace()

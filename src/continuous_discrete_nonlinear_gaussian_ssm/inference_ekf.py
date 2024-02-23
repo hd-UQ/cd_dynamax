@@ -16,8 +16,8 @@ import jax.debug as jdb
 from dynamax.linear_gaussian_ssm.inference import PosteriorGSSMFiltered, PosteriorGSSMSmoothed
 
 # Our codebase
-# Param definition
-from continuous_discrete_nonlinear_gaussian_ssm.models import ParamsCDNLGSSM
+# CDNLGSSM param and function definition
+from continuous_discrete_nonlinear_gaussian_ssm.cdnlgssm_utils import *
 # Diffrax based diff-eq solver
 from cdssm_utils import diffeqsolve
 
@@ -363,9 +363,9 @@ def _smooth(
 def extended_kalman_smoother(
     params: ParamsCDNLGSSM,
     emissions:  Float[Array, "ntime emission_dim"],
+    hyperparams: EKFHyperParams = EKFHyperParams(),
     t_emissions: Optional[Float[Array, "num_timesteps 1"]]=None,
     filtered_posterior: Optional[PosteriorGSSMFiltered] = None,
-    hyperparams: EKFHyperParams = EKFHyperParams(),
     inputs: Optional[Float[Array, "ntime input_dim"]] = None
 ) -> PosteriorGSSMSmoothed:
     r"""Run an extended Kalman smoother,
@@ -465,9 +465,9 @@ def extended_kalman_smoother(
 def iterated_extended_kalman_smoother(
     params: ParamsCDNLGSSM,
     emissions:  Float[Array, "ntime emission_dim"],
+    hyperparams: EKFHyperParams = EKFHyperParams(),
     t_emissions: Optional[Float[Array, "num_timesteps 1"]]=None,
     num_iter: int = 2,
-    hyperparams: EKFHyperParams = EKFHyperParams(),
     inputs: Optional[Float[Array, "ntime input_dim"]] = None
 ) -> PosteriorGSSMSmoothed:
     r"""Run an iterated extended Kalman smoother (IEKS).
