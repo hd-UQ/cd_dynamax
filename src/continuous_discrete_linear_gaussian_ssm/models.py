@@ -236,6 +236,7 @@ class ContDiscreteLinearGaussianSSM(SSM):
     def marginal_log_prob(
         self,
         params: ParamsCDLGSSM,
+        filter_hyperparams: Any,
         emissions: Float[Array, "ntime emission_dim"],
         t_emissions: Optional[Float[Array, "ntime 1"]]=None,
         inputs: Optional[Float[Array, "ntime input_dim"]] = None
