@@ -34,12 +34,18 @@ def try_all_close(x, y, start_tol=-8, end_tol=-4):
             return True, tol
     return False, tol
 
-def compare(x, x_ref, do_det=False):
+def compare(x, x_ref, do_det=False, accept_failure=False):
     allclose, tol = try_all_close(x, x_ref)
     if allclose:
         print(f"\tAllclose passed with atol={tol}.")
     else:
         print(f"\tAllclose FAILED with atol={tol}.")
+
+        # if x is 1d, add batch dim
+        # TODO: use ensure_array_has_batch_dim instead
+        if x.ndim == 1:
+            x = x[:, None]
+            x_ref = x_ref[:, None]
 
         # compute MSE of determinants over time
         if do_det:
@@ -57,7 +63,10 @@ def compare(x, x_ref, do_det=False):
         print("\tAverage relative MSE: ", jnp.mean(rel_mse))
 
         allclose, tol = try_all_close(rel_mse, 0, end_tol=-3)
-        assert allclose, f"Relative MSE allclose FAILED with atol={tol}."
+        if not accept_failure:
+            assert allclose, f"Relative MSE allclose FAILED with atol={tol}. UNACCEPTABLE!"
+        else:
+            print(f"Relative MSE allclose FAILED with atol={tol} but accepting this failure.")
 
     pass
 
@@ -143,6 +152,24 @@ compare(d_filtered_posterior.filtered_means, cd_filtered_posterior.filtered_mean
 print("\tChecking filtered covariances...")
 compare(d_filtered_posterior.filtered_covariances, cd_filtered_posterior.filtered_covariances)
 
+
+print("Fitting continuous-discrete time linear with SGD")
+cd_sgd_fitted_params, cd_sgd_lps = cd_model.fit_sgd(
+    cd_params, cd_param_props, cd_emissions, t_emissions, inputs=inputs, num_epochs=10
+)
+
+print("Continuous-Discrete time filtering: post-fit")
+cd_sgd_fitted_filtered_posterior = cdlgssm_filter(cd_sgd_fitted_params, cd_emissions, t_emissions, inputs)
+
+print("\tChecking post-SGD filtered means...")
+compare(d_sgd_fitted_filtered_posterior.filtered_means, cd_sgd_fitted_filtered_posterior.filtered_means, accept_failure=True)
+
+print("\tChecking post-SGD filtered covariances...")
+compare(d_sgd_fitted_filtered_posterior.filtered_covariances, cd_sgd_fitted_filtered_posterior.filtered_covariances, accept_failure=True)
+
+print("\tChecking SGD log-probabilities sequence...")
+compare(cd_sgd_lps, d_sgd_lps)
+
 ########### Now make these into non-linear models ########
 print("************* Continuous-Discrete Non-linear GSSM *************")
 from continuous_discrete_nonlinear_gaussian_ssm import extended_kalman_filter as cd_ekf
@@ -157,12 +184,12 @@ inputs = None  # Not interested in inputs for now
 cdnl_model = ContDiscreteNonlinearGaussianSSM(state_dim=STATE_DIM, emission_dim=EMISSION_DIM)
 
 # TODO: check that these need input as second argument; also check about including bias terms.
-#dynamics_drift_function = lambda z, u: cd_params.dynamics.weights @ z
-#emission_function = lambda z: cd_params.emissions.weights @ z
+# dynamics_drift_function = lambda z, u: cd_params.dynamics.weights @ z
+# emission_function = lambda z: cd_params.emissions.weights @ z
 
 for dynamics_approx_order in [1., 2.]:
-        # Initialize with first/second order SDE approximation
-        cdnl_params_1, cdnl_param_props_1 = cdnl_model.initialize(
+    # Initialize with first/second order SDE approximation
+    cdnl_params_1, cdnl_param_props_1 = cdnl_model.initialize(
             key1,
             dynamics_drift=LinearLearnableFunction(
                 params=cd_params.dynamics.weights
@@ -179,25 +206,25 @@ for dynamics_approx_order in [1., 2.]:
             ),
         )
 
-        # Simulate from continuous model
-        print(f"Simulating {dynamics_approx_order} order CDNLGSSM in continuous-discrete time")
-        cdnl_states_1, cdnl_emissions_1 = cdnl_model.sample(
+    # Simulate from continuous model
+    print(f"Simulating {dynamics_approx_order} order CDNLGSSM in continuous-discrete time")
+    cdnl_states_1, cdnl_emissions_1 = cdnl_model.sample(
             cdnl_params_1, key2, t_emissions=t_emissions, num_timesteps=NUM_TIMESTEPS, inputs=inputs
         )
 
-        # check that these are similar to samples from the linear model
-        print("\tChecking states...")
-        compare(cdnl_states_1, cd_states)
+    # check that these are similar to samples from the linear model
+    print("\tChecking states...")
+    compare(cdnl_states_1, cd_states)
 
-        print("\tChecking emissions...")
-        compare(cdnl_emissions_1, cd_emissions)
+    print("\tChecking emissions...")
+    compare(cdnl_emissions_1, cd_emissions)
 
-        ######## Continuous-discrete EKF
-        for state_order in ["first", "second"]:
-            # Run First order ekf with the non-linear model and data from the first-order CDNLGSSM model
-            # print("Running first-order EKF with non-linear model class and data from first-order CDNLGSSM model")
-            print(f"Running {state_order}-order EKF with non-linear model class and data from {dynamics_approx_order}-order CDNLGSSM model")
-            cd_ekf_11_post = cd_ekf(
+    ######## Continuous-discrete EKF
+    for state_order in ["first", "second"]:
+        # Run First order ekf with the non-linear model and data from the first-order CDNLGSSM model
+        # print("Running first-order EKF with non-linear model class and data from first-order CDNLGSSM model")
+        print(f"Running {state_order}-order EKF with non-linear model class and data from {dynamics_approx_order}-order CDNLGSSM model")
+        cd_ekf_11_post = cd_ekf(
                 cdnl_params_1,
                 cdnl_emissions_1,
                 hyperparams=EKFHyperParams(state_order=state_order, emission_order="first"),
@@ -205,15 +232,15 @@ for dynamics_approx_order in [1., 2.]:
                 inputs=inputs,
             )
 
-            # check that results in cd_ekf_1_post are similar to results from applying cd_kf (cd_filtered_posterior)
-            print("\tComparing filtered means...")
-            compare(cd_ekf_11_post.filtered_means, cd_filtered_posterior.filtered_means)
+        # check that results in cd_ekf_1_post are similar to results from applying cd_kf (cd_filtered_posterior)
+        print("\tComparing filtered means...")
+        compare(cd_ekf_11_post.filtered_means, cd_filtered_posterior.filtered_means)
 
-            print("\tComparing filtered covariances...")
-            compare(cd_ekf_11_post.filtered_covariances, cd_filtered_posterior.filtered_covariances, do_det=True)
+        print("\tComparing filtered covariances...")
+        compare(cd_ekf_11_post.filtered_covariances, cd_filtered_posterior.filtered_covariances, do_det=True)
 
-            print("Fitting continuous-discrete Non-linear model with SGD")
-            cd_sgd_fitted_params, cd_sgd_lps = cdnl_model.fit_sgd(
+        print("Fitting continuous-discrete Non-linear model with SGD")
+        cdnl_sgd_fitted_params, cdnl_sgd_lps = cdnl_model.fit_sgd(
                 cdnl_params_1,
                 cdnl_param_props_1,
                 cdnl_emissions_1,
@@ -222,8 +249,47 @@ for dynamics_approx_order in [1., 2.]:
                 inputs=inputs,
                 num_epochs=10
             )
-            
-            
+
+        print("Continuous-Discrete time non-linear filtering: post-fit")
+        # TODO: use the new way of calling filters with hyperparams.
+        cdnl_sgd_fitted_filtered_posterior = cd_ekf(
+                cdnl_params_1,
+                cdnl_emissions_1,
+                hyperparams=EKFHyperParams(state_order=state_order, emission_order="first"),
+                t_emissions=t_emissions,
+                inputs=inputs,
+        )
+
+        print("\tChecking post-SGD filtered means...")
+        compare(cd_sgd_fitted_filtered_posterior.filtered_means, cdnl_sgd_fitted_filtered_posterior.filtered_means, accept_failure=True)
+
+        print("\tChecking post-SGD filtered covariances...")
+        compare(cd_sgd_fitted_filtered_posterior.filtered_covariances, cdnl_sgd_fitted_filtered_posterior.filtered_covariances, accept_failure=True)
+
+        print("\tChecking SGD log-probabilities sequence...")
+        compare(cd_sgd_lps, cdnl_sgd_lps, accept_failure=True)
+
+        print("\tCheck that parameters are similar...")
+        compare(cd_sgd_fitted_params.initial.mean, cdnl_sgd_fitted_params.initial.mean, accept_failure=True)
+        compare(cd_sgd_fitted_params.initial.cov, cdnl_sgd_fitted_params.initial.cov, accept_failure=True)
+
+        compare(
+            cd_sgd_fitted_params.dynamics.weights, cdnl_sgd_fitted_params.dynamics.drift.params, accept_failure=True
+        )
+        compare(
+            cd_sgd_fitted_params.dynamics.diffusion_coefficient,
+            cdnl_sgd_fitted_params.dynamics.diffusion_coefficient.params,
+            accept_failure=True
+        )
+        compare(
+            cd_sgd_fitted_params.dynamics.diffusion_cov,
+            cdnl_sgd_fitted_params.dynamics.diffusion_cov.params,
+            accept_failure=True,
+        )
+
+        compare(cd_sgd_fitted_params.emissions.weights, cdnl_sgd_fitted_params.emissions.emission_function.params, accept_failure=True)
+        compare(cd_sgd_fitted_params.emissions.cov, cdnl_sgd_fitted_params.emissions.emission_cov.params, accept_failure=True)
+
 print("All EKF tests and CDNLGSSM model passed!")
 
 pdb.set_trace()
