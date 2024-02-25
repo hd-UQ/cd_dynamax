@@ -85,6 +85,8 @@ d_params, d_param_props = d_model.initialize(
     # Hard coded parameters for tests to match
     dynamics_weights=0.9048373699188232421875 * jnp.eye(d_model.state_dim),
     dynamics_covariance=0.11329327523708343505859375 * jnp.eye(d_model.state_dim),
+    dynamics_bias=None,
+    emission_bias=None,
 )
 
 # Simulate from discrete model
@@ -97,6 +99,10 @@ from dynamax.linear_gaussian_ssm.inference import lgssm_filter
 d_filtered_posterior = lgssm_filter(d_params, d_emissions, inputs)
 
 print("Fitting discrete time with SGD")
+# Make sure that the bias terms are not trainable
+d_param_props.dynamics.bias.trainable = False
+d_param_props.emissions.bias.trainable = False
+
 d_sgd_fitted_params, d_sgd_lps = d_model.fit_sgd(d_params, d_param_props, d_emissions, inputs=inputs, num_epochs=10)
 
 print("Discrete time filtering: post-fit")
@@ -117,6 +123,8 @@ cd_params, cd_param_props = cd_model.initialize(
     dynamics_weights=-0.1 * jnp.eye(cd_model.state_dim),  # Hard coded here for tests to match with default in linear
     dynamics_diffusion_coefficient=0.5 * jnp.eye(cd_model.state_dim),
     dynamics_diffusion_cov=0.5 * jnp.eye(cd_model.state_dim),
+    dynamics_bias=None,
+    emission_bias=None,
 )
 
 # Simulate from continuous model
@@ -154,21 +162,36 @@ compare(d_filtered_posterior.filtered_covariances, cd_filtered_posterior.filtere
 
 
 print("Fitting continuous-discrete time linear with SGD")
+# Make sure that the bias terms are not trainable
+cd_param_props.dynamics.bias.trainable = False
+cd_param_props.emissions.bias.trainable = False
+
 cd_sgd_fitted_params, cd_sgd_lps = cd_model.fit_sgd(
     cd_params, cd_param_props, cd_emissions, t_emissions, inputs=inputs, num_epochs=10
 )
 
+print("\tChecking SGD log-probabilities sequence...")
+compare(cd_sgd_lps, d_sgd_lps)
+
+print("\tCheck that parameters are similar...")
+print("\tInitial mean...")
+compare(d_sgd_fitted_params.initial.mean, cd_sgd_fitted_params.initial.mean)
+print("\tInitial cov...")
+compare(d_sgd_fitted_params.initial.cov, cd_sgd_fitted_params.initial.cov)
+print("\tEmmision weights...")
+compare(d_sgd_fitted_params.emissions.weights, cd_sgd_fitted_params.emissions.weights)
+print("\tEmmision cov...")
+compare(d_sgd_fitted_params.emissions.cov, cd_sgd_fitted_params.emissions.cov)
+
 print("Continuous-Discrete time filtering: post-fit")
 cd_sgd_fitted_filtered_posterior = cdlgssm_filter(cd_sgd_fitted_params, cd_emissions, t_emissions, inputs)
 
+print("WARNING: If parameters are sufficiently similar, these tests SHOULD PASS (but don't currently).")
 print("\tChecking post-SGD filtered means...")
 compare(d_sgd_fitted_filtered_posterior.filtered_means, cd_sgd_fitted_filtered_posterior.filtered_means, accept_failure=True)
 
 print("\tChecking post-SGD filtered covariances...")
 compare(d_sgd_fitted_filtered_posterior.filtered_covariances, cd_sgd_fitted_filtered_posterior.filtered_covariances, accept_failure=True)
-
-print("\tChecking SGD log-probabilities sequence...")
-compare(cd_sgd_lps, d_sgd_lps)
 
 ########### Now make these into non-linear models ########
 print("************* Continuous-Discrete Non-linear GSSM *************")
@@ -240,6 +263,8 @@ for dynamics_approx_order in [1., 2.]:
         compare(cd_ekf_11_post.filtered_covariances, cd_filtered_posterior.filtered_covariances, do_det=True)
 
         print("Fitting continuous-discrete Non-linear model with SGD")
+        # Note: no bias terms present yet
+
         cdnl_sgd_fitted_params, cdnl_sgd_lps = cdnl_model.fit_sgd(
                 cdnl_params_1,
                 cdnl_param_props_1,
@@ -249,6 +274,43 @@ for dynamics_approx_order in [1., 2.]:
                 inputs=inputs,
                 num_epochs=10
             )
+
+        print("\tChecking SGD log-probabilities sequence...")
+        compare(cd_sgd_lps, cdnl_sgd_lps, accept_failure=True)
+
+        print("\tCheck that parameters are similar...")
+        print("\tInitial mean...")
+        compare(cd_sgd_fitted_params.initial.mean, cdnl_sgd_fitted_params.initial.mean, accept_failure=True)
+        print("\tInitial cov...")
+        compare(cd_sgd_fitted_params.initial.cov, cdnl_sgd_fitted_params.initial.cov, accept_failure=True)
+        print("\tDynamics weights...")
+        compare(
+            cd_sgd_fitted_params.dynamics.weights, cdnl_sgd_fitted_params.dynamics.drift.params, accept_failure=True
+        )
+        print("\tDynamics diffusion coefficient...")
+        compare(
+            cd_sgd_fitted_params.dynamics.diffusion_coefficient,
+            cdnl_sgd_fitted_params.dynamics.diffusion_coefficient.params,
+            accept_failure=True,
+        )
+        print("\tDynamics diffusion covariance...")
+        compare(
+            cd_sgd_fitted_params.dynamics.diffusion_cov,
+            cdnl_sgd_fitted_params.dynamics.diffusion_cov.params,
+            accept_failure=True,
+        )
+        print("\tEmmision weights...")
+        compare(
+            cd_sgd_fitted_params.emissions.weights,
+            cdnl_sgd_fitted_params.emissions.emission_function.params,
+            accept_failure=True,
+        )
+        print("\tEmmision cov...")
+        compare(
+            cd_sgd_fitted_params.emissions.cov,
+            cdnl_sgd_fitted_params.emissions.emission_cov.params,
+            accept_failure=True,
+        )
 
         print("Continuous-Discrete time non-linear filtering: post-fit")
         # TODO: use the new way of calling filters with hyperparams.
@@ -266,29 +328,6 @@ for dynamics_approx_order in [1., 2.]:
         print("\tChecking post-SGD filtered covariances...")
         compare(cd_sgd_fitted_filtered_posterior.filtered_covariances, cdnl_sgd_fitted_filtered_posterior.filtered_covariances, accept_failure=True)
 
-        print("\tChecking SGD log-probabilities sequence...")
-        compare(cd_sgd_lps, cdnl_sgd_lps, accept_failure=True)
-
-        print("\tCheck that parameters are similar...")
-        compare(cd_sgd_fitted_params.initial.mean, cdnl_sgd_fitted_params.initial.mean, accept_failure=True)
-        compare(cd_sgd_fitted_params.initial.cov, cdnl_sgd_fitted_params.initial.cov, accept_failure=True)
-
-        compare(
-            cd_sgd_fitted_params.dynamics.weights, cdnl_sgd_fitted_params.dynamics.drift.params, accept_failure=True
-        )
-        compare(
-            cd_sgd_fitted_params.dynamics.diffusion_coefficient,
-            cdnl_sgd_fitted_params.dynamics.diffusion_coefficient.params,
-            accept_failure=True
-        )
-        compare(
-            cd_sgd_fitted_params.dynamics.diffusion_cov,
-            cdnl_sgd_fitted_params.dynamics.diffusion_cov.params,
-            accept_failure=True,
-        )
-
-        compare(cd_sgd_fitted_params.emissions.weights, cdnl_sgd_fitted_params.emissions.emission_function.params, accept_failure=True)
-        compare(cd_sgd_fitted_params.emissions.cov, cdnl_sgd_fitted_params.emissions.emission_cov.params, accept_failure=True)
 
 print("All EKF tests and CDNLGSSM model passed!")
 
