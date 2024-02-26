@@ -315,7 +315,7 @@ for dynamics_approx_order in [1., 2.]:
         print("Continuous-Discrete time non-linear filtering: post-fit")
         # TODO: use the new way of calling filters with hyperparams.
         cdnl_sgd_fitted_filtered_posterior = cd_ekf(
-                cdnl_params_1,
+                cdnl_sgd_fitted_params,
                 cdnl_emissions_1,
                 hyperparams=EKFHyperParams(state_order=state_order, emission_order="first"),
                 t_emissions=t_emissions,
