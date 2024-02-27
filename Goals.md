@@ -4,65 +4,65 @@ Goal is to extend dynamax to deal with irregular sampling, via continuous-discre
 
 ## Codebase Progress and status
 
-- Continuous-dscrete extension for linear gaussian systems is implemented. 
-  - Test passes for regular sampling [cdlgssm_test_filter](./src/cdlgssm_test_filter.py).
-  - Irregular sampling demo in [cdlgssm_tracking](./src/example_notebooks/cdlgssm_tracking.ipynb).
+- Continuous-dscrete extension (filtering and smoothing) for linear gaussian systems is implemented.
+    - Test passes for regular sampling [cdlgssm_test_filter](./src/cdlgssm_test_filter.py).
+    - Irregular sampling demo in [cdlgssm_tracking](./src/example_notebooks/cdlgssm_tracking.ipynb).
+
 - Continuous-discrete filtering extension implemented for non-linear gaussian systems.
-  - Implemented UKF, EKF, and EnKF.
-  - Tests pass for linear case with regular sampling [cdnlgssm_test_filter_linear_TRegular](./src/cdnlgssm_test_filter_linear_TRegular.py).
-  - Pending:
-    - Fix the test to show that {d-EKFs / d-UKF } == {cd-EKFs / cd-UKF} for linear system.
-        - After SGD learning (which is accurate), filtered means and covs are not accurate anymore
-        
-    - Improve EnKF:
-      - try to get consistency on Linear Gaussian case.
-      - can build jacobian-based observation H within EnKF (instead of particle approximations)
-    
-    - Notebook w/ pendulum at regular time intervals showing cd-UKF, cd-EKF, cd-EnKF vs d-UKF, d-EKF. 
-      - Check why our simulation differs from original notebook?
-    
-    - Notebook w/ pendulum at irregular time intervals using cd-UKF, cd-EKF, cd-EnKF
+    - Implemented UKF, EKF, and EnKF.
+    - Tests pass (PENDING) for linear case with regular sampling [cdnlgssm_test_filter_linear_TRegular](./src/cdnlgssm_test_filter_linear_TRegular.py).
+        - Fix the test to show that {d-EKFs / d-UKF } == {cd-EKFs / cd-UKF} for linear system.
+            - After SGD learning (which is accurate), filtered means and covs are not accurate anymore
+
+    - Pending:
+        - Improve EnKF:
+            - try to get consistency on Linear Gaussian case.
+            - can build jacobian-based observation H within EnKF (instead of particle approximations)
+
+        - Notebook w/ pendulum at regular time intervals showing cd-UKF, cd-EKF, cd-EnKF vs d-UKF, d-EKF. 
+            - Check why our simulation differs from original notebook
+
+        - Notebook w/ pendulum at irregular time intervals using cd-UKF, cd-EKF, cd-EnKF
 
 - Continuous-discrete smoothing extension implemented for non-linear gaussian systems.
-  - Implemented EKS
-  - Pending: 
-    - UKS
-    - EnKS
-    - Test to show that discrete KS vs d-EKS vs d-UKS vs CD KS 1 vs CD KS 2 vs CD Extended KS 1 vs CD UKS in linear system case
-    - Notebook w/ pendulum showing at regular time interval cd-UKS, cd-EKS vs d-UKS, d-EKS
-    - Notebook w/ pendulum showing at irregular time intervals cd-UKS and cd-EKS
+    - Implemented Extended Kalman Smoother (EKS)
+    
+    - Pending:
+        - Test to show that discrete KS vs d-EKS vs d-UKS vs CD KS 1 vs CD KS 2 vs CD Extended KS 1 vs CD UKS in linear system case
+        
+        - UKS
+        - EnKS
+        
+        - Notebooks w/ pendulum showing 
+            - at regular time interval cd-UKS, cd-EKS vs d-UKS, d-EKS
+            - at irregular time intervals cd-UKS and cd-EKS
 
-## Parameter estimation codebase
+### Parameter estimation
 
 - Fit SGD works for continuous-discrete linear and non-linear models
-    - We can compute MLE model parameter estimates based on different filtering algorithms
+    - We can compute MLE model parameter estimates based on different filtering/smoothing algorithms
     
 - Pending: 
-	- Check that parameter estimates are consistent between cd-l and cd-nl for linear models with no bias terms (=None).
+	- Check that parameter estimates are consistent between cd-l and cd-nl for linear models with no bias terms.
 	- Generalize learnable function params property to deal with multiple parameters (e.g., weights and biases).
-
-- Parameter estimation for the linear gaussian case
-    - SGD
         - TODO: Add notebook showcasing parameter estimation accuracy (port from add_validation branch)
-    - EM is not implemented
-        - The m-step requires MLE for continuous-time linear parameters 
-        - EM will not be trivial for nonlinear ssms
+        
     - ContDiscreteLinearGaussianConjugateSSM:
-        - Shall we keep this and modify it for continuous-time linear paraemeters
-        - Pending: Are there conjugate priors for the continuous-discrete linear case?
+        - Can we derive Conjugate priors for continuous-discrete linear dynamic paraemeters?
 
-- Uncertainty Quantification for the continuous-discrete linear/non-linear gaussian case:
-  - using Monte Carlo
-  - using HMC
-  - using other MCMC?
+    - EM is not implemented
 
-### Hierarchical parameter estimation
+### Uncertainty Quantification
 
-- hierarchical parameter estimation via Empirical Bayes
-    - Incorporate priors over parameters
-    - Define prior hyperparameters as new dynamax "parameters"
-    - Use Monte Carlo to average over many realizations of parameters
-    - Let SGD learn hyperparameters of prior via MC-based loss
+- Via Hamiltonian Monte Carlo (HMC)
+    - [Example notebook](to be added, based on Initial pending below)
+
+- Hierarchical uncertainty quantification
+    - via Empirical Bayes
+        - Incorporate priors over parameters
+        - Define prior hyperparameters as new dynamax "parameters"
+        - Use Monte Carlo to average over many realizations of parameters
+        - Let SGD learn hyperparameters of prior via MC-based loss
     
 # To dos
 
@@ -77,17 +77,19 @@ Goal is to extend dynamax to deal with irregular sampling, via continuous-discre
 
 ### Code optimization (All Pending)
 
-- Build compare() for tests that just takes objects rather than arrays…can make tests even more succinct this way. e.g. compare(cd_ukf_object, d_ukf_object) will compare all identically-named attributes
+- Build compare() for tests that just takes objects rather than array
+    - can make tests even more succinct this way.
+    - e.g. compare(cd_ukf_object, d_ukf_object) will compare all identically-named attributes
 
-- Use the improved compare() in all tests.
+- Use improved compare() in all tests
 
 - Pending:
     - Can CD-dynamax deal with noiseless state evolution?
         - i.e, ODE mode
         - i.e., What happens if Q=0
-    - SGD fit with validation option given train-validation (in add_validation branch)   
-    - Add new filtering functionalities to __init__
-	- Be consistent when calling filters (always use `model.filter`, don't call inference files directly from a script)
+    - fit_SGD function with validation option, given train-validation data (preliminary existing in add_validation branch)   
+    - Add new cdnlgssm functionalities to its `__init__`
+	- Be consistent when calling filters: always use `model.filter`, don't call inference files directly from a script
 	- build a lax_scan_debug function that behaves like lax.scan but actually just implements a for loop for easy debugging
 	- Matt needs to un-install dynamax so that he can change dynamax code and have it work
 	- add predicted_means/covs to lgssm_filter (in dynamax code)
@@ -97,9 +99,9 @@ Goal is to extend dynamax to deal with irregular sampling, via continuous-discre
 
 ## For v1 
 
-- Tests for linear and nonlinear CD irregular sampling
+- Tests for linear and nonlinear CD with regular and irregular sampling
 
-- Notebooks for linear and nonlinear CD irregular sampling
+- Notebooks for linear and nonlinear CD with regular and irregular sampling
     - Linear
     - Pendulum
     - Lorenz
@@ -110,7 +112,7 @@ Goal is to extend dynamax to deal with irregular sampling, via continuous-discre
     
 ### For v1.5
 
-- Process inputs in latent dynamics
+- Process inputs in dynamic functions
 
 - Allow for input times to be different from measurement times?
 
@@ -121,22 +123,47 @@ Goal is to extend dynamax to deal with irregular sampling, via continuous-discre
 
 - Modify the pushforward to incorporate physics + NN
     - How to incorporate DL within Jax?
-  
+
+## Longer term ideas
+
+## Uncertainty Quantification
+
+- Via Monte Carlo approches
+    - using plain Monte Carlo
+    - using HMC
+    - using other MCMC?
+
+- Hierarchical uncertainty quantification
+    - via Empirical Bayes
+        - Incorporate priors over parameters
+        - Define prior hyperparameters as new dynamax "parameters"
+        - Use Monte Carlo to average over many realizations of parameters
+        - Let SGD learn hyperparameters of prior via MC-based loss
+        
 ## New non-linear models
 
 - lorenz
 
 - glucose-insulin
 
-- hormone models: Delayed ODEs!!
+- hormone models
+    - Clark model, is based on delayed ODEs
+        - See original equation [in Appendix A here](https://arxiv.org/abs/1712.00117)
+            - It seems that [we simulated with fixed delta (tau), by providing those delayed values via indexing](https://github.com/iurteaga/hmc/blob/master/src/clark_dde.m)
+    - [Graham + Selgrade model](https://www.sciencedirect.com/science/article/abs/pii/S0022519317300073?via%3Dihub)
+        - This is an ODE
+    - [Reduced Graham, Elhadad + Albers model](https://www.sciencedirect.com/science/article/abs/pii/S0025556423000202?via%3Dihub)
+        - A version available [in arxiv](https://arxiv.org/abs/2006.05034)
+        - this is clearly an ODE!
+        
 
 ## Others
 
 - Understand what info version of code is for, and implement if needed
 
 - Can we have EM for CD?
-    - linear case?
-    - nonlinear case?
+    - The m-step requires MLE for continuous-time linear parameters
+    - EM will not be trivial for nonlinear ssms
        
 ### Extend our codebase to incorporate continuous-time inputs
 
