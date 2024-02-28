@@ -13,6 +13,7 @@ Goal is to extend dynamax to deal with irregular sampling, via continuous-discre
     - Tests pass (PENDING) for linear case with regular sampling [cdnlgssm_test_filter_linear_TRegular](./src/cdnlgssm_test_filter_linear_TRegular.py).
         - Fix the test to show that {d-EKFs / d-UKF } == {cd-EKFs / cd-UKF} for linear system.
             - After SGD learning (which is accurate), filtered means and covs are not accurate anymore
+            - How is this possible, if CD tests pass?
 
     - Pending:
         - Improve EnKF:
@@ -88,8 +89,6 @@ Goal is to extend dynamax to deal with irregular sampling, via continuous-discre
         - i.e, ODE mode
         - i.e., What happens if Q=0
     - fit_SGD function with validation option, given train-validation data (preliminary existing in add_validation branch)   
-    - Add new cdnlgssm functionalities to its `__init__`
-	- Be consistent when calling filters: always use `model.filter`, don't call inference files directly from a script
 	- build a lax_scan_debug function that behaves like lax.scan but actually just implements a for loop for easy debugging
 	- Matt needs to un-install dynamax so that he can change dynamax code and have it work
 	- add predicted_means/covs to lgssm_filter (in dynamax code)
