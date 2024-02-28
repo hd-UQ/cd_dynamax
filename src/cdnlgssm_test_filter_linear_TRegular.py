@@ -4,7 +4,6 @@ import sys
 from datetime import datetime
 import jax.numpy as jnp
 import jax.random as jr
-from jax import vmap
 
 # Local dynamax
 sys.path.append("..")
@@ -13,6 +12,7 @@ from dynamax.utils.utils import monotonically_increasing
 from dynamax.utils.utils import ensure_array_has_batch_dim
 
 # Our codebase
+from cdssm_utils import compare
 from continuous_discrete_linear_gaussian_ssm import ContDiscreteLinearGaussianSSM
 from continuous_discrete_nonlinear_gaussian_ssm import ContDiscreteNonlinearGaussianSSM
 
@@ -22,53 +22,9 @@ from continuous_discrete_nonlinear_gaussian_ssm import ContDiscreteNonlinearGaus
 # Show that discrete KF == continuous-discrete KF for that linear system
 # Show that continuous-discrete KF == {cd-EKFs, cd-UKF, cd-EnKF} for that linear system
 
+#### General state and emission dimensionalities
 STATE_DIM = 2
 EMISSION_DIM = 6
-
-def try_all_close(x, y, start_tol=-8, end_tol=-4):
-    """Try all close with increasing tolerance"""
-    # create list of tols 1e-8, 1e-7, 1e-6, ..., 1e1
-    tol_list = jnp.array([10 ** i for i in range(start_tol, end_tol+1)])
-    for tol in tol_list:
-        if jnp.allclose(x, y, atol=tol):
-            return True, tol
-    return False, tol
-
-def compare(x, x_ref, do_det=False, accept_failure=False):
-    allclose, tol = try_all_close(x, x_ref)
-    if allclose:
-        print(f"\tAllclose passed with atol={tol}.")
-    else:
-        print(f"\tAllclose FAILED with atol={tol}.")
-
-        # if x is 1d, add batch dim
-        # TODO: use ensure_array_has_batch_dim instead
-        if x.ndim == 1:
-            x = x[:, None]
-            x_ref = x_ref[:, None]
-
-        # compute MSE of determinants over time
-        if do_det:
-            x = vmap(jnp.linalg.det)(x)
-            x_ref = vmap(jnp.linalg.det)(x_ref)
-            mse = (x - x_ref) ** 2
-            rel_mse = mse / (x_ref**2)
-        else:
-            mse = jnp.mean((x - x_ref) ** 2, axis=1)
-            rel_mse = mse / jnp.mean(x_ref ** 2, axis=1)
-
-        print("\tInitial relative MSE: ", rel_mse[0])
-        print("\tFinal relative MSE: ", rel_mse[-1])
-        print("\tMax relative MSE: ", jnp.max(rel_mse))
-        print("\tAverage relative MSE: ", jnp.mean(rel_mse))
-
-        allclose, tol = try_all_close(rel_mse, 0, end_tol=-3)
-        if not accept_failure:
-            assert allclose, f"Relative MSE allclose FAILED with atol={tol}. UNACCEPTABLE!"
-        else:
-            print(f"Relative MSE allclose FAILED with atol={tol} but accepting this failure.")
-
-    pass
 
 print("************* Discrete LGSSM *************")
 # Discrete sampling
@@ -79,7 +35,13 @@ key1, key2 = jr.split(jr.PRNGKey(0))
 
 # Model def
 inputs = None  # Not interested in inputs for now
-d_model = LinearGaussianSSM(state_dim=STATE_DIM, emission_dim=EMISSION_DIM)
+d_model = LinearGaussianSSM(
+    state_dim=STATE_DIM,
+    emission_dim=EMISSION_DIM,
+    # Test with no biases 
+    has_dynamics_bias = False,
+    has_emissions_bias = False,
+)
 d_params, d_param_props = d_model.initialize(
     key1,
     # Hard coded parameters for tests to match
@@ -101,6 +63,7 @@ d_states, d_emissions = d_model.sample(
 print("Discrete time filtering: pre-fit")
 from dynamax.linear_gaussian_ssm.inference import lgssm_filter
 
+# Define filter
 d_filtered_posterior = lgssm_filter(
     d_params,
     d_emissions,
@@ -108,10 +71,6 @@ d_filtered_posterior = lgssm_filter(
 )
 
 print("Fitting discrete time with SGD")
-# Make sure that the bias terms are not trainable
-d_param_props.dynamics.bias.trainable = False
-d_param_props.emissions.bias.trainable = False
-
 d_sgd_fitted_params, d_sgd_lps = d_model.fit_sgd(
     d_params,
     d_param_props,
@@ -136,7 +95,13 @@ key1, key2 = jr.split(jr.PRNGKey(0))
 
 # Model def
 inputs = None  # Not interested in inputs for now
-cd_model = ContDiscreteLinearGaussianSSM(state_dim=STATE_DIM, emission_dim=EMISSION_DIM)
+cd_model = ContDiscreteLinearGaussianSSM(
+    state_dim=STATE_DIM,
+    emission_dim=EMISSION_DIM,
+    # Test with no biases 
+    has_dynamics_bias = False,
+    has_emissions_bias = False,
+)
 cd_params, cd_param_props = cd_model.initialize(
     key1,
     dynamics_weights=-0.1 * jnp.eye(cd_model.state_dim),  # Hard coded here for tests to match with default in linear
@@ -177,7 +142,7 @@ compare(d_emissions, cd_emissions)
 
 print("Continuous-Discrete time filtering: pre-fit")
 from continuous_discrete_linear_gaussian_ssm.inference import cdlgssm_filter
-
+# Define CD linear filter
 cd_filtered_posterior = cdlgssm_filter(
     cd_params,
     cd_emissions,
@@ -191,12 +156,7 @@ compare(d_filtered_posterior.filtered_means, cd_filtered_posterior.filtered_mean
 print("\tChecking filtered covariances...")
 compare(d_filtered_posterior.filtered_covariances, cd_filtered_posterior.filtered_covariances)
 
-
 print("Fitting continuous-discrete time linear with SGD")
-# Make sure that the bias terms are not trainable
-cd_param_props.dynamics.bias.trainable = False
-cd_param_props.emissions.bias.trainable = False
-
 cd_sgd_fitted_params, cd_sgd_lps = cd_model.fit_sgd(
     cd_params,
     cd_param_props,
@@ -369,7 +329,7 @@ for dynamics_approx_order in [1., 2.]:
         compare(cd_sgd_fitted_filtered_posterior.filtered_covariances, cdnl_sgd_fitted_filtered_posterior.filtered_covariances, accept_failure=True)
 
 
-print("All EKF tests and CDNLGSSM model passed!")
+print("All EKF and CDNLGSSM model tests passed!")
 
 pdb.set_trace()
 ######## Continuous-discrete Unscented Kalman Filter
