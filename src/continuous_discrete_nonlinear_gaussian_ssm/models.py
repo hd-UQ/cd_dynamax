@@ -296,71 +296,117 @@ class ContDiscreteNonlinearGaussianSSM(SSM):
         t_emissions: Optional[Float[Array, "ntime 1"]]=None,
         inputs: Optional[Float[Array, "ntime input_dim"]] = None,
     ) -> Scalar:
-        filtered_posterior = self.cdnlgssm_filter(
+        filtered_posterior = cdnlgssm_filter(
             params=params,
             emissions=emissions,
-            filter_hyperparams=filter_hyperparams,
+            hyperparams=filter_hyperparams,
             t_emissions=t_emissions,
             inputs=inputs
         )
         return filtered_posterior.marginal_loglik
-        
-    def cdnlgssm_filter(
-        self,
-        params: ParamsCDNLGSSM,
-        emissions: Float[Array, "ntime emission_dim"],
-        filter_hyperparams: Optional[Union[EKFHyperParams, EnKFHyperParams, UKFHyperParams]]=EKFHyperParams(),
-        t_emissions: Optional[Float[Array, "num_timesteps 1"]]=None,
-        inputs: Optional[Float[Array, "ntime input_dim"]] = None,
-        num_iter: Optional[int] = 1,
-        output_fields: Optional[List[str]]=["filtered_means", "filtered_covariances", "predicted_means", "predicted_covariances"],
-    ) -> PosteriorGSSMFiltered:
-        r"""Run an continuous-discrete nonlinear filter to produce the
-            marginal likelihood and filtered state estimates.
-            
-            Depending on the hyperparameter class provided, it can execute EKF, UKF or EnKF
-        
-        Args:
-            params: model parameters.
-            emissions: observation sequence.
-            t_emissions: continuous-time specific time instants of observations: if not None, it is an array 
-            num_iter: number of linearizations around posterior for update step (default 1).
-            hyperparams: hyper-parameters of the filter
-            inputs: optional array of inputs.
-            output_fields: list of fields to return in posterior object.
-                These can take the values "filtered_means", "filtered_covariances",
-                "predicted_means", "predicted_covariances", and "marginal_loglik".
 
-        Returns:
-            post: posterior object.
-
-        """
-        # TODO: this can be condensed, by incorporating num_iter into hyperparams of EKF
-        # TODO: use and leverage output_fields to have more or less granular returned posterior object
-        if isinstance(filter_hyperparams, EKFHyperParams):
-            filtered_posterior=iterated_extended_kalman_filter(
-                params = params,
-                emissions = emissions,
-                t_emissions = t_emissions,
-                hyperparams = filter_hyperparams,
-                inputs = inputs,
-                num_iter = num_iter,
-            )
-        elif isinstance(filter_hyperparams, EnKFHyperParams):
-            filtered_posterior=ensemble_kalman_filter(
-                params = params,
-                emissions = emissions,
-                t_emissions = t_emissions,
-                hyperparams = filter_hyperparams,
-                inputs = inputs,
-            )
-        elif isinstance(filter_hyperparams, UKFHyperParams):
-            filtered_posterior=unscented_kalman_filter(
-                params = params,
-                emissions = emissions,
-                t_emissions = t_emissions,
-                hyperparams = filter_hyperparams,
-                inputs = inputs,
-            )
+def cdnlgssm_filter(
+    params: ParamsCDNLGSSM,
+    emissions: Float[Array, "ntime emission_dim"],
+    hyperparams: Optional[Union[EKFHyperParams, EnKFHyperParams, UKFHyperParams]]=EKFHyperParams(),
+    t_emissions: Optional[Float[Array, "num_timesteps 1"]]=None,
+    inputs: Optional[Float[Array, "ntime input_dim"]] = None,
+    num_iter: Optional[int] = 1,
+    output_fields: Optional[List[str]]=["filtered_means", "filtered_covariances", "predicted_means", "predicted_covariances"],
+) -> PosteriorGSSMFiltered:
+    r"""Run an continuous-discrete nonlinear filter to produce the
+        marginal likelihood and filtered state estimates.
         
-        return filtered_posterior
+        Depending on the hyperparameter class provided, it can execute EKF, UKF or EnKF
+    
+    Args:
+        params: model parameters.
+        emissions: observation sequence.
+        hyperparams: hyper-parameters of the filter
+        t_emissions: continuous-time specific time instants of observations: if not None, it is an array 
+        inputs: optional array of inputs.
+        num_iter: number of linearizations around posterior for update step (default 1).
+        output_fields: list of fields to return in posterior object.
+            These can take the values "filtered_means", "filtered_covariances",
+            "predicted_means", "predicted_covariances", and "marginal_loglik".
+
+    Returns:
+        post: posterior object.
+
+    """
+    # TODO: this can be condensed, by incorporating num_iter into hyperparams of EKF
+    # TODO: use and leverage output_fields to have more or less granular returned posterior object
+    if isinstance(hyperparams, EKFHyperParams):
+        filtered_posterior=iterated_extended_kalman_filter(
+            params = params,
+            emissions = emissions,
+            t_emissions = t_emissions,
+            hyperparams = hyperparams,
+            inputs = inputs,
+            num_iter = num_iter,
+        )
+    elif isinstance(hyperparams, EnKFHyperParams):
+        filtered_posterior=ensemble_kalman_filter(
+            params = params,
+            emissions = emissions,
+            t_emissions = t_emissions,
+            hyperparams = hyperparams,
+            inputs = inputs,
+        )
+    elif isinstance(hyperparams, UKFHyperParams):
+        filtered_posterior=unscented_kalman_filter(
+            params = params,
+            emissions = emissions,
+            t_emissions = t_emissions,
+            hyperparams = hyperparams,
+            inputs = inputs,
+        )
+    
+    return filtered_posterior
+    
+def cdnlgssm_smoother(
+    params: ParamsCDNLGSSM,
+    emissions: Float[Array, "ntime emission_dim"],
+    hyperparams: Optional[Union[EKFHyperParams, EnKFHyperParams, UKFHyperParams]]=EKFHyperParams(),
+    t_emissions: Optional[Float[Array, "num_timesteps 1"]]=None,
+    inputs: Optional[Float[Array, "ntime input_dim"]] = None,
+    num_iter: Optional[int] = 1,
+    output_fields: Optional[List[str]]=["filtered_means", "filtered_covariances", "predicted_means", "predicted_covariances"],
+) -> PosteriorGSSMFiltered:
+    r"""Run an continuous-discrete nonlinear smoother to produce the
+        marginal likelihood and smoothed state estimates.
+        
+        Depending on the hyperparameter class provided, it can execute EKF, UKF or EnKF
+    
+    Args:
+        params: model parameters.
+        emissions: observation sequence.
+        hyperparams: hyper-parameters of the smoother to use
+        t_emissions: continuous-time specific time instants of observations: if not None, it is an array 
+        inputs: optional array of inputs.
+        num_iter: optinal, number of linearizations around posterior for update step (default 1).
+        output_fields: list of fields to return in posterior object.
+            These can take the values "filtered_means", "filtered_covariances",
+            "smoothed_means", "smoothed_covariances", and "marginal_loglik".
+
+    Returns:
+        post: posterior object.
+
+    """
+    # TODO: this can be condensed, by incorporating num_iter into hyperparams of EKF
+    # TODO: use and leverage output_fields to have more or less granular returned posterior object
+    if isinstance(hyperparams, EKFHyperParams):
+        smoothed_posterior=iterated_extended_kalman_smoother(
+            params = params,
+            emissions = emissions,
+            t_emissions = t_emissions,
+            hyperparams = filter_hyperparams,
+            inputs = inputs,
+            num_iter = num_iter,
+        )
+    elif isinstance(hyperparams, EnKFHyperParams):
+        raise ValueError('EnKS not implemented yet')
+    elif isinstance(hyperparams, UKFHyperParams):
+        raise ValueError('UKS not implemented yet')
+    
+    return smoothed_posterior
