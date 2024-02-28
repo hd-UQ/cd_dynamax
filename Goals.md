@@ -6,14 +6,16 @@ Goal is to extend dynamax to deal with irregular sampling, via continuous-discre
 
 - Continuous-dscrete extension (filtering and smoothing) for linear gaussian systems is implemented.
     - Test passes for regular sampling [cdlgssm_test_filter](./src/cdlgssm_test_filter.py).
+            - After SGD learning (which is accurate), filtered means and covs are not accurate anymore:
+                - Why is this happening?
     - Irregular sampling demo in [cdlgssm_tracking](./src/example_notebooks/cdlgssm_tracking.ipynb).
 
 - Continuous-discrete filtering extension implemented for non-linear gaussian systems.
     - Implemented UKF, EKF, and EnKF.
-    - Tests pass (PENDING) for linear case with regular sampling [cdnlgssm_test_filter_linear_TRegular](./src/cdnlgssm_test_filter_linear_TRegular.py).
+    - Tests pass for linear case with regular sampling [cdnlgssm_test_filter_linear_TRegular](./src/cdnlgssm_test_filter_linear_TRegular.py).
         - Fix the test to show that {d-EKFs / d-UKF } == {cd-EKFs / cd-UKF} for linear system.
-            - After SGD learning (which is accurate), filtered means and covs are not accurate anymore
-            - How is this possible, if CD tests pass?
+            - After SGD learning (which is accurate), filtered means and covs are not accurate anymore:
+                - Why is this happening?
 
     - Pending:
         - Improve EnKF:
@@ -81,8 +83,6 @@ Goal is to extend dynamax to deal with irregular sampling, via continuous-discre
 - Build compare() for tests that just takes objects rather than array
     - can make tests even more succinct this way.
     - e.g. compare(cd_ukf_object, d_ukf_object) will compare all identically-named attributes
-
-- Use improved compare() in all tests
 
 - Pending:
     - Can CD-dynamax deal with noiseless state evolution?
