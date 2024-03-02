@@ -12,7 +12,7 @@ from dynamax.utils.utils import monotonically_increasing
 from dynamax.utils.utils import ensure_array_has_batch_dim
 
 # Our codebase
-from cdssm_utils import compare
+from cdssm_utils import compare, compare_structs
 from continuous_discrete_linear_gaussian_ssm import ContDiscreteLinearGaussianSSM
 from continuous_discrete_nonlinear_gaussian_ssm import ContDiscreteNonlinearGaussianSSM
 
@@ -50,6 +50,8 @@ d_params, d_param_props = d_model.initialize(
     dynamics_bias=None,
     emission_bias=None,
 )
+d_param_props.dynamics.bias.trainable = False
+d_param_props.emissions.bias.trainable = False
 
 # Simulate from discrete model
 print("Simulating in discrete time")
@@ -110,6 +112,9 @@ cd_params, cd_param_props = cd_model.initialize(
     dynamics_bias=None,
     emission_bias=None,
 )
+cd_param_props.dynamics.bias.trainable = False
+cd_param_props.emissions.bias.trainable = False
+
 
 # Simulate from continuous model
 print("Simulating in continuous-discrete time")
@@ -150,11 +155,8 @@ cd_filtered_posterior = cdlgssm_filter(
     inputs
 )
 
-print("\tChecking filtered means...")
-compare(d_filtered_posterior.filtered_means, cd_filtered_posterior.filtered_means)
-
-print("\tChecking filtered covariances...")
-compare(d_filtered_posterior.filtered_covariances, cd_filtered_posterior.filtered_covariances)
+print("Comparing filtered posteriors...")
+compare_structs(d_filtered_posterior, cd_filtered_posterior)
 
 print("Fitting continuous-discrete time linear with SGD")
 cd_sgd_fitted_params, cd_sgd_lps = cd_model.fit_sgd(
@@ -170,14 +172,7 @@ print("\tChecking SGD log-probabilities sequence...")
 compare(cd_sgd_lps, d_sgd_lps)
 
 print("\tCheck that parameters are similar...")
-print("\tInitial mean...")
-compare(d_sgd_fitted_params.initial.mean, cd_sgd_fitted_params.initial.mean)
-print("\tInitial cov...")
-compare(d_sgd_fitted_params.initial.cov, cd_sgd_fitted_params.initial.cov)
-print("\tEmmision weights...")
-compare(d_sgd_fitted_params.emissions.weights, cd_sgd_fitted_params.emissions.weights)
-print("\tEmmision cov...")
-compare(d_sgd_fitted_params.emissions.cov, cd_sgd_fitted_params.emissions.cov)
+compare_structs(d_sgd_fitted_params, cd_sgd_fitted_params, accept_failure=True)
 
 print("Continuous-Discrete time filtering: post-fit")
 cd_sgd_fitted_filtered_posterior = cdlgssm_filter(
@@ -188,20 +183,13 @@ cd_sgd_fitted_filtered_posterior = cdlgssm_filter(
 )
 
 print("WARNING: If parameters are sufficiently similar, these tests SHOULD PASS (but don't currently).")
-print("\tChecking post-SGD filtered means...")
-compare(d_sgd_fitted_filtered_posterior.filtered_means, cd_sgd_fitted_filtered_posterior.filtered_means, accept_failure=True)
-
-print("\tChecking post-SGD filtered covariances...")
-compare(d_sgd_fitted_filtered_posterior.filtered_covariances, cd_sgd_fitted_filtered_posterior.filtered_covariances, accept_failure=True)
+compare_structs(d_sgd_fitted_filtered_posterior, cd_sgd_fitted_filtered_posterior, accept_failure=True)
 
 ########### Now make these into non-linear models ########
 print("************* Continuous-Discrete Non-linear GSSM *************")
 from continuous_discrete_nonlinear_gaussian_ssm.models import LearnableFunction,ConstantLearnableFunction,LinearLearnableFunction
 from continuous_discrete_nonlinear_gaussian_ssm import cdnlgssm_filter
 from continuous_discrete_nonlinear_gaussian_ssm import EKFHyperParams
-
-# Randomness
-key1, key2 = jr.split(jr.PRNGKey(0))
 
 # Model def
 inputs = None  # Not interested in inputs for now
@@ -257,11 +245,8 @@ for dynamics_approx_order in [1., 2.]:
             )
 
         # check that results in cd_ekf_post are similar to results from applying cd_kf (cd_filtered_posterior)
-        print("\tComparing filtered means...")
-        compare(cd_ekf_post.filtered_means, cd_filtered_posterior.filtered_means)
-
-        print("\tComparing filtered covariances...")
-        compare(cd_ekf_post.filtered_covariances, cd_filtered_posterior.filtered_covariances, do_det=True)
+        print("\tComparing filtered posteriors...")
+        compare_structs(cd_ekf_post, cd_filtered_posterior)
 
         print("Fitting continuous-discrete Non-linear model with SGD")
         # Note: no bias terms present yet
@@ -280,6 +265,9 @@ for dynamics_approx_order in [1., 2.]:
         compare(cd_sgd_lps, cdnl_sgd_lps, accept_failure=True)
 
         print("\tCheck that parameters are similar...")
+        # Will eventually use this style (once ParameterSets are used, so we can match weights, biases, etc)...
+        # compare_structs(cd_sgd_fitted_params, cdnl_sgd_fitted_params)
+
         print("\tInitial mean...")
         compare(cd_sgd_fitted_params.initial.mean, cdnl_sgd_fitted_params.initial.mean, accept_failure=True)
         print("\tInitial cov...")
@@ -300,13 +288,13 @@ for dynamics_approx_order in [1., 2.]:
             cdnl_sgd_fitted_params.dynamics.diffusion_cov.params,
             accept_failure=True,
         )
-        print("\tEmmision weights...")
+        print("\tEmission weights...")
         compare(
             cd_sgd_fitted_params.emissions.weights,
             cdnl_sgd_fitted_params.emissions.emission_function.params,
             accept_failure=True,
         )
-        print("\tEmmision cov...")
+        print("\tEmission cov...")
         compare(
             cd_sgd_fitted_params.emissions.cov,
             cdnl_sgd_fitted_params.emissions.emission_cov.params,
@@ -322,18 +310,14 @@ for dynamics_approx_order in [1., 2.]:
                 inputs=inputs,
         )
 
-        print("\tChecking post-SGD filtered means...")
-        compare(cd_sgd_fitted_filtered_posterior.filtered_means, cdnl_sgd_fitted_filtered_posterior.filtered_means, accept_failure=True)
-
-        print("\tChecking post-SGD filtered covariances...")
-        compare(cd_sgd_fitted_filtered_posterior.filtered_covariances, cdnl_sgd_fitted_filtered_posterior.filtered_covariances, accept_failure=True)
+        print("\tComparing post-SGD filtered posterior...")
+        compare_structs(cd_sgd_fitted_filtered_posterior, cdnl_sgd_fitted_filtered_posterior)
 
 
 print("All EKF and CDNLGSSM model tests passed!")
 
-pdb.set_trace()
 ######## Continuous-discrete Unscented Kalman Filter
-from continuous_discrete_nonlinear_gaussian_ssm import unscented_kalman_filter as cd_ukf
+# from continuous_discrete_nonlinear_gaussian_ssm import unscented_kalman_filter as cd_ukf
 from continuous_discrete_nonlinear_gaussian_ssm import UKFHyperParams
 
 # Run First order ekf with the non-linear model and data from the first-order CDNLGSSM model
@@ -341,7 +325,7 @@ print("Running Unscented Kalman Filter with non-linear model class and data from
 # define hyperparameters
 ukf_params = UKFHyperParams()
 
-cd_ukf_post = cd_ukf(
+cd_ukf_post = cdnlgssm_filter(
     cdnl_params,
     cdnl_emissions,
     hyperparams=ukf_params,
@@ -350,23 +334,19 @@ cd_ukf_post = cd_ukf(
 )
 
 # check that results in cd_enkf_1_post are similar to results from applying cd_kf (cd_filtered_posterior)
-print("\tComparing filtered means...")
-compare(cd_ukf_post.filtered_means, cd_filtered_posterior.filtered_means)
-
-print("\tComparing filtered covariances...")
-compare(cd_ukf_post.filtered_covariances, cd_filtered_posterior.filtered_covariances, do_det=True)
+print("\tComparing filtered posteriors...")
+compare_structs(cd_ukf_post, cd_filtered_posterior)
 
 print("UKF tests passed.")
-pdb.set_trace()
 
 ######## Continuous-discrete Ensemble Kalman Filter
-from continuous_discrete_nonlinear_gaussian_ssm import ensemble_kalman_filter as cd_enkf
+# from continuous_discrete_nonlinear_gaussian_ssm import ensemble_kalman_filter as cd_enkf
 from continuous_discrete_nonlinear_gaussian_ssm import EnKFHyperParams
 
 # Run First order ekf with the non-linear model and data from the first-order CDNLGSSM model
 
-for perturb_measurements in [False, True]:
-    for N_particles in [1e2, 1e3, 1e5]:
+for N_particles in [1e2, 1e3, 1e4]:
+    for perturb_measurements in [True]:
         # print("Running Ensemble Kalman Filter (perturb_measurements=True) with non-linear model class and data from first-order CDNLGSSM model")
         # print(f"Running Ensemble Kalman Filter (perturb_measurements={perturb_measurements}) with non-linear model class and data from first-order CDNLGSSM model")
         print(f"Running Ensemble Kalman Filter (perturb_measurements={perturb_measurements}, N_particles={N_particles}) with non-linear model class and data from first-order CDNLGSSM model")
@@ -374,9 +354,7 @@ for perturb_measurements in [False, True]:
         # define hyperparameters
         enkf_params = EnKFHyperParams(N_particles=int(N_particles), perturb_measurements=perturb_measurements)
 
-        key_enkf = jr.PRNGKey(0)
-        cd_enkf_post = cd_enkf(
-            key_enkf,
+        cd_enkf_post = cdnlgssm_filter(
             cdnl_params,
             cdnl_emissions,
             hyperparams=enkf_params,

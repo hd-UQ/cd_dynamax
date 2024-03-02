@@ -23,6 +23,8 @@ from dynamax.linear_gaussian_ssm.inference import (
 from cdssm_utils import diffeqsolve
 
 
+# Currently employing method from https://arxiv.org/abs/2205.02730 Neilsen et al. 2022
+
 # TODO: import EnKFHyperParams from dynamax
 class EnKFHyperParams(NamedTuple):
     """Lightweight container for UKF hyperparameters.
@@ -32,6 +34,7 @@ class EnKFHyperParams(NamedTuple):
 
     N_particles: float = 2000
     perturb_measurements: bool = True
+    key: float = jr.PRNGKey(0)
 
 
 # Helper functions
@@ -66,13 +69,11 @@ def _predict(
     """
 
     def drift(t, y, args):
-        f_t = params.dynamics.drift_function
-        return f_t(y, None)
+        return params.dynamics.drift.f(y, u, t)
 
     def diffusion(t, y, args):
-        Qc_t = _get_params(params.dynamics.diffusion_cov, 2, t)
-        L_t = _get_params(params.dynamics.diffusion_coefficient, 2, t)
-
+        Qc_t = params.dynamics.diffusion_cov.f(None, u, t)
+        L_t = params.dynamics.diffusion_coefficient.f(None, u, t)
         Q_sqrt = jnp.linalg.cholesky(Qc_t)
         combined_diffusion = L_t @ Q_sqrt
 
@@ -86,7 +87,7 @@ def _predict(
     return x_pred
 
 
-def _condition_on(key, x, h, R, u, y, perturb_measurements=True):
+def _condition_on(key, x, h, R, u, y, t, perturb_measurements=True):
     """Condition a Gaussian potential on a new observation
 
     Args:
@@ -97,6 +98,7 @@ def _condition_on(key, x, h, R, u, y, perturb_measurements=True):
         u (D_in,): inputs.
         y (D_obs,): observation.black
         perturb_measurements: whether to perturb the measurements.
+        t: time-instant of conditioning
 
     Returns:
         ll (float): log-likelihood of observation
@@ -110,7 +112,7 @@ def _condition_on(key, x, h, R, u, y, perturb_measurements=True):
 
     # Propagate ensemble through emission function
     # The shape of y_ensemble is n_particles x Observation Dimensions
-    y_ensemble = vmap(h, (0, 0), 0)(x, u_s)
+    y_ensemble = vmap(h, in_axes=(0, None, None))(x, u_s, t)
 
     ## These 2 computations should use deterministic observation ensemble, not perturbed
     # compute predicted mean of measurements
@@ -145,7 +147,6 @@ def _condition_on(key, x, h, R, u, y, perturb_measurements=True):
 
 
 def ensemble_kalman_filter(
-    key: Float[Array, "key"],
     params: ParamsCDNLGSSM,
     emissions: Float[Array, "ntime emission_dim"],
     t_emissions: Optional[Float[Array, "num_timesteps 1"]] = None,
@@ -194,8 +195,8 @@ def ensemble_kalman_filter(
     t0_idx = jnp.arange(num_timesteps)
 
     # Only emission function
-    h = params.emissions.emission_function
-    h = _process_fn(h, inputs)
+    h = params.emissions.emission_function.f
+    # h = _process_fn(h, inputs)
     inputs = _process_input(inputs, num_timesteps)
 
     def _step(carry, args):
@@ -206,13 +207,13 @@ def ensemble_kalman_filter(
         key_predict, key_filter = jr.split(key, 2)
 
         # Get parameters and inputs for time t0
-        R = _get_params(params.emissions.emission_cov, 2, t0) # observation covariance
         u = inputs[t0_idx]
         y = emissions[t0_idx]
+        R = params.emissions.emission_cov.f(None, u, t0)
 
         # Condition on this emission
         log_likelihood, filtered_x_ens = _condition_on(
-            key_filter, pred_x_ens, h, R, u, y, hyperparams.perturb_measurements
+            key_filter, pred_x_ens, h, R, u, y, t0, hyperparams.perturb_measurements
         )
 
         # Update the log likelihood
@@ -249,7 +250,7 @@ def ensemble_kalman_filter(
         return carry, outputs
 
     # Build keys to be used to: (1) draw initial particles, (2) run each step of the filter
-    keys = jr.split(key, num_timesteps + 1)
+    keys = jr.split(hyperparams.key, num_timesteps + 1)
     key_init, key_times = keys[0], keys[1:]
 
     # Run the Ensemble Kalman Filter

@@ -123,9 +123,9 @@ def _predict(
     # the related weight vector w_m and matrix W are defined in eq 3.81-3.82;
     def rhs_all(t, y, args):
         # TODO: reconsider when we want time-varying dynamics functions
-        f_t = params.dynamics.drift_function
-        Qc_t = _get_params(params.dynamics.diffusion_cov, 2, t)
-        L_t = _get_params(params.dynamics.diffusion_coefficient, 2, t)
+        f = params.dynamics.drift.f
+        Qc_t = params.dynamics.diffusion_cov.f(None, u, t)
+        L_t = params.dynamics.diffusion_coefficient.f(None, u, t)
 
         # create sigma points X_t
         m_t, P_t = y
@@ -133,7 +133,7 @@ def _predict(
 
         # TODO: add controls u
         # f_X_t = vmap(f_t, (0, 0), 0)(X_t, u)
-        f_X_t = vmap(f_t, in_axes=(0, None))(X_t, None)
+        f_X_t = vmap(f, in_axes=(0, None, None))(X_t, u, t)
         # dimensions of f_X_t are (2*state_dim+1, state_dim)
 
         # dmdt = f_X_t  w_mean
@@ -153,7 +153,7 @@ def _predict(
     return m_pred, P_pred
 
 
-def _condition_on(m, P, h, R, lamb, w_mean, w_cov, u, y):
+def _condition_on(m, P, h, R, lamb, w_mean, w_cov, u, y, t):
     """Condition a Gaussian potential on a new observation
 
     Duplicate of the _condition_on function in discrete case of inference_ukf.py
@@ -168,6 +168,7 @@ def _condition_on(m, P, h, R, lamb, w_mean, w_cov, u, y):
         w_cov (2*D_hid+1,): 2n+1 weights to compute predicted covariance.
         u (D_in,): inputs.
         y (D_obs,): observation.black
+        t (): time-instant of conditioning
 
     Returns:
         ll (float): log-likelihood of observation
@@ -179,7 +180,7 @@ def _condition_on(m, P, h, R, lamb, w_mean, w_cov, u, y):
     # Form sigma points and propagate
     sigmas_cond = _compute_sigmas(m, P, n, lamb)
     u_s = jnp.array([u] * len(sigmas_cond))
-    sigmas_cond_prop = vmap(h, (0, 0), 0)(sigmas_cond, u_s)
+    sigmas_cond_prop = vmap(h, in_axes=(0, None, None))(sigmas_cond, u_s, t)
 
     # Compute parameters needed to filter
     pred_mean = jnp.tensordot(w_mean, sigmas_cond_prop, axes=1)
@@ -243,7 +244,7 @@ def unscented_kalman_filter(
 
     t0_idx = jnp.arange(num_timesteps)
 
-    state_dim = params.dynamics.diffusion_cov.shape[0]
+    state_dim = params.dynamics.diffusion_cov.params.shape[0]
 
     # Compute lambda and weights from from hyperparameters
     alpha, beta, kappa = hyperparams.alpha, hyperparams.beta, hyperparams.kappa
@@ -251,8 +252,8 @@ def unscented_kalman_filter(
     w_mean, w_cov, W_matrix = _compute_weights(state_dim, alpha, beta, lamb)
 
     # Only emission function
-    h = params.emissions.emission_function
-    h = _process_fn(h, inputs)
+    h = params.emissions.emission_function.f
+    # h = _process_fn(h, inputs)
     inputs = _process_input(inputs, num_timesteps)
 
     def _step(carry, args):
@@ -260,13 +261,13 @@ def unscented_kalman_filter(
         t0, t1, t0_idx = args
 
         # Get parameters and inputs for time t0
-        R = _get_params(params.emissions.emission_cov, 2, t0)
         u = inputs[t0_idx]
         y = emissions[t0_idx]
+        R = params.emissions.emission_cov.f(None, u, t0)
 
         # Condition on this emission
         log_likelihood, filtered_mean, filtered_cov = _condition_on(
-            pred_mean, pred_cov, h, R, lamb, w_mean, w_cov, u, y
+            pred_mean, pred_cov, h, R, lamb, w_mean, w_cov, u, y, t0
         )
 
         # Update the log likelihood
