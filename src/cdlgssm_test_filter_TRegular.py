@@ -12,7 +12,7 @@ from dynamax.utils.utils import monotonically_increasing
 from dynamax.utils.utils import ensure_array_has_batch_dim
 
 # Our codebase
-from cdssm_utils import compare
+from cdssm_utils import compare, compare_structs
 from continuous_discrete_linear_gaussian_ssm import ContDiscreteLinearGaussianSSM
 from continuous_discrete_nonlinear_gaussian_ssm import ContDiscreteNonlinearGaussianSSM
 
@@ -20,6 +20,9 @@ from continuous_discrete_nonlinear_gaussian_ssm import ContDiscreteNonlinearGaus
 # First, establish equivalent linear systems in discrete and continuous time
 # Show that samples from each are similar
 # Show that discrete KF == continuous-discrete KF for that linear system
+
+#### Randomness
+key_init, key_sample = jr.split(jr.PRNGKey(0))
 
 #### General state and emission dimensionalities
 STATE_DIM = 2
@@ -29,9 +32,6 @@ print("************* Discrete LGSSM *************")
 # Discrete sampling
 NUM_TIMESTEPS = 100
 
-# Randomness
-key1, key2 = jr.split(jr.PRNGKey(0))
-
 # Model def
 inputs = None  # Not interested in inputs for now
 d_model = LinearGaussianSSM(
@@ -39,7 +39,7 @@ d_model = LinearGaussianSSM(
     emission_dim=EMISSION_DIM,
 )
 d_params, d_param_props = d_model.initialize(
-    key1,
+    key_init,
     # Hard coded parameters for tests to match
     dynamics_weights=0.9048373699188232421875 * jnp.eye(d_model.state_dim),
     dynamics_covariance=0.11329327523708343505859375 * jnp.eye(d_model.state_dim),
@@ -51,7 +51,7 @@ d_params, d_param_props = d_model.initialize(
 print("Simulating in discrete time")
 d_states, d_emissions = d_model.sample(
     d_params,
-    key2,
+    key_sample,
     num_timesteps=NUM_TIMESTEPS,
     inputs=inputs
 )
@@ -86,9 +86,6 @@ print("************* Continuous-Discrete LGSSM *************")
 # Continuous-Discrete model
 t_emissions = jnp.arange(NUM_TIMESTEPS)[:, None]
 
-# Randomness
-key1, key2 = jr.split(jr.PRNGKey(0))
-
 # Model def
 inputs = None  # Not interested in inputs for now
 cd_model = ContDiscreteLinearGaussianSSM(
@@ -96,7 +93,7 @@ cd_model = ContDiscreteLinearGaussianSSM(
     emission_dim=EMISSION_DIM,
 )
 cd_params, cd_param_props = cd_model.initialize(
-    key1,
+    key_init,
     dynamics_weights=-0.1 * jnp.eye(cd_model.state_dim),  # Hard coded here for tests to match with default in linear
     dynamics_diffusion_coefficient=0.5 * jnp.eye(cd_model.state_dim),
     dynamics_diffusion_cov=0.5 * jnp.eye(cd_model.state_dim),
@@ -108,14 +105,14 @@ cd_params, cd_param_props = cd_model.initialize(
 print("Simulating in continuous-discrete time")
 cd_num_timesteps_states, cd_num_timesteps_emissions = cd_model.sample(
     cd_params,
-    key2,
+    key_sample,
     num_timesteps=NUM_TIMESTEPS,
     inputs=inputs
 )
 
 cd_states, cd_emissions = cd_model.sample(
     cd_params,
-    key2,
+    key_sample,
     num_timesteps=NUM_TIMESTEPS,
     t_emissions=t_emissions,
     inputs=inputs
@@ -143,11 +140,8 @@ cd_filtered_posterior = cdlgssm_filter(
     inputs
 )
 
-print("\tChecking filtered means...")
-compare(d_filtered_posterior.filtered_means, cd_filtered_posterior.filtered_means)
-
-print("\tChecking filtered covariances...")
-compare(d_filtered_posterior.filtered_covariances, cd_filtered_posterior.filtered_covariances)
+print("Comparing filtered posteriors...")
+compare_structs(d_filtered_posterior, cd_filtered_posterior)
 
 print("Fitting continuous-discrete time linear with SGD")
 cd_sgd_fitted_params, cd_sgd_lps = cd_model.fit_sgd(
@@ -162,15 +156,8 @@ cd_sgd_fitted_params, cd_sgd_lps = cd_model.fit_sgd(
 print("\tChecking SGD log-probabilities sequence...")
 compare(cd_sgd_lps, d_sgd_lps)
 
-print("\tCheck that parameters are similar...")
-print("\tInitial mean...")
-compare(d_sgd_fitted_params.initial.mean, cd_sgd_fitted_params.initial.mean)
-print("\tInitial cov...")
-compare(d_sgd_fitted_params.initial.cov, cd_sgd_fitted_params.initial.cov)
-print("\tEmmision weights...")
-compare(d_sgd_fitted_params.emissions.weights, cd_sgd_fitted_params.emissions.weights)
-print("\tEmmision cov...")
-compare(d_sgd_fitted_params.emissions.cov, cd_sgd_fitted_params.emissions.cov)
+print("Check that parameters are similar...")
+compare_structs(d_sgd_fitted_params, cd_sgd_fitted_params, accept_failure=True)
 
 print("Continuous-Discrete time filtering: post-fit")
 cd_sgd_fitted_filtered_posterior = cdlgssm_filter(
@@ -181,11 +168,7 @@ cd_sgd_fitted_filtered_posterior = cdlgssm_filter(
 )
 
 print("WARNING: If parameters are sufficiently similar, these tests SHOULD PASS (but don't currently).")
-print("\tChecking post-SGD filtered means...")
-compare(d_sgd_fitted_filtered_posterior.filtered_means, cd_sgd_fitted_filtered_posterior.filtered_means, accept_failure=True)
-
-print("\tChecking post-SGD filtered covariances...")
-compare(d_sgd_fitted_filtered_posterior.filtered_covariances, cd_sgd_fitted_filtered_posterior.filtered_covariances, accept_failure=True)
+compare_structs(d_sgd_fitted_filtered_posterior, cd_sgd_fitted_filtered_posterior, accept_failure=True)
 
 print("All Discrete to Continous-Discrete model and filtering tests passed!")
 pdb.set_trace()
