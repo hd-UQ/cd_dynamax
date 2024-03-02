@@ -141,7 +141,11 @@ def get_array(data):
     """Attempt to extract a JAX array from the input or return it directly if already an array."""
     if isinstance(data, jnp.ndarray):
         return data
-    return data  # Directly return if it's already an array or not handled
+    else:
+        try:
+            return data.params
+        except:
+            return data
 
 
 def compare_leaves(node1, node2, path="", atol=1e-5):
@@ -226,7 +230,8 @@ def _compare_structs(struct1, struct2, accept_failure=False, atol=1e-5, verbose=
             print(f"Fields that are different within tol={atol}:", differences)
         return False
     else:
-        print(f"Fields that are close within tol={atol}:", similarities)
+        if verbose:
+            print(f"Fields that are close within tol={atol}:", similarities)
         return True
 
 
