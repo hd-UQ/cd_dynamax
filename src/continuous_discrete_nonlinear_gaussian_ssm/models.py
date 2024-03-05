@@ -168,8 +168,8 @@ class ContDiscreteNonlinearGaussianSSM(SSM):
         dynamics_diffusion_cov: Optional[LearnableFunction] = None,
         dynamics_approx_order: Optional[float] = 2.,
         emission_function: Optional[LearnableFunction] = None,
-        #emission_parameters = None,
-        emission_cov: Optional[Float[Array, "emission_dim emission_dim"]] = None
+        # emission_parameters = None,
+        emission_cov: Optional[LearnableFunction] = None,
     ) -> Tuple[ParamsCDNLGSSM, PyTree]:
 
         # Arbitrary default values, for demo purposes.
