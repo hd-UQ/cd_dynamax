@@ -50,8 +50,6 @@ d_params, d_param_props = d_model.initialize(
     dynamics_bias=None,
     emission_bias=None,
 )
-d_param_props.dynamics.bias.trainable = False
-d_param_props.emissions.bias.trainable = False
 
 # Simulate from discrete model
 print("Simulating in discrete time")
@@ -112,9 +110,6 @@ cd_params, cd_param_props = cd_model.initialize(
     dynamics_bias=None,
     emission_bias=None,
 )
-cd_param_props.dynamics.bias.trainable = False
-cd_param_props.emissions.bias.trainable = False
-
 
 # Simulate from continuous model
 print("Simulating in continuous-discrete time")
