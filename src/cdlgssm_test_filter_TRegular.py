@@ -1,3 +1,4 @@
+import jax.debug as jdb
 import pdb
 import sys
 
@@ -46,7 +47,6 @@ d_params, d_param_props = d_model.initialize(
     dynamics_bias=jnp.zeros(d_model.state_dim),
     emission_bias=jnp.zeros(d_model.emission_dim),
 )
-d_param_props.dynamics.cov.trainable = False
 
 # Simulate from discrete model
 print("Simulating in discrete time")
@@ -96,13 +96,20 @@ cd_model = ContDiscreteLinearGaussianSSM(
 cd_params, cd_param_props = cd_model.initialize(
     key_init,
     dynamics_weights=-0.1 * jnp.eye(cd_model.state_dim),  # Hard coded here for tests to match with default in linear
-    dynamics_diffusion_coefficient=0.5*jnp.sqrt(0.5) * jnp.eye(cd_model.state_dim),
-    dynamics_diffusion_cov=jnp.eye(cd_model.state_dim),
+    dynamics_diffusion_coefficient=0.5*jnp.eye(cd_model.state_dim),
+    dynamics_diffusion_cov=0.5*jnp.eye(cd_model.state_dim),
     dynamics_bias=jnp.zeros(d_model.state_dim),
     emission_bias=jnp.zeros(d_model.emission_dim),
 )
-cd_param_props.dynamics.diffusion_cov.trainable = False
-cd_param_props.dynamics.diffusion_coefficient.trainable = False
+
+cd_params, cd_param_props = cd_model.initialize(
+    key_init,
+    dynamics_weights=-0.1 * jnp.eye(cd_model.state_dim),  # Hard coded here for tests to match with default in linear
+    dynamics_diffusion_coefficient=jnp.eye(cd_model.state_dim),
+    dynamics_diffusion_cov=(0.5*0.5)*0.5*jnp.eye(cd_model.state_dim),
+    dynamics_bias=jnp.zeros(d_model.state_dim),
+    emission_bias=jnp.zeros(d_model.emission_dim),
+)
 
 # Simulate from continuous model
 print("Simulating in continuous-discrete time")
