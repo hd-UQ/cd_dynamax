@@ -18,8 +18,6 @@ from dynamax.types import PRNGKey, Scalar
 from dynamax.utils.optimize import run_sgd
 from dynamax.utils.utils import ensure_array_has_batch_dim
 
-import pdb
-
 class Posterior(Protocol):
     """A :class:`NamedTuple` with parameters stored as :class:`jax.DeviceArray` in the leaf nodes."""
     pass
