@@ -80,10 +80,6 @@ Goal is to extend dynamax to deal with irregular sampling, via continuous-discre
 
 ### Code optimization (All Pending)
 
-- Build compare() for tests that just takes objects rather than array
-    - can make tests even more succinct this way.
-    - e.g. compare(cd_ukf_object, d_ukf_object) will compare all identically-named attributes
-
 - Pending:
     - Can CD-dynamax deal with noiseless state evolution?
         - i.e, ODE mode
