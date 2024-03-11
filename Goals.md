@@ -5,11 +5,11 @@ Goal is to extend dynamax to deal with irregular sampling, via continuous-discre
 ## Codebase progress and status
 
 - Continuous-discrete extension (filtering and smoothing) for linear gaussian systems is implemented.
-    - Test passes for regular sampling-based [cdlgssm_test_filter_linear_TRegular](./src/cdlgssm_test_filter_linear_TRegular.py).
+    - Test passes for regular sampling-based [cdlgssm_test_filter_TRegular.py](./src/cdlgssm_test_filter_TRegular.py).
         - Note that after SGD learning, comparison between discrete and continuous-discrete models is not easy due to different parameterizations.
             - Although filtered means and covs are not exactly equal, plots showcase they are quite accurate in both models.
 
-    - Test passes for regular sampling-based [cdlgssm_test_smoother](./src/cdlgssm_test_filter.py)
+    - Test passes for regular sampling-based [cdlgssm_test_smoother_TRegular.py](./src/cdlgssm_test_smoother_TRegular.py)
         - CD smoother type 1, as in Sarkka's Algorithm 3.17 matches discrete-time solution
         - CD smoother type 2, as in Sarkka's Algorithm 3.18 does not match discrete-time solutions
             - Performance is close though: are these related to differential equation solver differences?
@@ -106,14 +106,17 @@ Goal is to extend dynamax to deal with irregular sampling, via continuous-discre
 ## For v1 
 
 - Tests for linear and nonlinear CD with regular and irregular sampling
+    - Check pendings above
 
 - Notebooks for linear and nonlinear CD with regular and irregular sampling
     - Linear:
         - [Tracking](./src/notebooks/linear/cdlgssm_tracking.ipynb)
-        - [Parameter learning (regular times)](./src/notebooks/linear/cdlgssm_learnParams_oscillator_fixedSampleRate.ipynb)
-        - [Parameter learning (irregular times)](./src/notebooks/linear/cdlgssm_learnParams_oscillator_irregularSampleRate.ipynb)
+        - [Parameter learning (regular sampling times)](./src/notebooks/linear/cdlgssm_learnParams_oscillator_fixedSampleRate.ipynb)
+        - [Parameter learning (irregular sampling times)](./src/notebooks/linear/cdlgssm_learnParams_oscillator_irregularSampleRate.ipynb)
     - [Pendulum](./src/notebooks/non_linear/cd_ekf_ukf_pendulum.ipynb)
-    - Lorenz 63: [regular times](./src/notebooks/non_linear/cd_ekf_ukf_enkf_Lorenz63.ipynb), [irregular times](./src/notebooks/non_linear/cd_ekf_ukf_enkf_Lorenz63_irregular_times.ipynb)
+    - Lorenz 63:
+        - [regular sampling times](./src/notebooks/non_linear/cd_ekf_ukf_enkf_Lorenz63.ipynb),
+        - [irregular sampling times](./src/notebooks/non_linear/cd_ekf_ukf_enkf_Lorenz63_irregular_times.ipynb)
 
 - Uncertainty quantification via HMC
     - How to deal with MLE vs MAP
