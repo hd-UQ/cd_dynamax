@@ -15,7 +15,7 @@ Goal is to extend dynamax to deal with irregular sampling, via continuous-discre
             - Performance is close though: are these related to differential equation solver differences?
 
     - Notebooks        
-        - Irregular sampling demo in [cdlgssm_tracking](./src/example_notebooks/cdlgssm_tracking.ipynb).
+        - Irregular sampling demo in [cdlgssm_tracking](./src/notebooks/linear/cdlgssm_tracking.ipynb).
 
 - Continuous-discrete extension (filtering and smoothing) implemented for non-linear gaussian systems.
     - Implemented UKF, EKF, and EnKF.
@@ -108,9 +108,12 @@ Goal is to extend dynamax to deal with irregular sampling, via continuous-discre
 - Tests for linear and nonlinear CD with regular and irregular sampling
 
 - Notebooks for linear and nonlinear CD with regular and irregular sampling
-    - Linear
-    - Pendulum
-    - Lorenz
+    - Linear:
+        - [Tracking](./src/notebooks/linear/cdlgssm_tracking.ipynb)
+        - [Parameter learning (regular times)](./src/notebooks/linear/cdlgssm_learnParams_oscillator_fixedSampleRate.ipynb)
+        - [Parameter learning (irregular times)](./src/notebooks/linear/cdlgssm_learnParams_oscillator_irregularSampleRate.ipynb)
+    - [Pendulum](./src/notebooks/non_linear/cd_ekf_ukf_pendulum.ipynb)
+    - Lorenz 63: [regular times](./src/notebooks/non_linear/cd_ekf_ukf_enkf_Lorenz63.ipynb), [irregular times](./src/notebooks/non_linear/cd_ekf_ukf_enkf_Lorenz63_irregular_times.ipynb)
 
 - Uncertainty quantification via HMC
     - How to deal with MLE vs MAP
