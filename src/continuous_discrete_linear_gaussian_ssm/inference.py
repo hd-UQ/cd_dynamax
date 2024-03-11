@@ -32,6 +32,9 @@ from dynamax.linear_gaussian_ssm.inference import PosteriorGSSMSmoothed
 def _get_params(x, dim, t):
     if callable(x):
         return x(t)
+    # Added for non-existent biases
+    elif x is None:
+        return x
     elif x.ndim == dim + 1:
         return x[t]
     else:
@@ -451,6 +454,7 @@ def cdlgssm_filter(
     )
 
 # Smoothing equations in continuous-time
+# TODO: incorporate inputs!
 def _smooth(
     m_filter, P_filter, # Filtered mean and covariance
     m_smooth, P_smooth, # Smoothed mean and covariance
@@ -569,7 +573,10 @@ def cdlgssm_smoother(
         C = psd_solve(Q + F @ filtered_cov @ F.T, F @ filtered_cov).T
 
         # Compute the smoothed mean and covariance as in Equation 3.148
-        smoothed_mean = filtered_mean + C @ (smoothed_mean_next - F @ filtered_mean - B @ u - b)
+        if b is None:
+            smoothed_mean = filtered_mean + C @ (smoothed_mean_next - F @ filtered_mean - B @ u )
+        else:
+            smoothed_mean = filtered_mean + C @ (smoothed_mean_next - F @ filtered_mean - B @ u - b)
         smoothed_cov = filtered_cov + C @ (smoothed_cov_next - F @ filtered_cov @ F.T - Q) @ C.T
 
         # Compute the smoothed expectation of z_t z_{t+1}^T

@@ -2,40 +2,51 @@
 
 Goal is to extend dynamax to deal with irregular sampling, via continuous-discrete dynamics modeling
 
-## Codebase Progress and status
+## Codebase progress and status
 
-- Continuous-dscrete extension (filtering and smoothing) for linear gaussian systems is implemented.
-    - Test passes for regular sampling [cdlgssm_test_filter](./src/cdlgssm_test_filter.py).
-            - After SGD learning (which is accurate), filtered means and covs are not accurate anymore:
-                - Why is this happening?
-    - Irregular sampling demo in [cdlgssm_tracking](./src/example_notebooks/cdlgssm_tracking.ipynb).
+- Continuous-discrete extension (filtering and smoothing) for linear gaussian systems is implemented.
+    - Test passes for regular sampling-based [cdlgssm_test_filter_linear_TRegular](./src/cdlgssm_test_filter_linear_TRegular.py).
+        - Note that after SGD learning, comparison between discrete and continuous-discrete models is not easy due to different parameterizations.
+            - Although filtered means and covs are not exactly equal, plots showcase they are quite accurate in both models.
 
-- Continuous-discrete filtering extension implemented for non-linear gaussian systems.
+    - Test passes for regular sampling-based [cdlgssm_test_smoother](./src/cdlgssm_test_filter.py)
+        - CD smoother type 1, as in Sarkka's Algorithm 3.17 matches discrete-time solution
+        - CD smoother type 2, as in Sarkka's Algorithm 3.18 does not match discrete-time solutions
+            - Performance is close though: are these related to differential equation solver differences?
+
+    - Notebooks        
+        - Irregular sampling demo in [cdlgssm_tracking](./src/example_notebooks/cdlgssm_tracking.ipynb).
+
+- Continuous-discrete extension (filtering and smoothing) implemented for non-linear gaussian systems.
     - Implemented UKF, EKF, and EnKF.
-    - Tests pass for linear case with regular sampling [cdnlgssm_test_filter_linear_TRegular](./src/cdnlgssm_test_filter_linear_TRegular.py).
-        - Fix the test to show that {d-EKFs / d-UKF } == {cd-EKFs / cd-UKF} for linear system.
-            - After SGD learning (which is accurate), filtered means and covs are not accurate anymore:
-                - Why is this happening?
+    - Implemented Extended Kalman Smoother (EKS)
+        - UKS and EnKF PENDING
+    
+    - Tests pass for linear model with regular sampling-based [cdnlgssm_test_filter_linear_TRegular](./src/cdnlgssm_test_filter_linear_TRegular.py).
+        - Namely, we compare that
+            1. A CDNLGSSM model with linearity asusmptions provides same model as CDLGSSM model
+                - Based on both first and second order approximations to SDE (equivalent for linear SDEs)
+            2. A CDNLGSSM model with EKF filtering provides same results than a KF in CDLGSSM model
+                - Based on first and second order EKF approximations (equivalent for linear SDEs)
+                - Both for pre- and post-fit of parameters with SGD, using EKF for logmarginal computations
+            3. A CDNLGSSM model with UKF filtering provides PENDING
+            4. A CDNLGSSM model with EnKF filtering provides PENDING
+                - Pending improvements to EnKF:
+                    - try to get consistency on Linear Gaussian case.
+                    - can build jacobian-based observation H within EnKF (instead of particle approximations)
 
-    - Pending:
-        - Improve EnKF:
-            - try to get consistency on Linear Gaussian case.
-            - can build jacobian-based observation H within EnKF (instead of particle approximations)
+    - Tests pass for linear model with regular sampling-based [cdnlgssm_test_smoother_linear_TRegular](./src/cdnlgssm_test_smoother_linear_TRegular.py).
+        - Namely, we compare that
+            1. A CDNLGSSM model with EKF smoothing PENDING
+                - Need to debug errors and fixed smoother
+            1. A CDNLGSSM model with UKF smoothing PENDING
+            1. A CDNLGSSM model with EnKF smoothing PENDING
 
+    - Notebooks
         - Notebook w/ pendulum at regular time intervals showing cd-UKF, cd-EKF, cd-EnKF vs d-UKF, d-EKF. 
-            - Check why our simulation differs from original notebook
 
         - Notebook w/ pendulum at irregular time intervals using cd-UKF, cd-EKF, cd-EnKF
 
-- Continuous-discrete smoothing extension implemented for non-linear gaussian systems.
-    - Implemented Extended Kalman Smoother (EKS)
-    
-    - Pending:
-        - Test to show that discrete KS vs d-EKS vs d-UKS vs CD KS 1 vs CD KS 2 vs CD Extended KS 1 vs CD UKS in linear system case
-        
-        - UKS
-        - EnKS
-        
         - Notebooks w/ pendulum showing 
             - at regular time interval cd-UKS, cd-EKS vs d-UKS, d-EKS
             - at irregular time intervals cd-UKS and cd-EKS
@@ -43,10 +54,10 @@ Goal is to extend dynamax to deal with irregular sampling, via continuous-discre
 ### Parameter estimation
 
 - Fit SGD works for continuous-discrete linear and non-linear models
-    - We can compute MLE model parameter estimates based on different filtering/smoothing algorithms
+    - We can compute MLE model parameter estimates based on different filtering algorithms
+    - Does it make sense to use smoothing to compute logmarginal used by SGD?
     
 - Pending: 
-	- Check that parameter estimates are consistent between cd-l and cd-nl for linear models with no bias terms.
 	- Generalize learnable function params property to deal with multiple parameters (e.g., weights and biases).
         - TODO: Add notebook showcasing parameter estimation accuracy (port from add_validation branch)
         
@@ -101,9 +112,10 @@ Goal is to extend dynamax to deal with irregular sampling, via continuous-discre
     - Pendulum
     - Lorenz
 
-- How to deal with MLE vs MAP
-    - Simply editing log-priors? (Iñigo)
-    - Editing fit_sgd with an argument?
+- Uncertainty quantification via HMC
+    - How to deal with MLE vs MAP
+        - Simply editing log-priors? (Iñigo)
+        - Editing fit_sgd with an argument?
     
 ### For v1.5
 
@@ -115,6 +127,8 @@ Goal is to extend dynamax to deal with irregular sampling, via continuous-discre
 
 - How to modify learnable parameters, to have a parameter set
     - Build it for linear function with weights and biases
+- How to be able to initialize params across many NL functions
+    - Maybe within function wrapper?
 
 - Modify the pushforward to incorporate physics + NN
     - How to incorporate DL within Jax?

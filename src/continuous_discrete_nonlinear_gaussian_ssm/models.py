@@ -30,7 +30,7 @@ tfb = tfp.bijectors
 from ssm_temissions import SSM
 # CDNLGSSM param and function definition
 from continuous_discrete_nonlinear_gaussian_ssm.cdnlgssm_utils import *
-from continuous_discrete_nonlinear_gaussian_ssm.inference_ekf import EKFHyperParams, iterated_extended_kalman_filter
+from continuous_discrete_nonlinear_gaussian_ssm.inference_ekf import EKFHyperParams, iterated_extended_kalman_filter, iterated_extended_kalman_smoother
 from continuous_discrete_nonlinear_gaussian_ssm.inference_enkf import EnKFHyperParams, ensemble_kalman_filter
 from continuous_discrete_nonlinear_gaussian_ssm.inference_ukf import UKFHyperParams, unscented_kalman_filter
 
@@ -400,7 +400,7 @@ def cdnlgssm_smoother(
             params = params,
             emissions = emissions,
             t_emissions = t_emissions,
-            hyperparams = filter_hyperparams,
+            hyperparams = hyperparams,
             inputs = inputs,
             num_iter = num_iter,
         )
