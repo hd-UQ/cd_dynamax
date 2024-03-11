@@ -149,10 +149,10 @@ for dynamics_approx_order in [1., 2.]:
             print(f"Comparing {smoother_type} KF smoothed posteriors with {state_order}-order EKF...")
             compare_structs(cd_smoother_posterior, cd_ekf_smoother_posterior, accept_failure=True)
 
-        print(f"Discrete to Continous-Discrete {smoother_type} smoothed posterior tests passed!")
-        
-        pdb.set_trace()            
+        print(f"Discrete to Continous-Discrete {smoother_type} smoothed posterior tests passed!")   
 
 print("All EKF and CDNLGSSM model tests passed!")
 
+pdb.set_trace()
+# TODO: we could plot the smoothed states to double-check for accuracy
 

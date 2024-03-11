@@ -498,7 +498,22 @@ def iterated_extended_kalman_smoother(
         )
         return smoothed_posterior, None
 
-    smoothed_posterior, _ = lax.scan(_step, None, jnp.arange(num_iter))
+    # TODO: replace single call with _step
+    print("WARNING: We are not running iterated_EKF, until we figure out how to scan over _steps with different input-output carry variables")
+    smoothed_posterior = extended_kalman_smoother(
+            params,
+            emissions,
+            hyperparams,
+            t_emissions,
+            None,
+            inputs
+        )
+    
+    # However, this does not run, because
+    # smoothed_posterior, _ = lax.scan(_step, None, jnp.arange(num_iter))
+    # " the input carry carry is a <class 'NoneType'> but the corresponding component of the carry output is a <class 'dynamax.linear_gaussian_ssm.inference.PosteriorGSSMSmoothed'>, so their Python types differ"
+    # i.e., can have None as first smoothed_prior
+    
     return smoothed_posterior
 
 def extended_kalman_posterior_sample(
