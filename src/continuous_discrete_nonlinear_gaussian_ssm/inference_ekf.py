@@ -488,7 +488,14 @@ def iterated_extended_kalman_smoother(
     def _step(carry, _):
         # Relinearize around smoothed posterior from previous iteration
         smoothed_prior = carry
-        smoothed_posterior = extended_kalman_smoother(params, emissions, t_emissions, smoothed_prior, hyperparams, inputs)
+        smoothed_posterior = extended_kalman_smoother(
+            params,
+            emissions,
+            hyperparams,
+            t_emissions,
+            smoothed_prior,
+            inputs
+        )
         return smoothed_posterior, None
 
     smoothed_posterior, _ = lax.scan(_step, None, jnp.arange(num_iter))

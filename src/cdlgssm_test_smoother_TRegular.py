@@ -20,7 +20,7 @@ from continuous_discrete_nonlinear_gaussian_ssm import ContDiscreteNonlinearGaus
 # The idea of this test is as following (uses regular time intervals ONLY):
 # First, establish equivalent linear systems in discrete and continuous time
 # Show that samples from each are similar
-# Show that discrete KF == continuous-discrete KF for that linear system
+# Show that discrete KS == continuous-discrete KS for that linear system
 
 #### Randomness
 key_init, key_sample = jr.split(jr.PRNGKey(0))
@@ -57,31 +57,9 @@ d_states, d_emissions = d_model.sample(
     inputs=inputs
 )
 
-print("Discrete time filtering: pre-fit")
-from dynamax.linear_gaussian_ssm.inference import lgssm_filter
-
-# Define filter
-d_filtered_posterior = lgssm_filter(
-    d_params,
-    d_emissions,
-    inputs
-)
-
-print("Fitting discrete time with SGD")
-d_sgd_fitted_params, d_sgd_lps = d_model.fit_sgd(
-    d_params,
-    d_param_props,
-    d_emissions,
-    inputs=inputs,
-    num_epochs=10
-)
-
-print("Discrete time filtering: post-fit")
-d_sgd_fitted_filtered_posterior = lgssm_filter(
-    d_sgd_fitted_params,
-    d_emissions,
-    inputs
-)
+from dynamax.linear_gaussian_ssm.inference import lgssm_smoother
+print('Discrete time smoothing')
+d_smoother_posterior = lgssm_smoother(d_params, d_emissions, inputs)
 
 print("************* Continuous-Discrete LGSSM *************")
 # Continuous-Discrete model
@@ -142,50 +120,24 @@ compare(d_states, cd_states)
 print("\tChecking emissions...")
 compare(d_emissions, cd_emissions)
 
-print("Continuous-Discrete time filtering: pre-fit")
-from continuous_discrete_linear_gaussian_ssm.inference import cdlgssm_filter
-# Define CD linear filter
-cd_filtered_posterior = cdlgssm_filter(
-    cd_params,
-    cd_emissions,
-    t_emissions,
-    inputs
-)
+from continuous_discrete_linear_gaussian_ssm.inference import cdlgssm_smoother
 
-print("Comparing filtered posteriors...")
-compare_structs(d_filtered_posterior, cd_filtered_posterior)
+for smoother_type in ["cd_smoother_1", "cd_smoother_2"]:
+    print(f'Continuous-Discrete time KF smoothing {smoother_type}')
+    cd_smoother_posterior = cdlgssm_smoother(
+        cd_params,
+        cd_emissions,
+        t_emissions,
+        inputs,
+        smoother_type=smoother_type
+    )
 
-print("Fitting continuous-discrete time linear with SGD")
-cd_sgd_fitted_params, cd_sgd_lps = cd_model.fit_sgd(
-    cd_params,
-    cd_param_props,
-    cd_emissions,
-    t_emissions,
-    inputs=inputs,
-    num_epochs=10
-)
+    print(f"Comparing {smoother_type} smoothed posteriors...")
+    compare_structs(d_smoother_posterior, cd_smoother_posterior, accept_failure=True)
 
-print("\tSGD works!")
+    print(f"All Discrete to Continous-Discrete {smoother_type} smoothed posterior tests passed!")
 
-print("\tChecking SGD log-probabilities sequence...")
-compare(cd_sgd_lps, d_sgd_lps)
-
-print("WARNING: Please take the following comparisons with a grain of salt.")
-print("Check that parameters are similar...")
-compare_structs(d_sgd_fitted_params, cd_sgd_fitted_params, accept_failure=True)
-
-print("Continuous-Discrete time filtering: post-fit")
-cd_sgd_fitted_filtered_posterior = cdlgssm_filter(
-    cd_sgd_fitted_params,
-    cd_emissions,
-    t_emissions,
-    inputs
-)
-
-print("WARNING: Please take the following comparisons with a grain of salt.")
-compare_structs(d_sgd_fitted_filtered_posterior, cd_sgd_fitted_filtered_posterior, accept_failure=True)
-
-print("WARNING: plotting filtering results for understanding impact of SGD differences.")
+print("WARNING: plotting filtering results for understanding impact of smoothing algorithm differences.")
 import matplotlib.pyplot as plt
 for n_state in jnp.arange(STATE_DIM):
     plt.figure()
@@ -197,7 +149,7 @@ for n_state in jnp.arange(STATE_DIM):
     )
     plt.plot(
         t_emissions,
-        d_sgd_fitted_filtered_posterior.filtered_means[:, n_state],
+        d_smoother_posterior.filtered_means[:, n_state],
         label="Post-SGD fit Discrete filtered state",
         color="orange",
         marker="o",
@@ -207,17 +159,33 @@ for n_state in jnp.arange(STATE_DIM):
     )
     plt.plot(
         t_emissions,
-        cd_sgd_fitted_filtered_posterior.filtered_means[:, n_state],
+        d_smoother_posterior.smoothed_means[:, n_state],
+        label="Post-SGD fit Discrete filtered state",
+        color="red",
+        marker="o",
+        markerfacecolor="none",
+        markeredgewidth=2,
+        markersize=8,
+    )
+    plt.plot(
+        t_emissions,
+        cd_smoother_posterior.filtered_means[:, n_state],
         label="Post-SGD fit Continuous-Discrete filtered state",
         color="blue",
+        marker="x"
+    )
+    plt.plot(
+        t_emissions,
+        cd_smoother_posterior.smoothed_means[:, n_state],
+        label="Post-SGD fit Continuous-Discrete filtered state",
+        color="green",
         marker="x"
     )
     plt.xlabel("time")
     plt.ylabel("x_{}".format(n_state))
     plt.grid()
     plt.legend()
-    plt.title("Filtered states after SGD optimization")
+    plt.title("Filtered and smoothed states")
     plt.show()
-
-print("All Discrete to Continous-Discrete model and filtering tests passed!")
+    
 pdb.set_trace()

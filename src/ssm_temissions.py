@@ -474,6 +474,7 @@ class SSM(ABC):
             params: model parameters $\theta$
             props: properties specifying which parameters should be learned
             emissions: one or more sequences of emissions
+            filter_hyperparams: if needed, hyperparameters of the filtering algorithm
             t_emissions: continuous-time specific time instants: if not None, it is an array 
             inputs: one or more sequences of corresponding inputs
             optimizer: an `optax` optimizer for minimization
