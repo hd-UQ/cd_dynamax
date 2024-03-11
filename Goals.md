@@ -37,8 +37,10 @@ Goal is to extend dynamax to deal with irregular sampling, via continuous-discre
 
     - Tests pass for linear model with regular sampling-based [cdnlgssm_test_smoother_linear_TRegular](./src/cdnlgssm_test_smoother_linear_TRegular.py).
         - Namely, we compare that
-            1. A CDNLGSSM model with EKF smoothing PENDING
-                - Need to debug errors and fixed smoother
+            1. A CDNLGSSM model with EKF smoothing
+                - Performance does not match KF smoother
+                - Results seem close though
+                - PENDING to explore and understand why
             1. A CDNLGSSM model with UKF smoothing PENDING
             1. A CDNLGSSM model with EnKF smoothing PENDING
 
