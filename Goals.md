@@ -8,7 +8,7 @@ Goal is to extend dynamax to deal with irregular sampling, via continuous-discre
     - Test passes for regular sampling [cdlgssm_test_filter](./src/cdlgssm_test_filter.py).
             - After SGD learning (which is accurate), filtered means and covs are not accurate anymore:
                 - Why is this happening?
-    - Irregular sampling demo in [cdlgssm_tracking](./src/example_notebooks/cdlgssm_tracking.ipynb).
+    - Irregular sampling demo in [cdlgssm_tracking](./src/notebooks/linear/cdlgssm_tracking.ipynb).
 
 - Continuous-discrete filtering extension implemented for non-linear gaussian systems.
     - Implemented UKF, EKF, and EnKF.
@@ -42,13 +42,15 @@ Goal is to extend dynamax to deal with irregular sampling, via continuous-discre
 
 ### Parameter estimation
 
-- Fit SGD works for continuous-discrete linear and non-linear models
-    - We can compute MLE model parameter estimates based on different filtering/smoothing algorithms
+- Fit SGD and HMC works for continuous-discrete linear and non-linear models
+    - We can compute MLE and posterior model parameter estimates based on different filtering/smoothing algorithms 
+        - Linear models (using continuous-discrete non-linear codebase): [cdnlgssm_hmc](./src/notebooks/non_linear/cdnlgssm_hmc.ipynb)
+        - Non-linear models: Pending
     
 - Pending: 
 	- Check that parameter estimates are consistent between cd-l and cd-nl for linear models with no bias terms.
 	- Generalize learnable function params property to deal with multiple parameters (e.g., weights and biases).
-        - TODO: Add notebook showcasing parameter estimation accuracy (port from add_validation branch)
+        - TODO: Add notebook showcasing parameter estimation accuracy in a truly non-linear model (port from add_validation branch)
         
     - ContDiscreteLinearGaussianConjugateSSM:
         - Can we derive Conjugate priors for continuous-discrete linear dynamic paraemeters?
@@ -58,7 +60,7 @@ Goal is to extend dynamax to deal with irregular sampling, via continuous-discre
 ### Uncertainty Quantification
 
 - Via Hamiltonian Monte Carlo (HMC)
-    - [Example notebook](to be added, based on Initial pending below)
+    - [cdnlgssm_hmc](./src/notebooks/non_linear/cdnlgssm_hmc.ipynb)
 
 - Hierarchical uncertainty quantification
     - via Empirical Bayes
@@ -97,17 +99,21 @@ Goal is to extend dynamax to deal with irregular sampling, via continuous-discre
 - Tests for linear and nonlinear CD with regular and irregular sampling
 
 - Notebooks for linear and nonlinear CD with regular and irregular sampling
-    - Linear
-    - Pendulum
-    - Lorenz
+    - Linear:
+        - [Tracking](./src/notebooks/linear/cdlgssm_tracking.ipynb)
+        - [Parameter learning (regular times)](./src/notebooks/linear/cdlgssm_learnParams_oscillator_fixedSampleRate.ipynb)
+        - [Parameter learning (irregular times)](./src/notebooks/linear/cdlgssm_learnParams_oscillator_irregularSampleRate.ipynb)
+    - [Pendulum](./src/notebooks/non_linear/cd_ekf_ukf_pendulum.ipynb)
+    - Lorenz 63: [regular times](./src/notebooks/non_linear/cd_ekf_ukf_enkf_Lorenz63.ipynb), [irregular times](./src/notebooks/non_linear/cd_ekf_ukf_enkf_Lorenz63_irregular_times.ipynb)
 
-- How to deal with MLE vs MAP
-    - Simply editing log-priors? (Iñigo)
-    - Editing fit_sgd with an argument?
     
 ### For v1.5
 
 - Process inputs in dynamic functions
+
+- How to deal with MLE vs MAP
+    - Simply editing log-priors? (Iñigo)
+    - Editing fit_sgd with an argument?
 
 - Allow for input times to be different from measurement times?
 
