@@ -160,7 +160,7 @@ for n_state in jnp.arange(STATE_DIM):
     plt.plot(
         t_emissions,
         d_smoother_posterior.smoothed_means[:, n_state],
-        label="Post-SGD fit Discrete filtered state",
+        label="Post-SGD fit Discrete smoothed state",
         color="red",
         marker="o",
         markerfacecolor="none",
@@ -177,7 +177,7 @@ for n_state in jnp.arange(STATE_DIM):
     plt.plot(
         t_emissions,
         cd_smoother_posterior.smoothed_means[:, n_state],
-        label="Post-SGD fit Continuous-Discrete filtered state",
+        label="Post-SGD fit Continuous-Discrete smoothed state",
         color="green",
         marker="x"
     )
