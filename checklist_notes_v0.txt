@@ -1,0 +1,66 @@
+Folders to check:
+
+docs/notebooks/linear_gaussian_ssm:
+-lgssm_learning
+-lgssm_learning2
+
+Question: What is the purpose of these notebooks?
+
+dynamax/
+-ssm.py
+    ./linear_gaussian_ssm
+        -inference.py
+        -__init__.py
+
+    ./nonlinear_gaussian_ssm
+
+notebooks/
+-Has anything changed here? Seems like Iñigo changed these recently (possibly with versioning issues)?
+-Can we get rid of the *diffrax* notebooks here and revert to whatever was original?
+
+
+src/
+    README_src.md
+    cdlgssm_test_filter_TRegular.py
+    cdlgssm_test_smoother_TRegular.py
+    cdnlgssm_test_filter_linear_TRegular.py
+    cdnlgssm_test_smoother_linear_TRegular.py
+    cdssm_utils.py
+    ssm_temissions.py
+
+    ./continuous_discrete_linear_gaussian_ssm
+        README.md
+        __init__.py
+        inference.py
+        models.py
+
+    ./continuous_discrete_nonlinear_gaussian_ssm
+        README.md
+        __init__.py
+        cdnlgssm_utils.py
+        inference_ekf.py
+        inference_enkf.py
+        inference_ukf.py
+        models.py
+
+    ./notebooks
+        ./linear
+            cdlgssm_learnParams_oscillator_fixedSampleRate.ipynb
+            cdlgssm_learnParams_oscillator_irregularSampleRate.ipynb
+            cdlgssm_tracking.ipynb
+
+        ./non_linear
+            cd_ekf_ukf_enkf_Lorenz63.ipynb
+            cd_ekf_ukf_enkf_Lorenz63_irregular_times.ipynb
+            cd_ekf_ukf_pendulum.ipynb
+            cdnlgssm_hmc.ipynb
+            ekf_ukf_pendulum_instability.ipynb
+
+    ./utils
+        plotting.py
+
+
+Goals.md
+README.md
+
+## Question: Do we have a readme that helps a user install the right packages? ##
