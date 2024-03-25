@@ -341,6 +341,9 @@ def _smooth(
             # Evaluate the jacobian of the dynamics function at m and inputs
             F_t=jacfwd(f)(m_filter,u,t)
             
+            '''
+            # Direct implementation of Equations 3.163
+            
             # Auxiliary matrix, used in both mean and covariance
             # Inverse product computed via psd_solve
             aux_matrix=psd_solve(P_filter, (P_filter @ F_t.T + L_t @ Qc_t @ L_t.T))
@@ -349,6 +352,20 @@ def _smooth(
             dmsmoothdt = f(m_filter,u,t) + aux_matrix.T @ (m_smooth-m_filter)
             # Covariance evolution
             dPsmoothdt = aux_matrix.T @ P_smooth + P_smooth @ aux_matrix - L_t @ Qc_t @ L_t.T
+            '''
+            
+            # Revised implementation,
+            # where we avoid numerical P @ P^{-1} computations
+            
+            # Auxiliary matrix, used in both mean and covariance
+            # Inverse product computed via psd_solve
+            aux_matrix=psd_solve(P_filter, L_t @ Qc_t @ L_t.T).T
+
+            # Mean evolution
+            dmsmoothdt = f(m_filter,u,t) + (F_t + aux_matrix) @ (m_smooth-m_filter)
+            # Covariance evolution
+            dPsmoothdt = (F_t + aux_matrix) @ P_smooth + P_smooth @ (F_t + aux_matrix).T - L_t @ Qc_t @ L_t.T
+            
         else:
             raise ValueError('EKF hyperparams.smooth_order = {} not implemented yet'.format(hyperparams.smooth_order))
 
@@ -436,20 +453,9 @@ def extended_kalman_smoother(
     args = (
         t0[::-1], t1[::-1],
         t0_idx[::-1],
-        filtered_means[1:][::-1], filtered_covs[1:][::-1]
+        filtered_means[:-1][::-1], filtered_covs[:-1][::-1]
     )
     _, (smoothed_means, smoothed_covs) = lax.scan(_step, init_carry, args)
-    '''
-    carry=init_carry
-    for i in jnp.arange(num_timesteps-1):
-        carry, (smoothed_means, smoothed_covs) = _step(
-            carry,
-            (t0[::-1][i],
-            t1[::-1][i],
-            t0_idx[::-1][i],
-            filtered_means[1:][::-1][i], filtered_covs[1:][::-1][i])
-        )
-    '''
     
     # Reverse the arrays and return
     smoothed_means = jnp.row_stack((smoothed_means[::-1], filtered_means[-1][None, ...]))
