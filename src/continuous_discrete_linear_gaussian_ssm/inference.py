@@ -501,7 +501,7 @@ def _smooth(
         # Mean evolution
         dmsmoothdt = F_t @ m_smooth + aux_matrix @ (m_smooth-m_filter)
         # Covariance evolution
-        dPsmoothdt = (F_t + aux_matrix) @ P_smooth + P_smooth @ (F_t + aux_matrix) - L_t @ Qc_t @ L_t.T
+        dPsmoothdt = (F_t + aux_matrix) @ P_smooth + P_smooth @ (F_t + aux_matrix).T - L_t @ Qc_t @ L_t.T
 
         return (dmsmoothdt, dPsmoothdt)
     #jdb.breakpoint()
