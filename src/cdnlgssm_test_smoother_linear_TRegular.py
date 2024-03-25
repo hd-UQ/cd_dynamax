@@ -146,7 +146,7 @@ for dynamics_approx_order in [1., 2.]:
                 )
 
             # check that results in cd_ekf_post are similar to results from applying cd_kf (cd_filtered_posterior)
-            print(f"Comparing {smoother_type} KF smoothed posteriors with {state_order}-order EKF...")
+            print(f"Comparing {smoother_type} KF smoothed posteriors with {state_order}-order EKF smoother...")
             compare_structs(cd_smoother_posterior, cd_ekf_smoother_posterior, accept_failure=True)
 
         print(f"Discrete to Continous-Discrete {smoother_type} smoothed posterior tests passed!")   
