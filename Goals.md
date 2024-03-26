@@ -20,29 +20,35 @@ Goal is to extend dynamax to deal with irregular sampling, via continuous-discre
 - Continuous-discrete extension (filtering and smoothing) implemented for non-linear gaussian systems.
     - Implemented UKF, EKF, and EnKF.
     - Implemented Extended Kalman Smoother (EKS)
-        - UKS and EnKF PENDING
+        - UKS and EnKS are PENDING
     
-    - Tests pass for linear model with regular sampling-based [cdnlgssm_test_filter_linear_TRegular](./src/cdnlgssm_test_filter_linear_TRegular.py).
+    - Test [cdnlgssm_test_filter_linear_TRegular](./src/cdnlgssm_test_filter_linear_TRegular.py) pass for linear model with regular sampling-based filters.
         - Namely, we compare that
             1. A CDNLGSSM model with linearity asusmptions provides same model as CDLGSSM model
                 - Based on both first and second order approximations to SDE (equivalent for linear SDEs)
             2. A CDNLGSSM model with EKF filtering provides same results than a KF in CDLGSSM model
                 - Based on first and second order EKF approximations (equivalent for linear SDEs)
                 - Both for pre- and post-fit of parameters with SGD, using EKF for logmarginal computations
-            3. A CDNLGSSM model with UKF filtering provides PENDING
-            4. A CDNLGSSM model with EnKF filtering provides PENDING
-                - Pending improvements to EnKF:
-                    - try to get consistency on Linear Gaussian case.
-                    - can build jacobian-based observation H within EnKF (instead of particle approximations)
+            
+            3. A CDNLGSSM model with UKF filtering 
+                - matches the CD-Kalman filtering performance
+                
+            4. A CDNLGSSM model with EnKF filtering 
+                - provides a close-enough, but not exactly equal performance (even with increased number of particles)
+                    - Pending improvements to EnKF:
+                        - try to get consistency on Linear Gaussian case.
+                        - can build jacobian-based observation H within EnKF (instead of particle approximations)
 
-    - Tests pass for linear model with regular sampling-based [cdnlgssm_test_smoother_linear_TRegular](./src/cdnlgssm_test_smoother_linear_TRegular.py).
+    - Test [cdnlgssm_test_smoother_linear_TRegular](./src/cdnlgssm_test_smoother_linear_TRegular.py) pass for linear model with regular sampling-based smoother.
         - Namely, we compare that
-            1. A CDNLGSSM model with EKF smoothing
-                - Performance does not match KF smoother
-                - Results seem close though
-                - PENDING to explore and understand why
-            1. A CDNLGSSM model with UKF smoothing PENDING
-            1. A CDNLGSSM model with EnKF smoothing PENDING
+            1. A CDNLGSSM model with EKS smoothing (as in Sarkka's Algorithm 3.23)
+            - CD-nonlinear-EKS (as in Sarkka's Algorithm 3.23) matches CD-linear-KS type 2 (as in Sarkka's Algorithm 3.18)
+                - but does not match CD-linear-KS type 1 (as in Sarkka's Algorithm 3.17)
+                    - Performance is close though: are these related to differential equation solver differences?
+
+            2. A CDNLGSSM model with UKF smoothing PENDING
+            
+            3. A CDNLGSSM model with EnKF smoothing PENDING
 
     - Notebooks
         - Notebook w/ pendulum at regular time intervals showing cd-UKF, cd-EKF, cd-EnKF vs d-UKF, d-EKF. 
