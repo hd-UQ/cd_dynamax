@@ -1,3 +1,26 @@
+# Release todos
+
+- we keep dynamax
+- we provide requirements.txt
+- within our codebase
+    - move cdssm_utils to utils dir
+    - create a test_scripts dir, move tests there
+
+- Revise our own README with
+    - intro to problem
+    - summary of what is implemented, by linking to READMEs within each folder
+    - how to install
+    - summary of notebooks
+    - summary of tests
+
+- Make sure the links work
+
+- Merge all the above into main
+    - double-check all is good
+    - tag it with v0
+- Make v0 public
+    - via new brunch
+
 # cd-dynamax 
 
 Goal is to extend dynamax to deal with irregular sampling, via continuous-discrete dynamics modeling
@@ -88,6 +111,11 @@ Goal is to extend dynamax to deal with irregular sampling, via continuous-discre
     
 # To dos
 
+- Uncertainty quantification via HMC
+    - How to deal with MLE vs MAP
+        - Simply editing log-priors? (Iñigo)
+        - Editing fit_sgd with an argument?
+        
 ### Code optimization (All Pending)
 
 - Pending:
@@ -102,10 +130,9 @@ Goal is to extend dynamax to deal with irregular sampling, via continuous-discre
 	- Diffeqsolve
 		- debug feature
 
-## For v1 
+## For v0 
 
-- Tests for linear and nonlinear CD with regular and irregular sampling
-    - Check pendings above
+- Tests for linear and nonlinear CD filtering and smoothing with regular and irregular sampling
 
 - Notebooks for linear and nonlinear CD with regular and irregular sampling
     - Linear:
@@ -116,19 +143,12 @@ Goal is to extend dynamax to deal with irregular sampling, via continuous-discre
     - Lorenz 63:
         - [regular sampling times](./src/notebooks/non_linear/cd_ekf_ukf_enkf_Lorenz63.ipynb),
         - [irregular sampling times](./src/notebooks/non_linear/cd_ekf_ukf_enkf_Lorenz63_irregular_times.ipynb)
-
-- Uncertainty quantification via HMC
-    - How to deal with MLE vs MAP
-        - Simply editing log-priors? (Iñigo)
-        - Editing fit_sgd with an argument?
     
-### For v1.5
+### For v+
 
 - Process inputs in dynamic functions
 
 - Allow for input times to be different from measurement times?
-
-## For v2
 
 - How to modify learnable parameters, to have a parameter set
     - Build it for linear function with weights and biases

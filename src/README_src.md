@@ -20,7 +20,7 @@
 - Filtering and smoothing code is implemented
 
 - We provide a parameter (point)-estimation via implementation of stochastic gradient descent based MLE
-    - Based on fit_sgd() in [../ssm_temissions.py](../ssm_temissions.py)
+    - Based on fit_sgd() in [./ssm_temissions.py](./ssm_temissions.py)
     
     - Which leverages the log-marginal likelihood computed in closed form [here](https://github.com/iurteaga/hybrid_dynamics_uq/blob/main/src/continuous_discrete_linear_gaussian_ssm/inference.py#L507)
         - The analytical marginalized log-likelihood is possible given the Gaussian nature of the (recursive) transition and emission distributions
@@ -28,4 +28,4 @@
 - We do not provide a parameter (point)-estimation via EM
     - The m-step requires MLE for continuous time parameters
 
-
+## continuous_discrete_nonlinear_gaussian_ssm
