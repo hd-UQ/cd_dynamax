@@ -1,4 +1,4 @@
-# CD-Dynamax 
+# cd-dynamax 
 
 Goal is to extend dynamax to deal with irregular sampling, via continuous-discrete dynamics modeling
 
@@ -87,15 +87,6 @@ Goal is to extend dynamax to deal with irregular sampling, via continuous-discre
         - Let SGD learn hyperparameters of prior via MC-based loss
     
 # To dos
-
-## Initial pending
-
-- For SIAM UQ conference, show HMC working in a cd-linear setting assuming linear and non-linear models (i.e., show that EKF reproduces results of basic KF approach)
-    - Plot true latent states Vs filtered-smoothed latents
-    - Plot true emissions (no noise) Vs true observed data Vs estimated emissions (estimated mean + estimated covariance)
-    
-    - How hard it is to learn the initial distribution?
-        - Help inference with fixed initial distribution, or at least not-learnable
 
 ### Code optimization (All Pending)
 
