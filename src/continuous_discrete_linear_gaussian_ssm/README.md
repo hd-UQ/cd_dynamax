@@ -25,6 +25,8 @@
 
 - Parameter (point)-estimation is possible via stochastic gradient descent based MLE
     - See fit_sgd() in [../ssm_temissions.py](../ssm_temissions.py#L443)
+        - Which leverages the [marginal log-likelihood computed in closed form](./continuous_discrete_linear_gaussian_ssm/models.py#L233)
+        - The analytical marginalized log-likelihood is possible given the Gaussian nature of the (recursive) transition and emission distributions
 
 - We do not provide a parameter (point)-estimation via EM
     - The m-step requires MLE for continuous time parameters
