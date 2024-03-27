@@ -15,9 +15,8 @@ from dynamax.types import PRNGKey, Scalar
 import jax.debug as jdb
 
 # Our codebase
-
 # Diffrax based diff-eq solver
-from cdssm_utils import diffeqsolve
+from utils.diffrax_utils import diffeqsolve
 
 # To avoid unnecessary redefinitions of code,
 # We import those that can be reused from LGSSM first

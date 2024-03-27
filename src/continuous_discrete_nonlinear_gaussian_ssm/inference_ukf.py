@@ -8,26 +8,17 @@ from typing import NamedTuple, Optional, List
 from jax.tree_util import tree_map
 from dynamax.utils.utils import psd_solve
 
+# Dynamax shared code
+from dynamax.linear_gaussian_ssm.inference import PosteriorGSSMFiltered, PosteriorGSSMSmoothed
+
 # Our codebase
-from continuous_discrete_nonlinear_gaussian_ssm.models import ParamsCDNLGSSM
-from dynamax.linear_gaussian_ssm.inference import (
-    PosteriorGSSMFiltered,
-    PosteriorGSSMSmoothed,
-)
+# CDNLGSSM param and function definition
+from continuous_discrete_nonlinear_gaussian_ssm.cdnlgssm_utils import *
+# Diffrax based diff-eq solver
+from utils.diffrax_utils import diffeqsolve
 
-from cdssm_utils import diffeqsolve
-
-
-class UKFHyperParams(NamedTuple):
-    """Lightweight container for UKF hyperparameters.
-
-    Default values taken from https://github.com/sbitzer/UKF-exposed
-    """
-
-    alpha: float = jnp.sqrt(3)
-    beta: int = 2
-    kappa: int = 1
-
+# Instead of redefining, import UKFHyperParams from dynamax
+from dynamax.nonlinear_gaussian_ssm.inference_ukf import UKFHyperParams
 
 # Helper functions
 _get_params = lambda x, dim, t: x[t] if x.ndim == dim + 1 else x

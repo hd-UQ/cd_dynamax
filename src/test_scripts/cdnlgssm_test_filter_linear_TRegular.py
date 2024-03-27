@@ -6,16 +6,19 @@ from datetime import datetime
 import jax.numpy as jnp
 import jax.random as jr
 
+# Make sure main paths are added
+sys.path.append("../")
+sys.path.append("../..")
+
 # Local dynamax
-sys.path.append("..")
 from dynamax.linear_gaussian_ssm import LinearGaussianSSM
 from dynamax.utils.utils import monotonically_increasing
 from dynamax.utils.utils import ensure_array_has_batch_dim
 
 # Our codebase
-from cdssm_utils import compare, compare_structs
 from continuous_discrete_linear_gaussian_ssm import ContDiscreteLinearGaussianSSM
 from continuous_discrete_nonlinear_gaussian_ssm import ContDiscreteNonlinearGaussianSSM
+from utils.test_utils import compare, compare_structs
 
 # The idea of this test is as following (uses regular time intervals ONLY):
 # First, establish equivalent linear systems in discrete and continuous time
@@ -300,4 +303,4 @@ for N_particles in [1e2, 1e3, 1e4]:
 
 
 print("All EnKF tests passed---note that these are randomized approximations, so we don't expect to perfectly replicate EKF and KF (which are both exact in linear test cases shown here)! We want to see convergence to truth (hence checking the final filtered state).")
-pdb.set_trace()
+

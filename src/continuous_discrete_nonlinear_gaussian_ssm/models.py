@@ -10,8 +10,6 @@ from jaxtyping import Array, Float, PyTree
 
 import jax.debug as jdb
 
-from cdssm_utils import diffeqsolve
-
 from typing import NamedTuple, Tuple, Optional, Union, List
 import tensorflow_probability.substrates.jax as tfp
 from tensorflow_probability.substrates.jax.distributions import MultivariateNormalFullCovariance as MVN
@@ -33,6 +31,8 @@ from continuous_discrete_nonlinear_gaussian_ssm.cdnlgssm_utils import *
 from continuous_discrete_nonlinear_gaussian_ssm.inference_ekf import EKFHyperParams, iterated_extended_kalman_filter, iterated_extended_kalman_smoother
 from continuous_discrete_nonlinear_gaussian_ssm.inference_enkf import EnKFHyperParams, ensemble_kalman_filter
 from continuous_discrete_nonlinear_gaussian_ssm.inference_ukf import UKFHyperParams, unscented_kalman_filter
+# Diffrax based diff-eq solver
+from utils.diffrax_utils import diffeqsolve
 
 # TODO: This function is defined in many places... unclear whether we need to redefine, or move to utils   
 def _get_params(x, dim, t):

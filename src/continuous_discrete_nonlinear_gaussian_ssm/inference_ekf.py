@@ -19,7 +19,7 @@ from dynamax.linear_gaussian_ssm.inference import PosteriorGSSMFiltered, Posteri
 # CDNLGSSM param and function definition
 from continuous_discrete_nonlinear_gaussian_ssm.cdnlgssm_utils import *
 # Diffrax based diff-eq solver
-from cdssm_utils import diffeqsolve
+from utils.diffrax_utils import diffeqsolve
 
 # Helper functions
 _get_params = lambda x, dim, t: x[t] if x.ndim == dim + 1 else x
