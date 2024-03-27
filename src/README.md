@@ -7,7 +7,7 @@ We provide the following modifications of the dynamax codebase, to accommodate c
 - A modified version of dynamax's ssm.py that incorporates non-discrete emission time instants: i.e., the t_emissions array
     - t_emissions is an input argument
         - We use t0 and t1 refer to t_k and t_{k+1}, not necessarily regularly sampled
-    - t_emissions is a matrix of size $[num_observations \times 1]$
+    - t_emissions is a matrix of size $[num_{observations} \times 1]$
         - it should facilitate batching
         - For lax.scan() operations, we recast them in vector shape (i.e., remove final dimension)
   
@@ -18,9 +18,9 @@ We provide the following modifications of the dynamax codebase, to accommodate c
     
     - The CD-LGSSM model is based on
         - A continuous-time [push-forward operation](./continuous_discrete_linear_gaussian_ssm/inference.py#L77) that [computes and returns matrices A and Q](./continuous_discrete_linear_gaussian_ssm/models.py#L213)
-            - computed based on Equation (3.135) in [[1] Särkkä, Simo. Recursive Bayesian inference on stochastic differential equations. Helsinki University of Technology, 2006.](https://aaltodoc.aalto.fi/items/cc45c44e-ff66-4907-bfff-03293391fe1d)
+            - based on Equation (3.135) in [[1] Särkkä, Simo. Recursive Bayesian inference on stochastic differential equations. Helsinki University of Technology, 2006.](https://aaltodoc.aalto.fi/items/cc45c44e-ff66-4907-bfff-03293391fe1d)
     
-- Different [filtering and smoothing algorithms are implemented](./continuous_discrete_linear_gaussian_ssm/README.md)
+- [Continuous-Discrete Kalman filtering and smoothing algorithms are implemented](./continuous_discrete_linear_gaussian_ssm/README.md)
 
 - Parameter (point)-estimation is possible via stochastic gradient descent based MLE  
     - where the marginal log-likelihood is computed based on the CD-Kalman filter
@@ -36,7 +36,7 @@ We provide the following modifications of the dynamax codebase, to accommodate c
             - The emissions function in [ParamsCDNLGSSMEmissions](./continuous_discrete_nonlinear_gaussian_ssm/cdnlgssm_utils.py#L133)
                 - These two latter are learnable functions            
     
-- Different [filtering and smoothing algorithms are implemented](./continuous_discrete_linear_gaussian_ssm/README.md)
+- Different [filtering and smoothing algorithms are implemented](./continuous_discrete_nonlinear_gaussian_ssm/README.md)
 
 - Parameter (point)-estimation is possible via stochastic gradient descent based MLE
     - the marginal log-likelihood can be computed according to different implemented filtering methods (EKF, UKF, EnKF)
