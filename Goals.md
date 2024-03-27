@@ -2,18 +2,15 @@
 
 - Revise our own README with
     - intro to problem
-    - summary of what is implemented, by linking to READMEs within each folder
     - how to install
     - summary of notebooks
-    - summary of tests
 
 - Make sure the links work
 
-- Merge all the above into main
-    - double-check all is good
-    - tag it with v0
-- Make v0 public
-    - via new brunch
+- When ready,
+    - Tag v0
+    - Make v0 public
+        - via new branch
 
 # cd-dynamax 
 
