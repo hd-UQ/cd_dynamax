@@ -9,22 +9,22 @@
 ## Implemented algorithms
 
 - The codebase is based on algorithms as defined in
-    - [Särkkä, Simo. Recursive Bayesian inference on stochastic differential equations. Helsinki University of Technology, 2006.](https://aaltodoc.aalto.fi/items/cc45c44e-ff66-4907-bfff-03293391fe1d)
+    - [[1] Särkkä, Simo. Recursive Bayesian inference on stochastic differential equations. Helsinki University of Technology, 2006.](https://aaltodoc.aalto.fi/items/cc45c44e-ff66-4907-bfff-03293391fe1d)
         
-- The [Continuous Discrete Kalman Filter I implementation](./inference.py)
-    - i.e., Algorithm 3.15 in [Särkkä, Simo. Recursive Bayesian inference on stochastic differential equations. Helsinki University of Technology, 2006.](https://aaltodoc.aalto.fi/items/cc45c44e-ff66-4907-bfff-03293391fe1d)
+- The [Continuous Discrete Kalman Filter I implementation](./inference.py#L378)
+    - i.e., Algorithm 3.15 in [[1]](https://aaltodoc.aalto.fi/items/cc45c44e-ff66-4907-bfff-03293391fe1d)
 
-- [Continuous Discrete Kalman Smoothers](./inference.py):
-    - The [Continuous Discrete Kalman Smoother type I implementation](./inference.py)
-        - i.e., Algorithm 3.17 in [Särkkä, Simo. Recursive Bayesian inference on stochastic differential equations. Helsinki University of Technology, 2006.](https://aaltodoc.aalto.fi/items/cc45c44e-ff66-4907-bfff-03293391fe1d)
+- [Continuous Discrete Kalman Smoothers](./inference.py#L515):
+    - The [Continuous Discrete Kalman Smoother type I implementation](./inference.py#L558)
+        - i.e., Algorithm 3.17 in [[1]](https://aaltodoc.aalto.fi/items/cc45c44e-ff66-4907-bfff-03293391fe1d)
       
-    - The [Continuous Discrete Kalman Smoother type II implementation](./inference.py)
-        - i.e., Algorithm 3.18 in [Särkkä, Simo. Recursive Bayesian inference on stochastic differential equations. Helsinki University of Technology, 2006.](https://aaltodoc.aalto.fi/items/cc45c44e-ff66-4907-bfff-03293391fe1d)
+    - The [Continuous Discrete Kalman Smoother type II implementation](./inference.py#L588)
+        - i.e., Algorithm 3.18 in [[1]](https://aaltodoc.aalto.fi/items/cc45c44e-ff66-4907-bfff-03293391fe1d)
         
 ## Parameter inference
 
 - Parameter (point)-estimation is possible via stochastic gradient descent based MLE
-    - See fit_sgd() in [../ssm_temissions.py](../ssm_temissions.py)
+    - See fit_sgd() in [../ssm_temissions.py](../ssm_temissions.py#L443)
 
 - We do not provide a parameter (point)-estimation via EM
     - The m-step requires MLE for continuous time parameters
