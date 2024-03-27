@@ -521,14 +521,16 @@ def cdlgssm_smoother(
 ) -> PosteriorGSSMSmoothed:
     r"""Run forward-filtering, backward-smoother to compute expectations
     under the posterior distribution on latent states. 
-    Technically, this implements the Rauch-Tung-Striebel (RTS) smoother,
-    as described in Sarkka's thesis: Algorithm 3.17
-
+    Technically, this smoother implements two different types of smoothers
+        
     Args:
         params: an CDLGSSMParams instance (or object with the same fields)
         emissions: array of observations.
         t_emissions: continuous-time specific time instants of observations: if not None, it is an array 
         inputs: array of inputs.
+        smoother_type: 
+            cd_smoother_1: Sarkka's Algorithm 3.17
+            cd_smoother_2: Sarkka's Algorithm 3.18
 
     Returns:
         PosteriorGSSMSmoothed: smoothed posterior object.

@@ -6,19 +6,28 @@
 
     - We provide a set of filtering and smoothing algorithms described below.
 
- 
-## Implemented algorithms
-
 ## Implemented algorithms
 
 - The codebase is based on algorithms as defined in
-    - [Särkkä, Simo. Recursive Bayesian inference on stochastic differential equations. Helsinki University of Technology, 2006.](https://aaltodoc.aalto.fi/items/cc45c44e-ff66-4907-bfff-03293391fe1d)
+    - [[1] Särkkä, Simo. Recursive Bayesian inference on stochastic differential equations. Helsinki University of Technology, 2006.](https://aaltodoc.aalto.fi/items/cc45c44e-ff66-4907-bfff-03293391fe1d)
     
-- The Continuous Discrete EKF implementation
-    - i.e., Algorithm ?? in (Sarkka's proper reference)
+- We implement [Extended-](./inference_ekf.py), [Unscented-](./inference_ukf.py) and [Ensemble-](./inference_enkf.py) Kalman filters and smoothers
 
-- TODO: We provide the Continuous Discrete UKF implementation
-    - i.e., Algorithm ?? in (Sarkka's proper reference)
+### Extended Kalman Filter and Smoothers
+
+- The [Continuous Discrete Extended Kalman filter](./inference_ekf.py#L162), with 
+
+    - The [First-order Continuous Discrete Extended Kalman Filter implementation](./inference_ekf.py#L85)
+        - i.e., Algorithm 3.21 in [[1]](https://aaltodoc.aalto.fi/items/cc45c44e-ff66-4907-bfff-03293391fe1d)
+    
+    - The [Second-order Continuous Discrete Extended Kalman Filter implementation](./inference_ekf.py#L95)
+        - i.e., Algorithm 3.22 in [[1]](https://aaltodoc.aalto.fi/items/cc45c44e-ff66-4907-bfff-03293391fe1d)
+     
+- The [Continuous Discrete Extended Kalman smoother](./inference_ekf.py#L382), with 
+
+    - The [First-order Continuous Discrete Extended Kalman Smoother implementation](./inference_ekf.py#L295)
+        - i.e., Algorithm 3.23 in [[1]](https://aaltodoc.aalto.fi/items/cc45c44e-ff66-4907-bfff-03293391fe1d)
+    
 
 ## Parameter inference
 

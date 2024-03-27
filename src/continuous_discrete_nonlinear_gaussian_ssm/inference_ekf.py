@@ -170,6 +170,9 @@ def extended_kalman_filter(
 ) -> PosteriorGSSMFiltered:
     r"""Run an (iterated) extended Kalman filter to produce the
     marginal likelihood and filtered state estimates.
+        Two implementations are available,
+        based on first- and second-order approximations
+            i.e. Algorithms 3.21 and 3.22 in Sarkka's thesis
 
     Args:
         params: model parameters.
@@ -300,8 +303,8 @@ def _smooth(
     ):
     r"""smooth the next mean and covariance using EKF smoothing equations
         where the evolution of m and P are computed based on
-            First order smoothing approximation as in Equation 3.163
-            (No second order in Sarkka)
+            First order smoothing approximation
+                as in Algorithm 3.23 in Sarkka
 
     Args:
         m_filter (D_hid,): filtered mean at t1.
@@ -370,11 +373,10 @@ def _smooth(
             raise ValueError('EKF hyperparams.smooth_order = {} not implemented yet'.format(hyperparams.smooth_order))
 
         return (dmsmoothdt, dPsmoothdt)
-    #jdb.breakpoint()
+
     # Recall that we solve the rhs in reverse:
     # from t1 to t0, BUT y0 contains initial conditions at t1
     sol = diffeqsolve(rhs_all, t0=t0, t1=t1, y0=y0, reverse=True, args=(m_filter, P_filter))
-    #jdb.breakpoint()
     return sol[0][-1], sol[1][-1]
     
 def extended_kalman_smoother(
