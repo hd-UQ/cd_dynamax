@@ -1,11 +1,5 @@
 # Release todos
 
-- we keep dynamax
-- we provide requirements.txt
-- within our codebase
-    - move cdssm_utils to utils dir
-    - create a test_scripts dir, move tests there
-
 - Revise our own README with
     - intro to problem
     - summary of what is implemented, by linking to READMEs within each folder
