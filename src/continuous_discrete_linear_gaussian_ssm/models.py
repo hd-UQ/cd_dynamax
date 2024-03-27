@@ -32,9 +32,6 @@ from continuous_discrete_linear_gaussian_ssm.inference import ParamsCDLGSSMDynam
 from continuous_discrete_linear_gaussian_ssm.inference import cdlgssm_filter, cdlgssm_smoother, cdlgssm_posterior_sample
 from continuous_discrete_linear_gaussian_ssm.inference import compute_pushforward
 
-# And define the rest later
-
-
 class SuffStatsCDLGSSM(Protocol):
     """A :class:`NamedTuple` with sufficient statistics for CDLGSSM parameter estimation."""
     pass

@@ -6,16 +6,19 @@ from datetime import datetime
 import jax.numpy as jnp
 import jax.random as jr
 
+# Make sure main paths are added
+sys.path.append("../")
+sys.path.append("../..")
+
 # Local dynamax
-sys.path.append("..")
 from dynamax.linear_gaussian_ssm import LinearGaussianSSM
 from dynamax.utils.utils import monotonically_increasing
 from dynamax.utils.utils import ensure_array_has_batch_dim
 
 # Our codebase
-from cdssm_utils import compare, compare_structs
 from continuous_discrete_linear_gaussian_ssm import ContDiscreteLinearGaussianSSM
 from continuous_discrete_nonlinear_gaussian_ssm import ContDiscreteNonlinearGaussianSSM
+from utils.test_utils import compare, compare_structs
 
 # The idea of this test is as following (uses regular time intervals ONLY):
 # First, establish equivalent linear systems in discrete and continuous time
@@ -151,8 +154,5 @@ for dynamics_approx_order in [1., 2.]:
 
         print(f"Discrete to Continous-Discrete {smoother_type} smoothed posterior tests passed!")   
 
-print("All EKF and CDNLGSSM model tests passed!")
-
-pdb.set_trace()
-# TODO: we could plot the smoothed states to double-check for accuracy
+print("All EKS and CDNLGSSM model tests passed!")
 

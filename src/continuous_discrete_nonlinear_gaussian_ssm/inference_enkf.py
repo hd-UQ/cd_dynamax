@@ -11,21 +11,17 @@ from dynamax.utils.utils import psd_solve
 
 import jax.debug as jdb
 
+# Dynamax shared code
+from dynamax.linear_gaussian_ssm.inference import PosteriorGSSMFiltered, PosteriorGSSMSmoothed
+
 # Our codebase
-from continuous_discrete_nonlinear_gaussian_ssm.models import ParamsCDNLGSSM
-from dynamax.linear_gaussian_ssm.inference import (
-    ParamsLGSSMInitial,
-    ParamsLGSSMEmissions,
-    PosteriorGSSMFiltered,
-    PosteriorGSSMSmoothed,
-)
-
-from cdssm_utils import diffeqsolve
-
+# CDNLGSSM param and function definition
+from continuous_discrete_nonlinear_gaussian_ssm.cdnlgssm_utils import *
+# Diffrax based diff-eq solver
+from utils.diffrax_utils import diffeqsolve
 
 # Currently employing method from https://arxiv.org/abs/2205.02730 Neilsen et al. 2022
 
-# TODO: import EnKFHyperParams from dynamax
 class EnKFHyperParams(NamedTuple):
     """Lightweight container for UKF hyperparameters.
 
@@ -44,7 +40,6 @@ _process_fn = lambda f, u: (lambda x, y: f(x)) if u is None else f
 _process_input = lambda x, y: jnp.zeros((y,)) if x is None else x
 # Using sum of _outers to compute covariance to avoid degenerate dimensionality cases
 
-# TODO: Revise and implement push-forward here
 def _predict(
     key,
     x, # particles
