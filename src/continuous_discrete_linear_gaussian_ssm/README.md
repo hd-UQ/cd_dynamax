@@ -1,6 +1,6 @@
 # Continuous Discrete Linear Gaussian State Space Models
 
-- Implementation of Continuous-discrete NonLinear Gaussian State Space Models
+- Implementation of Continuous-discrete Linear Gaussian State Space Models
     - We provide [a model class definition](./models.py#L39)
         - NB: t0 and t1 refer to t_k and t_{k+1}, not necessarily regularly sampled
 

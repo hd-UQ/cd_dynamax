@@ -1,7 +1,7 @@
 # Continuous Discrete Linear Gaussian State Space Models
 
-- Implementation of Continuous-discrete Linear Gaussian State Space Models
-    - We provide [a model class definition](./models.py)
+- Implementation of Continuous-discrete Non-Linear Gaussian State Space Models
+    - We provide [a model class definition](./models.py#L112)
         - NB: t0 and t1 refer to t_k and t_{k+1}, not necessarily regularly sampled
 
     - We provide a set of filtering and smoothing algorithms described below.
@@ -28,11 +28,18 @@
     - The [First-order Continuous Discrete Extended Kalman Smoother implementation](./inference_ekf.py#L295)
         - i.e., Algorithm 3.23 in [[1]](https://aaltodoc.aalto.fi/items/cc45c44e-ff66-4907-bfff-03293391fe1d)
     
+### Unscented Kalman Filter
+
+- The [Continuous Discrete Unscented Kalman filter](./inference_ukf.py#L191)
+
+### Ensemble Kalman Filter
+
+- The [Continuous Discrete Ensemble Kalman filter](./inference_enkf.py#L144)
 
 ## Parameter inference
 
 - Parameter (point)-estimation is possible via stochastic gradient descent based MLE
-    - See fit_sgd() in [../ssm_temissions.py](../ssm_temissions.py)
+    - See fit_sgd() in [../ssm_temissions.py](../ssm_temissions.py#L443)
 
 - We do not provide a parameter (point)-estimation via EM
     - The m-step requires MLE for continuous time parameters
@@ -40,3 +47,5 @@
 ## Pending
 
 - Note that the codebase currently only supports inputs at measurement times, i.e., $u$ is observed at times $t_k$ as given in t_emissions.
+
+- UKS and EnKS implementations
