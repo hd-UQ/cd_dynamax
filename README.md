@@ -37,6 +37,7 @@ In the codebase, we also allow for doing filtering, smoothing, and parameter inf
 ## Codebase status
 
 - We have implemented [continuous-discrete linear and non-linear models](./src/README.md), along with filtering and smoothing algorithms.
+    - If you are simulating data from a non-linear SDE, it is recommended to use `model.sample(..., transition_type="path")`, which runs an SDE solver. Default behavior is to perform Gaussian approximations to the SDE.
 
 - We provide notebooks for linear and nonlinear continuous-discrete filtering/smoothing under regular and irregular sampling
     - Linear dynamics:
@@ -53,7 +54,6 @@ In the codebase, we also allow for doing filtering, smoothing, and parameter inf
 
 - Important pending features:
     - Support generic parameter estimation for problems with non-linear dynamics
-    - Support direct sampling of SDE during data generation (currently uses a Gaussian transition distribution)
 
 - We are leveraging [dynamax](https://github.com/probml/dynamax) code
     - Currently, based on a [dynamax pull at version '0.1.1+147.g3ad2ac5'](./dynamax)
