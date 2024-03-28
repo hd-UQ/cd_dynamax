@@ -9,9 +9,9 @@ We move towards this goal by introducing the following flexible mathematical set
 
 We assume there exists a (possibly unknown) stochastic dynamical system of form
 $$\dot{x} = f(x,t) + \Sigma_1(x,t) \dot{w}, \quad x(0)=x_0$$
-where $x_0 \in \mathbb{R}^{d_x}$, $f$ a possibly time-dependent drift function, $\Sigma$ a possibly state and/or time-dependent diffusion coefficient, and $\dot{w}$ the derivative of a $d_x$-dimensional Brownian motion with a covariance $\Sigma_2$.
+where $x_0 \in \mathbb{R}^{d_x}$, $f$ a possibly time-dependent drift function, $\Sigma_1$ a possibly state and/or time-dependent diffusion coefficient, and $\dot{w}$ the derivative of a $d_x$-dimensional Brownian motion with a covariance $\Sigma_2$.
 
-We further assume that data are available at arbitrary times $\{t_k\}_{k=1}^K$ and observed via a measurement process dictated by
+We further assume that data are available at arbitrary times $\\{t_k\\}_{k=1}^K$ and observed via a measurement process dictated by
 $$y(t) = h(x(t), t) + \eta(t)$$
 where $h: \mathbb{R}^{d_x} \mapsto \mathbb{R}^{d_y}$ creates an observation from the true state of the dynamical system $x(t)$ (i.e., a realization of the above SDE), and $\eta(t_k)$ applies additive (i.i.d. wrt $t$) Gaussian noise to the observation.
 
