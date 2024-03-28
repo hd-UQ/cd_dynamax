@@ -21,10 +21,10 @@ If $\eta(t)$ had temporal correlations, we would likely adopt a mathematical set
 We denote the collection of all parameters as $\theta = \\{f,\\  L,\\  \mu_0,\\  \Sigma_0,\\  L,\\  Q,\\  h,\\  \textrm{Law}(\eta) \\}$.
 
 Thus, we assume we have access to data $Y_K = [y(t_1),\\ \dots ,\\ y(t_K)]$ and wish to:
-- Estimate $x(t_K) \\ | \\ Y_K, \\ \theta$ (filter)
-- Estimate $\\{x(t)\\}_t \\ | \\ Y_K, \\ \theta$ (smooth)
-- Estimate $x(t > t_K)\\ |\\ Y_K, \\ \theta$ (predict)
-- Estimate $\theta \\ |\\ Y_K$ (infer parameters)
+- Filter: estimate $x(t_K) \\ | \\ Y_K, \\ \theta$
+- Smooth: estimate $\\{x(t)\\}_t \\ | \\ Y_K, \\ \theta$
+- Predict: estimate $x(t > t_K)\\ |\\ Y_K, \\ \theta$
+- Infer parameters: estimate $\theta \\ |\\ Y_K$
 
 All of these problems are deeply interconnected, with the parameter inference step importantly relying on marginalizing out unobserved states $\\{x(t)\\}_t$.
 This marginalization can be performed (approximately, in cases of non-linear dynamics) via filtering/smoothing algorithms.
