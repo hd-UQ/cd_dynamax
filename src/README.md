@@ -5,11 +5,11 @@ We provide the following modifications of the dynamax codebase, to accommodate c
 ## [ssm_temissions.py](./ssm_temissions.py)
 
 - A modified version of dynamax's ssm.py that incorporates non-discrete emission time instants: i.e., the t_emissions array
-    - t_emissions is an input argument
-        - We use t0 and t1 refer to t_k and t_{k+1}, not necessarily regularly sampled
-    - t_emissions is a matrix of size $[num_{observations} \times 1]$
+    - `t_emissions` is an input argument
+        - We use `t0` and `t1` refer to $t_k$ and $t_{k+1}$, not necessarily regularly sampled
+    - `t_emissions` is a matrix of size \([num\_observations \times 1]\)
         - it should facilitate batching
-        - For lax.scan() operations, we recast them in vector shape (i.e., remove final dimension)
+        - For `lax.scan()` operations, we recast them in vector shape (i.e., remove final dimension)
   
 ## [continuous_discrete_linear_gaussian_ssm](./continuous_discrete_linear_gaussian_ssm)
 
