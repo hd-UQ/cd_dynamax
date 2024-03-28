@@ -18,6 +18,7 @@ where $h: \mathbb{R}^{d_x} \mapsto \mathbb{R}^{d_y}$ creates a $d_y$-dimensional
 
 Note that we assume $\eta(t)$ i.i.d. w.r.t. $t$; this assumption places us in the "continuous (dynamics) - discrete (observation)" setting.
 If $\eta(t)$ had temporal correlations, we would likely adopt a mathematical setting that defines the observation process continuously in time via its own SDE.
+Other extensions of the above paradigm include categorical state-spaces and non-additive observation noise distributions; these can fit into our code framework (indeed, they are covered in `dynamax`), but have not been our focus; thus, we specify our mathematical setting to distinguish from these cases.
 
 We denote the collection of all parameters as $\theta = \\{f,\\  L,\\  \mu_0,\\  \Sigma_0,\\  L,\\  Q,\\  h,\\  \textrm{Law}(\eta) \\}$.
 
