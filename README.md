@@ -9,13 +9,13 @@ We move towards this goal by introducing the following flexible mathematical set
 
 We assume there exists a (possibly unknown) stochastic dynamical system of form
 $$\dot{x} = f(x,t) + L(x,t) \dot{w}, \quad x(0)=x_0$$
-where $x \in \mathbb{R}^{d_x}$, $x_0 \sim \mathcal{N}(\mu_0, \Sigma_0) $f$ a possibly time-dependent drift function, $L$ a possibly state and/or time-dependent diffusion coefficient, and $\dot{w}$ the derivative of a $d_x$-dimensional Brownian motion with a covariance $Q$.
+where $x \in \mathbb{R}^{d_x}$, $x_0 \sim \mathcal{N}(\mu_0, \Sigma_0)$, $f$ a possibly time-dependent drift function, $L$ a possibly state and/or time-dependent diffusion coefficient, and $\dot{w}$ the derivative of a $d_x$-dimensional Brownian motion with a covariance $Q$.
 
 We further assume that data are available at arbitrary times $\\{t_k\\}_{k=1}^K$ and observed via a measurement process dictated by
 $$y(t) = h\big(x(t)\big) + \eta(t)$$
 where $h: \mathbb{R}^{d_x} \mapsto \mathbb{R}^{d_y}$ creates a $d_y$-dimensional observation from the $d_x$-dimensional true state of the dynamical system $x(t)$ (i.e., a realization of the above SDE), and $\eta(t)$ applies additive (i.i.d. wrt $t$) Gaussian noise to the observation.
 
-We denote the collection of all parameters as $\theta = \\{f, L, \mu_0, \Sigma_0, L, Q, h, \textrm{Law}(\eta) \\}$.
+We denote the collection of all parameters as $\theta = \\{f,\\  L,\\  \mu_0,\\  \Sigma_0,\\  L,\\  Q,\\  h,\\  \textrm{Law}(\eta) \\}$.
 
 Thus, we assume we have access to data $Y_K = [y(t_1),\\ \dots ,\\ y(t_K)]$ and wish to:
 - Estimate $x(t_K) \\ | \\ Y_K, \\ \theta$ (i.e., filter)
