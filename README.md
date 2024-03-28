@@ -5,8 +5,9 @@ Codebase to extend dynamax to deal with irregular sampling, via continuous-discr
 ## Continuous-discrete state-space models
 
 In this repository, we aim to build an expanded toolkit for learning and predicting dynamical systems that underpin real-world messy time-series data.
+We move towards this goal by introducing the following flexible mathematical setting.
 
-In particular, we assume there exists a (possibly unknown) stochastic dynamical system of form
+We assume there exists a (possibly unknown) stochastic dynamical system of form
 $$\dot{x} = f(x,t) + \Sigma(x,t) \dot{w}, \quad x(0)=x_0$$
 where $x_0 \in \mathbb{R}^{d_x}$, $f$ a possibly time-dependent drift function, $\Sigma$ a possibly state and/or time-dependent diffusion coefficient, and $\dot{w}$ the derivative of a $d_x$ i.i.d. Brownian motions.
 
