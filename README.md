@@ -50,6 +50,10 @@ In the codebase, we also allow for doing filtering, smoothing, and parameter inf
             - [irregular sampling times](./src/notebooks/non_linear/cd_ekf_ukf_enkf_Lorenz63_irregular_times.ipynb)
             - PENDING: parameter estimation example
 
+- Important pending features:
+    - Support generic parameter estimation for problems with non-linear dynamics
+    - Support direct sampling of SDE during data generation (currently uses a Gaussian transition distribution)
+
 - We are leveraging [dynamax](https://github.com/probml/dynamax) code
     - Currently, based on a [dynamax pull at version '0.1.1+147.g3ad2ac5'](./dynamax)
         - Synching and updates to new dynamax version is PENDING
