@@ -18,6 +18,8 @@ from dynamax.types import PRNGKey, Scalar
 from dynamax.utils.optimize import run_sgd
 from dynamax.utils.utils import ensure_array_has_batch_dim
 
+from utils.diffrax_utils import diffeqsolve
+
 class Posterior(Protocol):
     """A :class:`NamedTuple` with parameters stored as :class:`jax.DeviceArray` in the leaf nodes."""
     pass
@@ -174,10 +176,10 @@ class SSM(ABC):
         params: ParameterSet,
         key: PRNGKey,
         num_timesteps: int,
-        t_emissions: Optional[Float[Array, "num_timesteps 1"]]=None,
-        inputs: Optional[Float[Array, "num_timesteps input_dim"]]=None
-    ) -> Tuple[Float[Array, "num_timesteps state_dim"],
-              Float[Array, "num_timesteps emission_dim"]]:
+        t_emissions: Optional[Float[Array, "num_timesteps 1"]] = None,
+        inputs: Optional[Float[Array, "num_timesteps input_dim"]] = None,
+        transition_type: Optional[str] = "distribution",
+    ) -> Tuple[Float[Array, "num_timesteps state_dim"], Float[Array, "num_timesteps emission_dim"]]:
         r"""Sample states $z_{1:T}$ and emissions $y_{1:T}$ given parameters $\theta$ and (optionally) inputs $u_{1:T}$.
 
         Args:
@@ -186,6 +188,11 @@ class SSM(ABC):
             num_timesteps: number of timesteps $T$
             t_emissions: continuous-time specific time instants: if not None, it is an array 
             inputs: inputs $u_{1:T}$
+            transition_type: type of transition function, either "distribution" (default) or "path"
+                "distribution" samples from the (default Gaussian) transition distribution (default)
+                    - This is exact for Linear Gaussian SSMs
+                "path" runs an SDE solver to sample the distribution. This is more "exact" (up to discretization error).
+                    - Note: this is not supported for Linear Gaussian SSMs.
 
         Returns:
             latent states and emissions
@@ -194,7 +201,27 @@ class SSM(ABC):
         def _step(prev_state, args):
             key, t0, t1, inpt = args
             key1, key2 = jr.split(key, 2)
-            state = self.transition_distribution(params, prev_state, t0, t1, inpt).sample(seed=key2)
+            if transition_type == "distribution":
+                print("Sampling from transition distribution (this may be a poor approximation if you're simulating from a non-linear SDE)...")
+                state = self.transition_distribution(params, prev_state, t0, t1, inpt).sample(seed=key2)
+                print("state.shape", state.shape)
+            elif transition_type == "path":
+                print("Sampling from SDE solver path (this may be an unnecessarily poor approximation if you're simulating from a linear SDE)...")
+                def drift(t, y, args):
+                    return params.dynamics.drift.f(y, inpt, t)
+
+                def diffusion(t, y, args):
+                    Qc_t = params.dynamics.diffusion_cov.f(None, inpt, t)
+                    L_t = params.dynamics.diffusion_coefficient.f(None, inpt, t)
+                    Q_sqrt = jnp.linalg.cholesky(Qc_t)
+                    combined_diffusion = L_t @ Q_sqrt
+                    return combined_diffusion
+
+                state = diffeqsolve(key=key2, drift=drift, diffusion=diffusion, t0=t0, t1=t1, y0=prev_state)[0]
+                print("state.shape", state.shape)
+            else:
+                raise ValueError("transition_type must be either 'distribution' or 'path'")
+
             emission = self.emission_distribution(params, state, inpt).sample(seed=key1)
             return state, (state, emission)
 
@@ -214,7 +241,7 @@ class SSM(ABC):
         else:
             t0 = jnp.arange(num_timesteps-1)
             t1 = jnp.arange(1,num_timesteps)
-        
+
         # Sample the remaining emissions and states
         next_keys = jr.split(key, num_timesteps - 1)
         next_inputs = tree_map(lambda x: x[1:], inputs)
@@ -249,7 +276,7 @@ class SSM(ABC):
         initial_input = tree_map(lambda x: x[0], inputs)
         lp = self.initial_distribution(params, initial_input).log_prob(initial_state)
         lp += self.emission_distribution(params, initial_state, initial_input).log_prob(initial_emission)
-        
+
         # Figure out timestamps, as vectors to scan over
         # t_emissions is of shape num_timesteps \times 1
         # t0 and t1 are num_timesteps-1 \times 0
@@ -261,7 +288,7 @@ class SSM(ABC):
             num_timesteps = len(emissions)
             t0 = jnp.arange(num_timesteps-1)
             t1 = jnp.arange(1,num_timesteps)
-        
+
         # Scan over remaining time steps
         next_states = tree_map(lambda x: x[1:], states)
         next_emissions = tree_map(lambda x: x[1:], emissions)
