@@ -1,8 +1,9 @@
-# cd-dynamax
+# Overview of cd-dynamax
 
-Codebase to extend dynamax to deal with irregular sampling, via continuous-discrete dynamics modeling
+The primary goal of this codebase is to extend [dynamax](https://github.com/probml/dynamax) to a continuous-discrete (CD) state-space-modeling setting: that is, where underlying dynamics are continuous in time and measurements can arise at arbitrary (i.e., non-regular) discrete times.
+To address these gaps, `cd-dynamax` modifies `dynamax` to accept irregularly sampled data and implements classical algorithms for continuous-discrete filtering and smoothing.
 
-## Continuous-discrete state-space models
+## Mathematical Framework: continuous-discrete state-space models
 
 In this repository, we aim to build an expanded toolkit for learning and predicting dynamical systems that underpin real-world messy time-series data.
 We move towards this goal by introducing the following flexible mathematical setting.
