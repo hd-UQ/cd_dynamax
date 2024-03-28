@@ -39,7 +39,7 @@ In the codebase, we also allow for doing filtering, smoothing, and parameter inf
 - We provide notebooks for linear and nonlinear continuous-discrete filtering/smoothing under regular and irregular sampling
     - Linear dynamics:
         - [Tracking](./src/notebooks/linear/cdlgssm_tracking.ipynb)
-        - [Parameter estimation that marginalizes out un-observed dynamics via auto-differentiable filtering (MLE via SGD; uncertainty quantification via HMC)](./src/notebooks/non_linear/cdnlgssm_hmc.ipynb)
+        - [Parameter estimation](./src/notebooks/non_linear/cdnlgssm_hmc.ipynb) that marginalizes out un-observed dynamics via auto-differentiable filtering (MLE via SGD; uncertainty quantification via HMC)
     - Nonlinear dynamics:
         - Pendulum:
             - [Pendulum (mimicking original dynamax notebook)](./src/notebooks/non_linear/cd_ekf_ukf_pendulum.ipynb)
