@@ -52,4 +52,4 @@
 
 - UKS and EnKS implementations
 
-- EnKF and UKF are written to support non-linear observation function $h$; if $H$ is linear, these algorithms can (and should!) be simplified accordingly.
+- EnKF and UKF are written to support non-linear observation function $h$; if $h$ is linear, these algorithms can (and should!) be simplified accordingly.
