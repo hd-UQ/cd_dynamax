@@ -50,11 +50,11 @@ We provide the following modifications of the dynamax codebase, to accommodate c
 
 - [plotting_utils.py](./utils/plotting_utils.py)
 
-## [test_scripts](./test_scripts)
+## [Tests](./test_scripts)
 
 - Establishes functionality of linear and non-linear filters/smoothers, as well as parameter fitting via SGD.
 - Checks that non-linear algorithms applied to linear problems return similar results as linear algorithms.
 
-## [notebooks](./notebooks)
+## [Notebooks](./notebooks)
 
 - 
