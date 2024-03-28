@@ -11,7 +11,7 @@ We provide the following modifications of the dynamax codebase, to accommodate c
         - it should facilitate batching
         - For `lax.scan()` operations, we recast them in vector shape (i.e., remove final dimension)
   
-## [continuous_discrete_linear_gaussian_ssm](./continuous_discrete_linear_gaussian_ssm)
+## [Continuous Discrete Linear Gaussian State Space Models](./continuous_discrete_linear_gaussian_ssm)
 
 - We define a [ContDiscreteLinearGaussianSSM model](./continuous_discrete_linear_gaussian_ssm/models.py#L39)
     - We do not currently provide a ContDiscreteLinearGaussianConjugateSSM model implementation, as CD parameter conjugate priors are non-trivial
@@ -25,7 +25,7 @@ We provide the following modifications of the dynamax codebase, to accommodate c
 - Parameter (point)-estimation is possible via stochastic gradient descent based MLE  
     - where the marginal log-likelihood is computed based on the CD-Kalman filter
 
-## [continuous_discrete_nonlinear_gaussian_ssm](./continuous_discrete_nonlinear_gaussian_ssm)
+## [Continuous Discrete Nonlinear Gaussian State Space Models](./continuous_discrete_nonlinear_gaussian_ssm)
 
 - We define a [ContDiscreteNonlinearGaussianSSM model](./continuous_discrete_nonlinear_gaussian_ssm/models.py#L112)
     
