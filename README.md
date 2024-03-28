@@ -8,8 +8,8 @@ In this repository, we aim to build an expanded toolkit for learning and predict
 We move towards this goal by introducing the following flexible mathematical setting.
 
 We assume there exists a (possibly unknown) stochastic dynamical system of form
-$$\dot{x} = f(x,t) + \Sigma(x,t) \dot{w}, \quad x(0)=x_0$$
-where $x_0 \in \mathbb{R}^{d_x}$, $f$ a possibly time-dependent drift function, $\Sigma$ a possibly state and/or time-dependent diffusion coefficient, and $\dot{w}$ the derivative of a $d_x$ i.i.d. Brownian motions.
+$$\dot{x} = f(x,t) + \Sigma_1(x,t) \dot{w}, \quad x(0)=x_0$$
+where $x_0 \in \mathbb{R}^{d_x}$, $f$ a possibly time-dependent drift function, $\Sigma$ a possibly state and/or time-dependent diffusion coefficient, and $\dot{w}$ the derivative of a $d_x$-dimensional Brownian motion with a covariance $\Sigma_2$.
 
 We further assume that data are available at arbitrary times $\{t_k\}_{k=1}^K$ and observed via a measurement process dictated by
 $$y(t) = h(x(t), t) + \eta(t)$$
