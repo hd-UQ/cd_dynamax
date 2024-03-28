@@ -2,16 +2,16 @@
 
 We provide the following modifications of the dynamax codebase, to accommodate continuous-discrete models, i.e., those where observations are not assumed to be regularly sampled.
 
-## [ssm_temissions.py](./ssm_temissions.py)
+## [Continuous-time State Space Models with Emissions at Specified Discrete Times](./ssm_temissions.py)
 
-- A modified version of dynamax's ssm.py that incorporates non-discrete emission time instants: i.e., the t_emissions array
+- A modified version of dynamax's ssm.py that incorporates non-regular emission time instants: i.e., the t_emissions array
     - `t_emissions` is an input argument
         - We use `t0` and `t1` refer to $t_k$ and $t_{k+1}$, not necessarily regularly sampled
     - `t_emissions` is a matrix of size $[\textrm{num observations} \times 1]$
         - it should facilitate batching
         - For `lax.scan()` operations, we recast them in vector shape (i.e., remove final dimension)
   
-## [Continuous Discrete Linear Gaussian State Space Models](./continuous_discrete_linear_gaussian_ssm)
+## [Continuous-Discrete Linear Gaussian State Space Models](./continuous_discrete_linear_gaussian_ssm)
 
 - We define a [ContDiscreteLinearGaussianSSM model](./continuous_discrete_linear_gaussian_ssm/models.py#L39)
     - We do not currently provide a ContDiscreteLinearGaussianConjugateSSM model implementation, as CD parameter conjugate priors are non-trivial
@@ -25,7 +25,7 @@ We provide the following modifications of the dynamax codebase, to accommodate c
 - Parameter (point)-estimation is possible via stochastic gradient descent based MLE  
     - where the marginal log-likelihood is computed based on the CD-Kalman filter
 
-## [Continuous Discrete Nonlinear Gaussian State Space Models](./continuous_discrete_nonlinear_gaussian_ssm)
+## [Continuous-Discrete Nonlinear Gaussian State Space Models](./continuous_discrete_nonlinear_gaussian_ssm)
 
 - We define a [ContDiscreteNonlinearGaussianSSM model](./continuous_discrete_nonlinear_gaussian_ssm/models.py#L112)
     
