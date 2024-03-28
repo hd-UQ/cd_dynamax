@@ -24,7 +24,7 @@
 ## Parameter inference
 
 - Parameter (point)-estimation is possible via stochastic gradient descent based MLE
-    - See fit_sgd() in [../ssm_temissions.py](../ssm_temissions.py#L443)
+    - See `fit_sgd()` in [ssm_temissions.py](../ssm_temissions.py#L443)
         - Which leverages the [marginal log-likelihood computed in closed form](./models.py#L233)
         - The analytical marginalized log-likelihood is possible given the Gaussian nature of the (recursive) transition and emission distributions
 
