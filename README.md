@@ -12,16 +12,16 @@ $$\dot{x} = f(x,t) + \Sigma_1(x,t) \dot{w}, \quad x(0)=x_0$$
 where $x_0 \in \mathbb{R}^{d_x}$, $f$ a possibly time-dependent drift function, $\Sigma_1$ a possibly state and/or time-dependent diffusion coefficient, and $\dot{w}$ the derivative of a $d_x$-dimensional Brownian motion with a covariance $\Sigma_2$.
 
 We further assume that data are available at arbitrary times $\\{t_k\\}_{k=1}^K$ and observed via a measurement process dictated by
-$$y(t) = h(x(t), t) + \eta(t)$$
-where $h: \mathbb{R}^{d_x} \mapsto \mathbb{R}^{d_y}$ creates an observation from the true state of the dynamical system $x(t)$ (i.e., a realization of the above SDE), and $\eta(t_k)$ applies additive (i.i.d. wrt $t$) Gaussian noise to the observation.
+$$y(t) = h\big(x(t)\big) + \eta(t)$$
+where $h: \mathbb{R}^{d_x} \mapsto \mathbb{R}^{d_y}$ creates a $d_y$-dimensional observation from the $d_x$-dimensional true state of the dynamical system $x(t)$ (i.e., a realization of the above SDE), and $\eta(t)$ applies additive (i.i.d. wrt $t$) Gaussian noise to the observation.
 
 Thus, we assume we have access to data $Y = [y(t_1), \dots , y(t_K)]$ and wish to:
 - Estimate $x(t_K) | Y$ (i.e., filter)
-- Estimate $\{x(t)\}_t | Y$ (i.e., smooth)
+- Estimate $\\{x(t)\\}_t | Y$ (i.e., smooth)
 - Estimate $x(t > t_K) | Y$ (i.e. predict)
-- Estimate $f, \Sigma, h, \textrm{Law}(\eta) | Y$ (i.e. infer parameters)
+- Estimate $f, \Sigma, h, \textrm{Law}(\eta) \ | Y$ (i.e. infer parameters)
 
-All of these problems are deeply interconnected, with the parameter inference step importantly relying on marginalizing out unobserved states $\{x(t)\}_t$.
+All of these problems are deeply interconnected, with the parameter inference step importantly relying on marginalizing out unobserved states $\\{x(t)\\}_t$.
 This marginalization can be performed (approximately, in cases of non-linear dynamics) via filtering/smoothing algorithms.
 By implementing such filtering/smoothing algorithms in a fast, autodifferentiable framework, we enable usage of modern general-purpose tools for parameter inference (e.g., stochastic gradient descent, Hamiltonian Monte Carlo)
 
