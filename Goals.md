@@ -115,7 +115,6 @@ Goal is to extend dynamax to deal with irregular sampling, via continuous-discre
         - i.e., What happens if Q=0
     - fit_SGD function with validation option, given train-validation data (preliminary existing in add_validation branch)   
 	- build a lax_scan_debug function that behaves like lax.scan but actually just implements a for loop for easy debugging
-	- Matt needs to un-install dynamax so that he can change dynamax code and have it work
 	- add predicted_means/covs to lgssm_filter (in dynamax code)
 	- use `output_fields` in filters to control granularity of returned posterior
 	- Diffeqsolve
