@@ -13,7 +13,10 @@ where $x \in \mathbb{R}^{d_x}$, $x_0 \sim \mathcal{N}(\mu_0, \Sigma_0)$, $f$ a p
 
 We further assume that data are available at arbitrary times $\\{t_k\\}_{k=1}^K$ and observed via a measurement process dictated by
 $$y(t) = h\big(x(t)\big) + \eta(t)$$
-where $h: \mathbb{R}^{d_x} \mapsto \mathbb{R}^{d_y}$ creates a $d_y$-dimensional observation from the $d_x$-dimensional true state of the dynamical system $x(t)$ (i.e., a realization of the above SDE), and $\eta(t)$ applies additive (i.i.d. wrt $t$) Gaussian noise to the observation.
+where $h: \mathbb{R}^{d_x} \mapsto \mathbb{R}^{d_y}$ creates a $d_y$-dimensional observation from the $d_x$-dimensional state of the dynamical system $x(t)$ (i.e., a realization of the above SDE), and $\eta(t)$ applies additive Gaussian noise to the observation.
+
+Note that we assume $\eta(t)$ i.i.d. w.r.t. $t$; this assumption places us in the "continuous (dynamics) - discrete (observation)" setting.
+If $\eta(t)$ had temporal correlations, we would likely adopt a mathematical setting that defines the observation process continuously in time via its own SDE.
 
 We denote the collection of all parameters as $\theta = \\{f,\\  L,\\  \mu_0,\\  \Sigma_0,\\  L,\\  Q,\\  h,\\  \textrm{Law}(\eta) \\}$.
 
@@ -27,7 +30,7 @@ All of these problems are deeply interconnected, with the parameter inference st
 This marginalization can be performed (approximately, in cases of non-linear dynamics) via filtering/smoothing algorithms.
 By implementing such filtering/smoothing algorithms in a fast, autodifferentiable framework, we enable usage of modern general-purpose tools for parameter inference (e.g., stochastic gradient descent, Hamiltonian Monte Carlo).
 
-In the codebase, we also allow for doing filtering, smoothing, and parameter inference for a single system under multiple trajectory observations (i.e., $Y^{(1)}, \\ \dots \\, \\ Y^{(N)}$ each coming from an independent). In these cases, we assume that each trajectory represents an independent realization of the same dynamics-data model, which we may be interested in learning. In the future, we would like to have options to perform hierarchical inference, where we assume that each trajectory came from a different, yet similar set of system-defining parameters $\theta_n$.
+In the codebase, we also allow for doing filtering, smoothing, and parameter inference for a single system under multiple trajectory observations (i.e., $[Y^{(1)}, \\ \dots \\, \\ Y^{(N)}]$ each coming from an independent). In these cases, we assume that each trajectory represents an independent realization of the same dynamics-data model, which we may be interested in learning. In the future, we would like to have options to perform hierarchical inference, where we assume that each trajectory came from a different, yet similar set of system-defining parameters $\theta_n$.
 
 ## Codebase status
 
