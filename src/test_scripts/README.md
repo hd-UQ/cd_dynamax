@@ -11,7 +11,7 @@
     1. A CDNLGSSM model with linearity assumptions is equivalent to a CDLGSSM model
         - Which can be computed based on both first and second order approximations to SDE (equivalent to linear SDEs)
 
-    2. A CDNLGSSM model with EKF filtering provides same results than a KF with a CDLGSSM model
+    2. A CDNLGSSM model with EKF filtering provides same results as a KF with a CDLGSSM model
         - Based on first and second order EKF approximations (equivalent for linear SDEs)
         - CD-EKF matches the CD-Kalman filtering performance
         - Both for pre- and post-fit of parameters with SGD, using EKF for logmarginal computations
