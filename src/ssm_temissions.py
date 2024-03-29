@@ -204,7 +204,6 @@ class SSM(ABC):
             if transition_type == "distribution":
                 print("Sampling from transition distribution (this may be a poor approximation if you're simulating from a non-linear SDE). It is a highly appropriate choice for linear SDEs.")
                 state = self.transition_distribution(params, prev_state, t0, t1, inpt).sample(seed=key2)
-                print("state.shape", state.shape)
             elif transition_type == "path":
                 print("Sampling from SDE solver path (this may be an unnecessarily poor approximation if you're simulating from a linear SDE). It is an appropriate choice for non-linear SDEs.")
                 def drift(t, y, args):
@@ -218,7 +217,6 @@ class SSM(ABC):
                     return combined_diffusion
 
                 state = diffeqsolve(key=key2, drift=drift, diffusion=diffusion, t0=t0, t1=t1, y0=prev_state)[0]
-                print("state.shape", state.shape)
             else:
                 raise ValueError("transition_type must be either 'distribution' or 'path'")
 
