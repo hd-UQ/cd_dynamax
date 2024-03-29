@@ -57,4 +57,4 @@ We provide the following modifications of the dynamax codebase, to accommodate c
 
 ## [Notebooks](./notebooks)
 
-- 
+- Example notebooks, with filtering/smoothing of linear and nonlinear continuous-discrete dynamic models. 
