@@ -50,6 +50,12 @@ We provide the following modifications of the dynamax codebase, to accommodate c
 
 - [plotting_utils.py](./utils/plotting_utils.py)
 
+- [debug_utils.py](./utils/debug_utils.py)
+    - Debugging in jax can be difficult---pre-compilation speedups cause typical usage of in-line python debuggers to fail.
+    - To make debugging easier, we implemented a wrapper for `lax.scan` which, with `debug=True` runs a (slow, but in-line debuggable!) `for` loop instead of `lax.scan`.
+    - To use this in a particular piece of code, simply add `from utils.debug_utils import lax_scan` and replace an existing `lax.scan` call you wish to debug with `lax_scan(..., debug=True)`.
+    - This is an experimental feature, so please report any issues that arise from using this tool---we hope it helps ease the transition into using jax!
+
 ## [Tests](./test_scripts)
 
 - Establishes functionality of linear and non-linear filters/smoothers, as well as parameter fitting via SGD.
