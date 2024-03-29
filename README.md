@@ -44,8 +44,8 @@ In the codebase, we also allow for doing filtering, smoothing, and parameter inf
         - Synching and updates to new dynamax version is PENDING
 
 - We have implemented [continuous-discrete linear and non-linear models](./src/README.md), along with filtering and smoothing algorithms.
-    - If you are simulating data from a non-linear SDE, it is recommended to use `model.sample(..., transition_type="distribution")`, which runs an SDE solver.
-        - Default behavior is to perform Gaussian approximations to the SDE.
+    - If you are simulating data from a non-linear SDE, it is recommended to use [`model.sample(..., transition_type="path")`](./src/ssm_temissions.py#L208), which runs an SDE solver.
+        - [Default behavior](./src/ssm_temissions.py#L204) is to perform Gaussian approximations to the SDE.
 
 - We provide notebooks for linear and nonlinear continuous-discrete filtering/smoothing under regular and irregular sampling
     - Linear dynamics:
