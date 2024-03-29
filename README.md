@@ -17,8 +17,8 @@ $$y(t) = h\big(x(t)\big) + \eta(t)$$
 where $h: \mathbb{R}^{d_x} \mapsto \mathbb{R}^{d_y}$ creates a $d_y$-dimensional observation from the $d_x$-dimensional state of the dynamical system $x(t)$ (a realization of the above SDE), and $\eta(t)$ applies additive Gaussian noise to the observation.
 
 Note that we assume $\eta(t)$ i.i.d. w.r.t. $t$; this assumption places us in the "continuous (dynamics) - discrete (observation)" setting.
-If $\eta(t)$ had temporal correlations, we would likely adopt a mathematical setting that defines the observation process continuously in time via its own SDE.
-Other extensions of the above paradigm include categorical state-spaces and non-additive observation noise distributions; these can fit into our code framework (indeed, they are covered in `dynamax`), but have not been our focus; thus, we specify our mathematical setting to distinguish from these cases.
+    - If $\eta(t)$ had temporal correlations, we would likely adopt a mathematical setting that defines the observation process continuously in time via its own SDE.
+    - Other extensions of the above paradigm include categorical state-spaces and non-additive observation noise distributions; these can fit into our code framework (indeed, they are covered in `dynamax`), but have not been our focus; thus, we specify our mathematical setting to distinguish from these cases.
 
 We denote the collection of all parameters as $\theta = \\{f,\\  L,\\  \mu_0,\\  \Sigma_0,\\  L,\\  Q,\\  h,\\  \textrm{Law}(\eta) \\}$.
 
@@ -29,15 +29,23 @@ Thus, we assume we have access to data $Y_K = [y(t_1),\\ \dots ,\\ y(t_K)]$ and 
 - Infer parameters: estimate $\theta \\ |\\ Y_K$
 
 All of these problems are deeply interconnected, with the parameter inference step importantly relying on marginalizing out unobserved states $\\{x(t)\\}_t$.
-This marginalization can be performed (approximately, in cases of non-linear dynamics) via filtering/smoothing algorithms.
+    - This marginalization can be performed (approximately, in cases of non-linear dynamics) via filtering/smoothing algorithms.
+
 By implementing such filtering/smoothing algorithms in a fast, autodifferentiable framework, we enable usage of modern general-purpose tools for parameter inference (e.g., stochastic gradient descent, Hamiltonian Monte Carlo).
 
-In the codebase, we also allow for doing filtering, smoothing, and parameter inference for a single system under multiple trajectory observations ($[Y^{(1)}, \\ \dots \\, \\ Y^{(N)}]$. In these cases, we assume that each trajectory represents an independent realization of the same dynamics-data model, which we may be interested in learning, filtering, smoothing, or predicting. In the future, we would like to have options to perform hierarchical inference, where we assume that each trajectory came from a different, yet similar set of system-defining parameters $\theta^{(n)}$.
+In the codebase, we also allow for doing filtering, smoothing, and parameter inference for a single system under multiple trajectory observations ($[Y^{(1)}, \\ \dots \\, \\ Y^{(N)}]$.
+    - In these cases, we assume that each trajectory represents an independent realization of the same dynamics-data model, which we may be interested in learning, filtering, smoothing, or predicting.
+    - In the future, we would like to have options to perform hierarchical inference, where we assume that each trajectory came from a different, yet similar set of system-defining parameters $\theta^{(n)}$.
 
 ## Codebase status
 
+- We are leveraging [dynamax](https://github.com/probml/dynamax) code
+    - Currently, based on a local directory with [dynamax pull at version '0.1.1+147.g3ad2ac5'](./dynamax)
+        - Synching and updates to new dynamax version is PENDING
+
 - We have implemented [continuous-discrete linear and non-linear models](./src/README.md), along with filtering and smoothing algorithms.
-    - If you are simulating data from a non-linear SDE, it is recommended to use `model.sample(..., transition_type="path")`, which runs an SDE solver. Default behavior is to perform Gaussian approximations to the SDE.
+    - If you are simulating data from a non-linear SDE, it is recommended to use `model.sample(..., transition_type="distribution")`, which runs an SDE solver.
+        - Default behavior is to perform Gaussian approximations to the SDE.
 
 - We provide notebooks for linear and nonlinear continuous-discrete filtering/smoothing under regular and irregular sampling
     - Linear dynamics:
@@ -54,10 +62,6 @@ In the codebase, we also allow for doing filtering, smoothing, and parameter inf
 
 - Important pending features:
     - Support generic parameter estimation for problems with non-linear dynamics
-
-- We are leveraging [dynamax](https://github.com/probml/dynamax) code
-    - Currently, based on a [dynamax pull at version '0.1.1+147.g3ad2ac5'](./dynamax)
-        - Synching and updates to new dynamax version is PENDING
 
 ## Conda environment
 
