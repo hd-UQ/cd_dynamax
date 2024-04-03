@@ -44,16 +44,16 @@ cd_model = ContDiscreteLinearGaussianSSM(
     state_dim=STATE_DIM,
     emission_dim=EMISSION_DIM,
     # Test with no biases 
-    has_dynamics_bias = False,
-    has_emissions_bias = False,
+    has_dynamics_bias = True,
+    has_emissions_bias = True,
 )
 cd_params, cd_param_props = cd_model.initialize(
     key1,
     dynamics_weights=-0.1 * jnp.eye(cd_model.state_dim),  # Hard coded here for tests to match with default in linear
     dynamics_diffusion_coefficient=0.5 * jnp.eye(cd_model.state_dim),
     dynamics_diffusion_cov=0.5 * jnp.eye(cd_model.state_dim),
-    dynamics_bias=None,
-    emission_bias=None,
+    dynamics_bias=jnp.zeros(cd_model.state_dim),
+    emission_bias=jnp.zeros(cd_model.emission_dim),
 )
 
 # Simulate from continuous model
@@ -109,7 +109,7 @@ cd_sgd_fitted_filtered_posterior = cdlgssm_filter(
 
 ########### Now make non-linear models, assuming linearity ########
 print("************* Continuous-Discrete Non-linear GSSM *************")
-from continuous_discrete_nonlinear_gaussian_ssm.models import LearnableFunction,ConstantLearnableFunction,LinearLearnableFunction
+from continuous_discrete_nonlinear_gaussian_ssm.models import *
 from continuous_discrete_nonlinear_gaussian_ssm import cdnlgssm_filter
 from continuous_discrete_nonlinear_gaussian_ssm import EKFHyperParams
 
@@ -121,21 +121,25 @@ cdnl_model = ContDiscreteNonlinearGaussianSSM(state_dim=STATE_DIM, emission_dim=
 for dynamics_approx_order in [1., 2.]:
     # Initialize models with linear learnable functions
     cdnl_params, cdnl_param_props = cdnl_model.initialize(
-            key1,
-            dynamics_drift=LinearLearnableFunction(
-                params=cd_params.dynamics.weights
-            ),
-            dynamics_diffusion_coefficient=ConstantLearnableFunction(
-                params=cd_params.dynamics.diffusion_coefficient
-            ),
-            dynamics_diffusion_cov=ConstantLearnableFunction(
-                params=cd_params.dynamics.diffusion_cov
-            ),
-            dynamics_approx_order=dynamics_approx_order,
-            emission_function=LinearLearnableFunction(
-                params=cd_params.emissions.weights
-            ),
-        )
+        key1,
+        dynamics_drift={
+            "params": LearnableLinear(weights=cd_params.dynamics.weights, bias=cd_params.dynamics.bias),
+            "props": LearnableLinear(weights=ParameterProperties(), bias=ParameterProperties()),
+        },
+        dynamics_diffusion_coefficient={
+            "params": LearnableMatrix(params=cd_params.dynamics.diffusion_coefficient),
+            "props": LearnableMatrix(params=ParameterProperties()),
+        },
+        dynamics_diffusion_cov={
+            "params": LearnableMatrix(params=cd_params.dynamics.diffusion_cov),
+            "props": LearnableMatrix(params=ParameterProperties(constrainer=RealToPSDBijector())),
+        },
+        dynamics_approx_order=dynamics_approx_order,
+        emission_function={
+            "params": LearnableLinear(weights=cd_params.emissions.weights, bias=cd_params.emissions.bias),
+            "props": LearnableLinear(weights=ParameterProperties(), bias=ParameterProperties()),
+        },
+    )
 
     # Simulate from continuous-discrete nl model
     print(f"**********************************")
@@ -191,7 +195,11 @@ for dynamics_approx_order in [1., 2.]:
         compare(cd_sgd_fitted_params.initial.cov, cdnl_sgd_fitted_params.initial.cov, accept_failure=True)
         print("\t\tDynamics weights...")
         compare(
-            cd_sgd_fitted_params.dynamics.weights, cdnl_sgd_fitted_params.dynamics.drift.params, accept_failure=True
+            cd_sgd_fitted_params.dynamics.weights, cdnl_sgd_fitted_params.dynamics.drift.weights, accept_failure=True
+        )
+        print("\t\tDynamics bias...")
+        compare(
+            cd_sgd_fitted_params.dynamics.bias, cdnl_sgd_fitted_params.dynamics.drift.bias, accept_failure=True
         )
         print("\t\tDynamics diffusion coefficient...")
         compare(
@@ -208,7 +216,13 @@ for dynamics_approx_order in [1., 2.]:
         print("\t\tEmission weights...")
         compare(
             cd_sgd_fitted_params.emissions.weights,
-            cdnl_sgd_fitted_params.emissions.emission_function.params,
+            cdnl_sgd_fitted_params.emissions.emission_function.weights,
+            accept_failure=True,
+        )
+        print("\t\tEmission bias...")
+        compare(
+            cd_sgd_fitted_params.emissions.bias,
+            cdnl_sgd_fitted_params.emissions.emission_function.bias,
             accept_failure=True,
         )
         print("\t\tEmission cov...")
@@ -303,4 +317,3 @@ for N_particles in [1e2, 1e3, 1e4]:
 
 
 print("All EnKF tests passed---note that these are randomized approximations, so we don't expect to perfectly replicate EKF and KF (which are both exact in linear test cases shown here)! We want to see convergence to truth (hence checking the final filtered state).")
-

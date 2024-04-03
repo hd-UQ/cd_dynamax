@@ -1,5 +1,6 @@
 from typing import NamedTuple, Tuple, Optional, Union
 from jaxtyping import Array, Float, PyTree
+import jax.numpy as jnp
 from dynamax.parameters import ParameterProperties, ParameterSet
 import abc
 
@@ -16,7 +17,7 @@ class LearnableFunction(NamedTuple):
     '''
     # Parameters as properties of the class
     params: ParameterSet
-    
+
     '''
     def __init__(
         self,
@@ -24,7 +25,7 @@ class LearnableFunction(NamedTuple):
     ):
         self.params = params
     '''
-    # A function definition   
+    # A function definition
     @abc.abstractmethod
     def f(self, x, u=None, t=None):
         ''' A function to be defined by specific classes
@@ -34,24 +35,51 @@ class LearnableFunction(NamedTuple):
             t: time
         '''
 
-# Learnable Constan Function class
-# TODO: figure out how to deal with different dimensionalities
-class ConstantLearnableFunction(LearnableFunction):
-    # Linear weights for the state
-    # TODO: figure out how to have more than
-    params: Union[Float[Array, "state_dim state_dim"], ParameterProperties]
+class LearnableVector(NamedTuple):
+    params: Union[Float[Array, "dim"], ParameterProperties]
 
     def f(self, x, u=None, t=None):
         return self.params
+class LearnableMatrix(NamedTuple):
+    params: Union[Float[Array, "row_dim col_dim"], ParameterProperties]
 
-# Learnable Linear Function class
-class LinearLearnableFunction(LearnableFunction):
-    # Linear weights for the state
-    # TODO: figure out how to have more than
-    params: Union[Float[Array, "state_dim state_dim"], ParameterProperties]
-    
     def f(self, x, u=None, t=None):
-        return self.params @ x
+        return self.params
+class LearnableLinear(NamedTuple):
+    '''Linear function with learnable parameters
+            weights: weights of the linear function
+            bias: bias of the linear function
+
+            f(x) = weights @ x + bias
+    '''
+    weights: Union[Float[Array, "input_dim output_dim"], ParameterProperties]
+    bias: Union[Float[Array, "output_dim"], ParameterProperties]
+
+    def f(self, x, u=None, t=None):
+        return self.weights @ x + self.bias
+
+class LearnableLorenz63(NamedTuple):
+    '''Lorenz63 model with learnable parameters
+            sigma: sigma parameter
+            rho: rho parameter
+            beta: beta parameter
+
+            f(x) = sigma * (y - x)
+            f(y) = x * (rho - z) - y
+            f(z) = x * y - beta * z
+    '''
+    sigma: Union[Float, ParameterProperties]
+    rho: Union[Float, ParameterProperties]
+    beta: Union[Float, ParameterProperties]
+
+    def f(self, x, u=None, t=None):
+
+        return jnp.array([
+            self.sigma * (x[1] - x[0]),
+            x[0] * (self.rho - x[2]) - x[1],
+            x[0] * x[1] - self.beta * x[2]
+        ])
+
 
 # Continuous non-linear Gaussian dynamics
 # TODO: function definitions within parameter classes breaks fit_sgd: where should they be placed?
@@ -127,7 +155,7 @@ class ParamsCDNLSSMDynamics(NamedTuple):
     # The covariance matrix Q of the state noise process
     diffusion_cov: Union[Float[Array, "state_dim state_dim"], Float[Array, "ntime state_dim state_dim"], Float[Array, "state_dim_triu"], ParameterProperties]
 '''
-   
+
 # Discrete non-linear emission parameters
 # TODO: function definitions within parameter classes breaks fit_sgd: where should they be placed?
 class ParamsCDNLGSSMEmissions(NamedTuple):
@@ -156,7 +184,7 @@ class ParamsCDNLGSSMEmissions(NamedTuple):
     # The covariance matrix R of the observation noise process
     emission_cov: Union[Float[Array, "emission_dim emission_dim"], ParameterProperties]
     '''
-    
+
 # CDNLGSSM parameters are different to CDLGSSM due to nonlinearities
 class ParamsCDNLGSSM(NamedTuple):
     r"""Parameters of a linear Gaussian SSM.

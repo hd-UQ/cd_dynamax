@@ -34,7 +34,7 @@ from continuous_discrete_nonlinear_gaussian_ssm.inference_ukf import UKFHyperPar
 # Diffrax based diff-eq solver
 from utils.diffrax_utils import diffeqsolve
 
-# TODO: This function is defined in many places... unclear whether we need to redefine, or move to utils   
+# TODO: This function is defined in many places... unclear whether we need to redefine, or move to utils
 def _get_params(x, dim, t):
     if callable(x):
         try:
@@ -45,7 +45,7 @@ def _get_params(x, dim, t):
         return x[t]
     else:
         return x
-   
+
 # CDNLGSSM push-forward is model-specific
 def compute_pushforward(
     x0: Float[Array, "state_dim"],
@@ -161,93 +161,85 @@ class ContDiscreteNonlinearGaussianSSM(SSM):
     def initialize(
         self,
         key: Float[Array, "key"],
-        initial_mean: Optional[Float[Array, "state_dim"]]=None,
-        initial_cov: Optional[Float[Array, "state_dim state_dim"]] = None,
-        dynamics_drift: Optional[LearnableFunction] = None,
-        dynamics_diffusion_coefficient: Optional[LearnableFunction] = None,
-        dynamics_diffusion_cov: Optional[LearnableFunction] = None,
+        initial_mean: dict = None,
+        initial_cov: dict = None,
+        dynamics_drift: dict = None,
+        dynamics_diffusion_coefficient: dict = None,
+        dynamics_diffusion_cov: dict = None,
         dynamics_approx_order: Optional[float] = 2.,
-        emission_function: Optional[LearnableFunction] = None,
-        # emission_parameters = None,
-        emission_cov: Optional[LearnableFunction] = None,
+        emission_function: dict = None,
+        emission_cov: dict = None,
     ) -> Tuple[ParamsCDNLGSSM, PyTree]:
 
         # Arbitrary default values, for demo purposes.
-        # Initial
-        _initial_mean = jnp.zeros(self.state_dim)
-        _initial_cov = jnp.eye(self.state_dim)
-        # Dynamics
-        _dynamics_drift = LinearLearnableFunction(
-                            params=-0.1*jnp.eye(self.state_dim)
-                        )
-        #_dynamics_drift_parameters = -1.
-        _dynamics_diffusion_coefficient = ConstantLearnableFunction(
-                                            0.1 * jnp.eye(self.state_dim)
-                                        )
-        _dynamics_diffusion_cov = ConstantLearnableFunction(
-                                    0.1 * jnp.eye(self.state_dim)
-                                )
-        _dynamics_approx_order = 2.
-        # Emission
-        _emission_function = LinearLearnableFunction(
-                            params=jr.normal(key, (self.emission_dim, self.state_dim))
-                        )
-        #_emission_parameters = 1.
-        _emission_cov = ConstantLearnableFunction(
-                            0.1 * jnp.eye(self.emission_dim)
-                        )
+        ## Initial
+        _initial_mean = {"params": jnp.zeros(self.state_dim),
+                         "props": ParameterProperties()}
 
-        # Only use the values above if the user hasn't specified their own
+        _initial_cov = {"params": jnp.eye(self.state_dim),
+                        "props": ParameterProperties(constrainer=RealToPSDBijector())}
+
+        ## Dynamics
+        _dynamics_drift = {"params": LearnableLinear(weights=-0.1*jnp.eye(self.state_dim), bias=jnp.zeros(self.state_dim)),
+                            "props": LearnableLinear(weights=ParameterProperties(), bias=ParameterProperties())}
+
+        _dynamics_diffusion_coefficient = {"params": LearnableMatrix(params=0.1*jnp.eye(self.state_dim)),
+                                            "props": LearnableMatrix(params=ParameterProperties())}
+
+        _dynamics_diffusion_cov = {"params": LearnableMatrix(params=0.1*jnp.eye(self.state_dim)),
+                                   "props": LearnableMatrix(params=ParameterProperties(constrainer=RealToPSDBijector()))}
+
+        _dynamics_approx_order =  2.
+
+        ## Emission
+        _emission_function = {
+            "params": LearnableLinear(
+                weights=jr.normal(key, (self.emission_dim, self.state_dim)), bias=jnp.zeros(self.emission_dim)
+            ),
+            "props": LearnableLinear(weights=ParameterProperties(), bias=ParameterProperties()),
+        }
+
+        _emission_cov = {"params": LearnableMatrix(params=0.1*jnp.eye(self.emission_dim)),
+                         "props": LearnableMatrix(params=ParameterProperties(constrainer=RealToPSDBijector()))}
+
+        ## Only use the values above if the user hasn't specified their own
         default = lambda x, x0: x if x is not None else x0
 
-        # Create nested dictionary of params
-        params = ParamsCDNLGSSM(
-            initial=ParamsLGSSMInitial(
-                mean=default(initial_mean, _initial_mean),
-                cov=default(initial_cov, _initial_cov)
-                ),
-            dynamics=ParamsCDNLGSSMDynamics(
-                drift=default(dynamics_drift, _dynamics_drift),
-                diffusion_coefficient=default(dynamics_diffusion_coefficient, _dynamics_diffusion_coefficient),
-                diffusion_cov=default(dynamics_diffusion_cov, _dynamics_diffusion_cov),
-                approx_order=default(dynamics_approx_order, _dynamics_approx_order)
-                ),
-            emissions=ParamsCDNLGSSMEmissions(
-                emission_function=default(emission_function, _emission_function),
-                emission_cov=default(emission_cov, _emission_cov)
+        # replace defaults as needed
+        initial_mean = default(initial_mean, _initial_mean)
+        initial_cov = default(initial_cov, _initial_cov)
+        dynamics_drift = default(dynamics_drift, _dynamics_drift)
+        dynamics_diffusion_coefficient = default(dynamics_diffusion_coefficient, _dynamics_diffusion_coefficient)
+        dynamics_diffusion_cov = default(dynamics_diffusion_cov, _dynamics_diffusion_cov)
+        dynamics_approx_order = {
+            "params": default(dynamics_approx_order, _dynamics_approx_order),
+            "props": ParameterProperties(trainable=False), # never trainable, no constraints to apply.
+        }
+        emission_function = default(emission_function, _emission_function)
+        emission_cov = default(emission_cov, _emission_cov)
+
+        ## Create nested dictionary of params
+        big_dict = {"params": {}, "props": {}}
+        for key in big_dict.keys():
+            big_dict[key] = ParamsCDNLGSSM(
+                initial=ParamsLGSSMInitial(
+                    mean=initial_mean[key],
+                    cov=initial_cov[key]
+                    ),
+                dynamics=ParamsCDNLGSSMDynamics(
+                    drift=dynamics_drift[key],
+                    diffusion_coefficient=dynamics_diffusion_coefficient[key],
+                    diffusion_cov=dynamics_diffusion_cov[key],
+                    approx_order=dynamics_approx_order[key],
+                    ),
+                emissions=ParamsCDNLGSSMEmissions(
+                    emission_function=emission_function[key],
+                    emission_cov=emission_cov[key],
+                    )
                 )
-            )
-        
-        # The keys of param_props must match those of params!
-        # TODO: can we have learnablefunctions
-        props = ParamsCDNLGSSM(
-            initial=ParamsLGSSMInitial(
-                mean=ParameterProperties(),
-                cov=ParameterProperties(constrainer=RealToPSDBijector())
-                ),
-            dynamics=ParamsCDNLGSSMDynamics(
-                drift=LinearLearnableFunction(
-                        params=ParameterProperties()
-                    ),
-                diffusion_coefficient=ConstantLearnableFunction(
-                        params=ParameterProperties()
-                    ),
-                diffusion_cov=ConstantLearnableFunction(
-                        params=ParameterProperties(constrainer=RealToPSDBijector())
-                    ),
-                approx_order=ParameterProperties(trainable=False)
-                ),
-            emissions=ParamsCDNLGSSMEmissions(
-                emission_function=LinearLearnableFunction(
-                        params=ParameterProperties()
-                ),
-                emission_cov=ConstantLearnableFunction(
-                        params=ParameterProperties(constrainer=RealToPSDBijector())
-                    ),
-                )
-            )
-        return params, props
-    
+
+        return big_dict["params"], big_dict["props"]
+
     def initial_distribution(
         self,
         params: ParamsCDNLGSSM,
@@ -274,7 +266,7 @@ class ContDiscreteNonlinearGaussianSSM(SSM):
         # TODO: for CDNLSSM we can not return a specific distribution,
         # unless we solve the Fokker-Planck equation for the model SDE
         # However, we should be able to sample from it!
-        
+
         return MVN(mean,covariance)
 
     def emission_distribution(
@@ -363,7 +355,7 @@ def cdnlgssm_filter(
         )
     
     return filtered_posterior
-    
+
 def cdnlgssm_smoother(
     params: ParamsCDNLGSSM,
     emissions: Float[Array, "ntime emission_dim"],
