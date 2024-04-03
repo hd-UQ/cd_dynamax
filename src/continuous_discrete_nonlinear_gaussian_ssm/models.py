@@ -172,22 +172,27 @@ class ContDiscreteNonlinearGaussianSSM(SSM):
     ) -> Tuple[ParamsCDNLGSSM, PyTree]:
 
         # Arbitrary default values, for demo purposes.
+
+        # Default is to have NOTHING learnable.
+
         ## Initial
         _initial_mean = {"params": jnp.zeros(self.state_dim),
-                         "props": ParameterProperties()}
+                         "props": ParameterProperties(trainable=False)}
 
         _initial_cov = {"params": jnp.eye(self.state_dim),
-                        "props": ParameterProperties(constrainer=RealToPSDBijector())}
+                        "props": ParameterProperties(
+                            trainable=False,
+                            constrainer=RealToPSDBijector())}
 
         ## Dynamics
         _dynamics_drift = {"params": LearnableLinear(weights=-0.1*jnp.eye(self.state_dim), bias=jnp.zeros(self.state_dim)),
-                            "props": LearnableLinear(weights=ParameterProperties(), bias=ParameterProperties())}
+                            "props": LearnableLinear(weights=ParameterProperties(trainable=False), bias=ParameterProperties(trainable=False))}
 
         _dynamics_diffusion_coefficient = {"params": LearnableMatrix(params=0.1*jnp.eye(self.state_dim)),
-                                            "props": LearnableMatrix(params=ParameterProperties())}
+                                            "props": LearnableMatrix(params=ParameterProperties(trainable=False))}
 
         _dynamics_diffusion_cov = {"params": LearnableMatrix(params=0.1*jnp.eye(self.state_dim)),
-                                   "props": LearnableMatrix(params=ParameterProperties(constrainer=RealToPSDBijector()))}
+                                   "props": LearnableMatrix(params=ParameterProperties(trainable=False, constrainer=RealToPSDBijector()))}
 
         _dynamics_approx_order =  2.
 
@@ -196,11 +201,11 @@ class ContDiscreteNonlinearGaussianSSM(SSM):
             "params": LearnableLinear(
                 weights=jr.normal(key, (self.emission_dim, self.state_dim)), bias=jnp.zeros(self.emission_dim)
             ),
-            "props": LearnableLinear(weights=ParameterProperties(), bias=ParameterProperties()),
+            "props": LearnableLinear(weights=ParameterProperties(trainable=False), bias=ParameterProperties(trainable=False)),
         }
 
         _emission_cov = {"params": LearnableMatrix(params=0.1*jnp.eye(self.emission_dim)),
-                         "props": LearnableMatrix(params=ParameterProperties(constrainer=RealToPSDBijector()))}
+                         "props": LearnableMatrix(params=ParameterProperties(trainable=False, constrainer=RealToPSDBijector()))}
 
         ## Only use the values above if the user hasn't specified their own
         default = lambda x, x0: x if x is not None else x0
