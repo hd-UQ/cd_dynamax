@@ -40,11 +40,13 @@ class LearnableVector(NamedTuple):
 
     def f(self, x, u=None, t=None):
         return self.params
+
 class LearnableMatrix(NamedTuple):
     params: Union[Float[Array, "row_dim col_dim"], ParameterProperties]
 
     def f(self, x, u=None, t=None):
         return self.params
+
 class LearnableLinear(NamedTuple):
     '''Linear function with learnable parameters
             weights: weights of the linear function
