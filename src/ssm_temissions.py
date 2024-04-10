@@ -173,6 +173,46 @@ class SSM(ABC):
         """
         return None
 
+    def sample_batch(
+        self,
+        params: ParameterSet,
+        key: PRNGKey,
+        num_sequences: int,
+        num_timesteps: int,
+        t_emissions: Optional[Float[Array, "num_timesteps 1"]] = None,
+        inputs: Optional[Float[Array, "num_timesteps input_dim"]] = None,
+        transition_type: Optional[str] = "distribution"
+    ) -> Tuple[Float[Array, "num_sequences num_timesteps state_dim"], Float[Array, "num_sequences num_timesteps emission_dim"]]:
+
+        r"""Sample a batch of sequences of states and emissions.
+
+        Args:
+            params: model parameters $\theta$
+            key: random number generator
+            num_sequences: number of sequences to sample
+            num_timesteps: number of timesteps $T$
+            t_emissions: continuous-time specific time instants: if not None, it is an array
+            inputs: inputs $u_{1:T}$
+            transition_type: type of transition function, either "distribution" (default) or "path"
+                "distribution" samples from the (default Gaussian) transition distribution (default)
+                    - This is exact for Linear Gaussian SSMs
+                "path" runs an SDE solver to sample the distribution. This is more "exact" (up to discretization error).
+                    - Note: this is not supported for Linear Gaussian SSMs.
+
+        Returns:
+            latent states and emissions
+
+        """
+
+        # Sample each sequence using self.sample and stack them
+        def _sample_sequence(key):
+            return self.sample(params, key, num_timesteps, t_emissions, inputs, transition_type)
+
+        keys = jr.split(key, num_sequences)
+        # use vmap to sample multiple sequences in parallel
+        states, emissions = vmap(_sample_sequence)(keys)
+        return states, emissions
+
     # All SSMs support sampling
     def sample(
         self,
