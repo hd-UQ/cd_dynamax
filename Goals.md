@@ -119,6 +119,9 @@ Goal is to extend dynamax to deal with irregular sampling, via continuous-discre
 	- use `output_fields` in filters to control granularity of returned posterior
 	- Diffeqsolve
 		- debug feature
+    - Incorporate important SGD tricks (gradient clipping, learning rate schedulers)
+    - Change SDE solver in EnKF to allow backpropagation
+    - Set up parameter inference notebooks to batchify long trajectories (for efficiency)
 
 ## For v0 
 
