@@ -12,13 +12,16 @@ from tensorflow_probability.substrates.jax import distributions as tfd
 from typing import Optional, Union, Tuple, Any
 from typing_extensions import Protocol
 
-from dynamax.parameters import to_unconstrained, from_unconstrained
+from dynamax.parameters import to_unconstrained, from_unconstrained, log_det_jac_constrain
 from dynamax.parameters import ParameterSet, PropertySet
 from dynamax.types import PRNGKey, Scalar
 from dynamax.utils.optimize import run_sgd
-from dynamax.utils.utils import ensure_array_has_batch_dim
+from dynamax.utils.utils import ensure_array_has_batch_dim, pytree_stack
 
 from utils.diffrax_utils import diffeqsolve
+
+import blackjax
+from fastprogress.fastprogress import progress_bar
 
 class Posterior(Protocol):
     """A :class:`NamedTuple` with parameters stored as :class:`jax.DeviceArray` in the leaf nodes."""
@@ -540,3 +543,115 @@ class SSM(ABC):
 
         params = from_unconstrained(unc_params, props)
         return params, losses
+
+    def fit_hmc(
+        self,
+        initial_params: ParameterSet,
+        props: PropertySet,
+        emissions: Union[Float[Array, "num_timesteps emission_dim"],
+                         Float[Array, "num_batches num_timesteps emission_dim"]],
+        filter_hyperparams: Optional[Any],
+        t_emissions: Optional[Union[Float[Array, "num_timesteps 1"],
+                        Float[Array, "num_batches num_timesteps 1"]]]=None,
+        inputs: Optional[Union[Float[Array, "num_timesteps input_dim"],
+                               Float[Array, "num_batches num_timesteps input_dim"]]]=None,
+        num_samples: int=500,
+        warmup_steps: int=100,
+        num_integration_steps: int=30,
+        verbose=True,
+        key: PRNGKey=jr.PRNGKey(0)
+    ) -> Tuple[ParameterSet, Float[Array, "num_samples"]]:
+        r"""Generate samples from the posterior using Hamiltonian Monte Carlo (HMC).
+
+        Args:
+            initial_params: initial parameters $\theta$
+            props: properties specifying which parameters should be learned
+            emissions: one or more sequences of emissions
+            filter_hyperparams: if needed, hyperparameters of the filtering algorithm
+            t_emissions: continuous-time specific time instants: if not None, it is an array
+            inputs: one or more sequences of corresponding inputs
+            num_samples: number of samples to draw
+            warmup_steps: number of warmup steps
+            num_integration_steps: number of integration steps in the HMC sampler
+            verbose: whether or not to show a progress bar
+            key: a random number generator
+
+        Returns:
+            tuple of samples and log probabilities of the samples
+        """
+        # Make sure the emissions and inputs have batch dimensions
+        batch_emissions = ensure_array_has_batch_dim(emissions, self.emission_shape)
+        batch_t_emissions = ensure_array_has_batch_dim(t_emissions, (1,))
+        batch_inputs = ensure_array_has_batch_dim(inputs, self.inputs_shape)
+
+        initial_unc_params = to_unconstrained(initial_params, props)
+
+        # build initial_unc_params_trainable from initial_unc_params and props
+        # by setting trainable parameters to None
+        initial_unc_params_trainable = tree_map(
+            lambda param, prop: param if prop.trainable else None, initial_unc_params, props
+        )
+
+        # The log likelihood that the HMC samples from
+        def _logprob(unc_params_trainable):
+            # Combine the trainable and non-trainable parameters, then convert them to constrained space
+            unc_params = tree_map(
+                lambda initial, trained, prop: trained if prop.trainable else initial,
+                initial_unc_params,
+                unc_params_trainable,
+                props,
+            )
+            params = from_unconstrained(unc_params, props)
+            batch_lls = vmap(partial(self.marginal_log_prob, params, filter_hyperparams))(
+                batch_emissions, batch_t_emissions, batch_inputs
+            )
+            lp = self.log_prior(params) + batch_lls.sum()
+            lp += log_det_jac_constrain(params, props)
+            return lp
+
+        # Initialize the HMC sampler using window_adaptation
+        warmup = blackjax.window_adaptation(
+            blackjax.hmc,
+            _logprob,
+            num_steps=warmup_steps,
+            num_integration_steps=num_integration_steps,
+            progress_bar=verbose,
+        )
+        init_key, key = jr.split(key)
+        hmc_initial_state, hmc_kernel, _ = warmup.run(init_key, initial_unc_params_trainable)
+
+        @jit
+        def hmc_step(hmc_state, step_key):
+            next_hmc_state, _ = hmc_kernel(step_key, hmc_state)
+            params = from_unconstrained(hmc_state.position, props)
+            return next_hmc_state, params
+
+        # Start sampling
+        log_probs = []
+        samples = []
+        hmc_state = hmc_initial_state
+        pbar = progress_bar(range(num_samples)) if verbose else range(num_samples)
+        for _ in pbar:
+            step_key, key = jr.split(key)
+            hmc_state, params = hmc_step(hmc_state, step_key)
+            log_probs.append(-hmc_state.potential_energy)
+            samples.append(params)
+
+        # Combine the samples into a single pytree
+        stacked_samples = pytree_stack(samples)
+        log_prob_array = jnp.array(log_probs)
+
+        # Un-trained parameters will appear as None in param_samples
+        # We will fill in these none values with the initial parameters,
+        # and broadcast them to the correct shape.
+        # It will appear as though the sampler has not updated these parameters (in fact,
+        # it is ignoring them altogether, and we add them here for easy downstream usage).
+        param_samples = tree_map(
+            lambda initial, sampled: (
+                jnp.broadcast_to(initial, (num_samples,) + initial.shape) if sampled is None else sampled
+            ),
+            initial_params,
+            stacked_samples,
+        )
+
+        return param_samples, log_prob_array
