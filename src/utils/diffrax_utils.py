@@ -30,6 +30,7 @@ def diffeqsolve(
     stepsize_controller: dfx.AbstractStepSizeController = dfx.ConstantStepSize(),
     adjoint: dfx.AbstractAdjoint = dfx.DirectAdjoint(),
     dt0: float = 0.01,
+    tol_vbt: float = 1e-1, # tolerance for virtual brownian tree
     diffusion = None,
     key = None,
     **kwargs
@@ -59,7 +60,7 @@ def diffeqsolve(
     if diffusion_new is None:
         terms = dfx.ODETerm(drift_new)
     else:
-        bm = dfx.UnsafeBrownianPath(shape=y0.shape, key=key)
+        bm = dfx.VirtualBrownianTree(t0=t0_new, t1=t1_new, tol=tol_vbt, shape=y0.shape, key=key)
         terms = dfx.MultiTerm(dfx.ODETerm(drift_new), dfx.ControlTerm(diffusion_new, bm))
 
     # return a specific solver
