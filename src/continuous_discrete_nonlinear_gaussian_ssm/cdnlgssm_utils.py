@@ -66,9 +66,9 @@ class LearnableLorenz63(NamedTuple):
             rho: rho parameter
             beta: beta parameter
 
-            f(x) = sigma * (y - x)
-            f(y) = x * (rho - z) - y
-            f(z) = x * y - beta * z
+            f(x) = sigma * (y - x)\n
+            f(y) = x * (rho - z) - y\n
+            f(z) = x * y - beta * z\n
     '''
     sigma: Union[Float, ParameterProperties]
     rho: Union[Float, ParameterProperties]

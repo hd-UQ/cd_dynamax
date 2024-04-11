@@ -122,6 +122,7 @@ Goal is to extend dynamax to deal with irregular sampling, via continuous-discre
     - Incorporate important SGD tricks (gradient clipping, learning rate schedulers)
     - Change SDE solver in EnKF to allow backpropagation
     - Set up parameter inference notebooks to batchify long trajectories (for efficiency)
+    - Implement progress bars (e.g. for SGD) that are compatible with lax.scan
 
 ## For v0 
 
