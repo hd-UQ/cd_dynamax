@@ -56,9 +56,10 @@ In the codebase, we also allow for doing filtering, smoothing, and parameter inf
             - [Pendulum (mimicking original dynamax notebook)](./src/notebooks/non_linear/cd_ekf_ukf_pendulum.ipynb)
             - [Pendulum (demonstrating instability of the problem)](./src/notebooks/non_linear/cd_ekf_ukf_pendulum.ipynb)
         - Lorenz 63:
-            - [regular sampling times](./src/notebooks/non_linear/cd_ekf_ukf_enkf_Lorenz63.ipynb),
-            - [irregular sampling times](./src/notebooks/non_linear/cd_ekf_ukf_enkf_Lorenz63_irregular_times.ipynb)
-            - PENDING: parameter estimation example
+            - [Tracking: regular sampling times](./src/notebooks/non_linear/cd_ekf_ukf_enkf_Lorenz63.ipynb),
+            - [Tracking: irregular sampling times](./src/notebooks/non_linear/cd_ekf_ukf_enkf_Lorenz63_irregular_times.ipynb)
+            - [Parameter estimation: mechanistic](./src/notebooks/non_linear/cdnlgssm_hmc_l63_partialObs_learnSigma.ipynb)
+            - Pending: Parameter estimation for neural network
 
 - Important pending features:
     - Support generic parameter estimation for problems with non-linear dynamics
