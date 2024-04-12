@@ -123,6 +123,7 @@ Goal is to extend dynamax to deal with irregular sampling, via continuous-discre
     - Look carefully at tolerance/solver choices for SDEs (Brownian Tree tolerance, etc.)
     - Set up parameter inference notebooks to batchify long trajectories (for efficiency)
     - Implement progress bars (e.g. for SGD) that are compatible with lax.scan
+    - Add data normalizations
 
 ## For v0 
 
