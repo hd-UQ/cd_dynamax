@@ -8,6 +8,9 @@ sequence_counts=(100 1000 10000 100000)
 # -T 10: This defines the length of the simulated trajectory in model time units
 # -N: The batch number (We simulate N trajectories (each of length T) in parallel)
 
+# source the conda.sh script to activate conda
+source ~/anaconda3/etc/profile.d/conda.sh
+
 # Loop over each environment
 for env in "${environments[@]}"; do
     echo "Activating environment: $env"
