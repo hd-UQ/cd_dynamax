@@ -102,6 +102,7 @@ true_states, emissions = true_model.sample_batch(
 )
 
 def run_sample():
+    print("Running SGD...")
     ll = true_model.fit_sgd(
         params=true_params, 
         props=props,

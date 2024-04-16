@@ -2,7 +2,7 @@
 
 # Define the environments and the parameters
 environments=("hduq_nodynamax" "hduq_nodynamax_GPU")
-sequence_counts=(10 100 1000 10000 100000)
+sequence_counts=(10 100 1000 10000)
 
 i=1
 T=1
