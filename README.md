@@ -70,8 +70,17 @@ In the codebase, we also allow for doing filtering, smoothing, and parameter inf
     - with dependencies installed using the pip-based requirements file
 
 ```bash
+# For CPU
 $ conda create --name hduq_nodynamax python=3.11.4
 $ conda activate hduq_nodynamax
 $ conda install pip
 $ pip install -r hduq_pip_nodynamax_requirements.txt
+
+# For GPU
+$ conda create --name hduq_nodynamax_GPU python=3.11.4
+$ conda activate hduq_nodynamax_GPU
+$ conda install pip
+$ pip install -r hduq_pip_nodynamax_requirements.txt
+$ pip install --upgrade "jax[cuda12_pip]" -f https://storage.googleapis.com/jax-releases/jax_cuda_releases.html
+$ pip install jax==0.4.13 jaxlib==0.4.13+cuda12.cudnn89 -f https://storage.googleapis.com/jax-releases/jax_cuda_releases.html
 ```
