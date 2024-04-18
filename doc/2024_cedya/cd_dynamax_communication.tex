@@ -1,0 +1,113 @@
+\documentclass[communication]{CEDYA}
+% Please, do not use any LaTeX macro definition
+
+\begin{document}
+
+%-----------------------------------------------------------------------------
+% Indicate the CEDYA section for your communication: DS-ODE PDE NAS NLA OC-IP AM ME OTHER
+%
+% -  Partial Differential Equations (PDE)
+% -  Dynamical systems - Ordinary Differential Equations (DS-ODE)
+% -  Numerical Analysis and Simulation (NAS)
+% -  Numerical Linear Algebra (NLA)
+% -  Optimal Control - Inverse Problems (OC-IP)
+% -  Applied Mathematics to Industry, Social Sciences and Biology (AM)
+% -  Mathematical Education (ME)
+% -  Other: Scientific Calculus, Approximation Theory, Discrete Mathematics... (OTHER)
+
+
+\CEDYAsection{DS-ODE}
+
+%-----------------------------------------------------------------------------
+
+% \title{title of your talk}
+\title{Data-assimilation meets automatic differentiation for identification of dynamical systems from irregularly-sampled, noisy data}
+%-----------------------------------------------------------------------------
+
+\begin{authors}
+% \author{lastname}{firstname}{affiliation}{email}
+% Use \author* to indicate the author that will be the speaker
+	\author{Levine}{Matthew}{
+	Eric and Wendy Schmidt Center \& 
+	Broad Institute of MIT and Harvard}{levinema@broadinstitute.org }
+\author*{Urteaga}{I\~nigo}{
+	Basque Center for Applied Mathematics \&
+	Ikerbasque, Basque Foundation
+	for Science
+}{iurteaga@bcamath.org}
+\end{authors}
+
+%-----------------------------------------------------------------------------
+
+%To submit your proposal it is not necessary to be previously inscribed.
+%However, if the speaker of an accepted communication is not inscribed before the end of May the communication will be cancelled.
+%After your proposal is ready, you must send your (\LaTeX\ source) file by email to \texttt{cedya2024.commun@sema.org.es}. The deadline is 9th of April.
+
+\begin{abstract}
+% Describe the scientific content of the proposed talk
+% The abstract should not exceed 1 page.
+
+We present advances on leveraging automatic differentiation ---
+computer-based evaluations,
+via repeated application of the chain rule,
+of partial derivatives of a software defined function
+---
+for learning and predicting
+continuous (dynamics), discrete (observation) dynamical systems
+that underpin real-world messy time-series data.
+
+We study (possibly unknown) stochastic dynamical systems
+$\dot{x} = f(x,t) + L(x,t) \dot{w}$ with $x(0)=x_0$, 
+where $x \in \mathbb{R}^{d_x}$, $x_0 \sim \mathcal{N}(\mu_0, \Sigma_0)$, $f$ is a possibly time-dependent drift function, $L$ a possibly state and/or time-dependent diffusion coefficient, and $\dot{w}$ the derivative of a $d_x$-dimensional Brownian motion with a covariance $Q$.
+Observed data are available at \emph{arbitrary times} ${t_k}_{k=1}^K$ collected via a \emph{noisy measurement} process 
+$y(t) = h\big(x(t)\big) + \eta(t)$, where $h: \mathbb{R}^{d_x} \mapsto \mathbb{R}^{d_y}$ creates a $d_y$-dimensional observation from the $d_x$-dimensional state of the dynamical system $x(t)$ (a realization of the above SDE), and $\eta(t)$ applies additive Gaussian noise to the observation. We denote the collection of all parameters as $\theta = {f, L, \mu_0, \Sigma_0, L, Q, h, \textrm{Law}(\eta)}$.
+%
+Given a sequence of irregularly sampled, noisy observations $Y_K = [y(t_1), \dots , y(t_K)]$,
+we wish to
+($i$) filter ---estimate $p(x(t_K) | Y_K, \theta$),
+($ii$) smooth ---estimate $p({x(t)}_t | Y_K, \theta$)
+($iii$) predict ---estimate $p(x(t > t_K) | Y_K, \theta$),
+and ($iv$) infer parameters (estimate $p(\theta | Y_K$),
+for both linear and non-linear unknown functions $f$ and $h$.
+
+We merge machine learning tools (i.e., automatic differentiation) 
+with state-of-the-art data-assimilation
+to solve all these interconnected Bayesian inference problems~\cite{sarkka},
+%(note that parameter inference relies on marginalizing out unobserved states ${x(t)}_t$).
+%This marginalization can be performed (approximately, in cases of non-linear dynamics) via filtering/smoothing algorithms. 
+and devise a framework that allows for differentiation through filtering/smoothing algorithms and the SDE solver~\cite{cheng2022}.
+%in partially-observed continuous-discrete linear and nonlinear dynamical systems.
+%
+By virtue of this novel synergy,
+we enable usage of modern optimization and inference techniques
+(e.g., stochastic gradient descent, Hamiltonian Monte Carlo)
+for parameter inference and system identification of 
+continuous-time dynamics with measurements sampled at possibly irregular discrete times.
+Our work opens up novel research directions on
+uncertainty quantification
+and the combination of mechanistic and machine-learning models~\cite{matt}
+for improved dynamical system identification from irregularly-sampled, noisy data.
+
+%- If $\eta(t)$ had temporal correlations, we would likely adopt a mathematical setting that defines the observation process continuously in time via its own SDE.
+%- Other extensions of the above paradigm include categorical state-spaces and non-additive observation noise distributions; these can fit into our code framework (indeed, they are covered in `dynamax`), but have not been our focus; thus, we specify our mathematical setting to distinguish from these cases.
+
+
+
+
+\end{abstract}
+
+%-----------------------------------------------------------------------------
+
+\begin{thebibliography}{99}
+%\bibitem{key} Info of the paper, book, ...
+\bibitem{sarkka} Simo S\"arkk\"a and Lennart Svensson (2023).
+Bayesian Filtering and Smoothing. Second
+Edition. Cambridge University Press.
+\bibitem{cheng2022} Yuming Chen, Daniel Sanz-Alonso, and Rebecca Willett. ``Autodifferentiable ensemble Kalman filters.'' SIAM Journal on Mathematics of Data Science 4, no. 2 (2022): 801-833.
+\bibitem{matt} Matthew Levine and Andrew Stuart. ``A framework for machine learning of model error in dynamical systems.'' Communications of the American Mathematical Society 2, no. 07 (2022): 283-344.
+\end{thebibliography}
+
+%-----------------------------------------------------------------------------
+
+\end{document}
+
