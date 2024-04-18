@@ -60,7 +60,7 @@ We study (possibly unknown) stochastic dynamical systems
 $\dot{x} = f(x,t) + L(x,t) \dot{w}$ with $x(0)=x_0$, 
 where $x \in \mathbb{R}^{d_x}$, $x_0 \sim \mathcal{N}(\mu_0, \Sigma_0)$, $f$ is a possibly time-dependent drift function, $L$ a possibly state and/or time-dependent diffusion coefficient, and $\dot{w}$ the derivative of a $d_x$-dimensional Brownian motion with a covariance $Q$.
 Observed data are available at \emph{arbitrary times} ${t_k}_{k=1}^K$ collected via a \emph{noisy measurement} process 
-$y(t) = h\big(x(t)\big) + \eta(t)$, where $h: \mathbb{R}^{d_x} \mapsto \mathbb{R}^{d_y}$ creates a $d_y$-dimensional observation from the $d_x$-dimensional state of the dynamical system $x(t)$ (a realization of the above SDE), and $\eta(t)$ applies additive Gaussian noise to the observation. We denote the collection of all parameters as $\theta = {f, L, \mu_0, \Sigma_0, L, Q, h, \textrm{Law}(\eta)}$.
+$y(t) = h\big(x(t)\big) + \eta(t)$, where $h: \mathbb{R}^{d_x} \mapsto \mathbb{R}^{d_y}$ creates a $d_y$-dimensional observation from the $d_x$-dimensional state of the dynamical system $x(t)$ (a realization of the above SDE), with additive Gaussian noise $\eta(t)\sim \mathcal{N}(0, \Sigma_{\eta})$ applies additive Gaussian noise to the observation. We denote the collection of all parameters as $\theta = \{f, L, \mu_0, \Sigma_0, L, Q, h, \Sigma_{\eta}\}$.
 %
 Given a sequence of irregularly sampled, noisy observations $Y_K = [y(t_1), \dots , y(t_K)]$,
 we wish to
