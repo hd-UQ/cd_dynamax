@@ -42,50 +42,55 @@
 %To submit your proposal it is not necessary to be previously inscribed.
 %However, if the speaker of an accepted communication is not inscribed before the end of May the communication will be cancelled.
 %After your proposal is ready, you must send your (\LaTeX\ source) file by email to \texttt{cedya2024.commun@sema.org.es}. The deadline is 9th of April.
-
+\vspace*{-2ex}
 \begin{abstract}
 % Describe the scientific content of the proposed talk
 % The abstract should not exceed 1 page.
 
-We present advances on leveraging automatic differentiation ---
-computer-based evaluations,
+We present advances on leveraging automatic differentiation
+---computer-based evaluations,
 via repeated application of the chain rule,
-of partial derivatives of a software defined function
----
+of partial derivatives of software defined functions---
 for learning and predicting
 continuous (dynamics), discrete (observation) dynamical systems
 that underpin real-world messy time-series data.
 
-We study (possibly unknown) stochastic dynamical systems
-$\dot{x} = f(x,t) + L(x,t) \dot{w}$ with $x(0)=x_0$, 
-where $x \in \mathbb{R}^{d_x}$, $x_0 \sim \mathcal{N}(\mu_0, \Sigma_0)$, $f$ is a possibly time-dependent drift function, $L$ a possibly state and/or time-dependent diffusion coefficient, and $\dot{w}$ the derivative of a $d_x$-dimensional Brownian motion with a covariance $Q$.
-Observed data are available at \emph{arbitrary times} ${t_k}_{k=1}^K$ collected via a \emph{noisy measurement} process 
-$y(t) = h\big(x(t)\big) + \eta(t)$, where $h: \mathbb{R}^{d_x} \mapsto \mathbb{R}^{d_y}$ creates a $d_y$-dimensional observation from the $d_x$-dimensional state of the dynamical system $x(t)$ (a realization of the above SDE), with additive Gaussian noise $\eta(t)\sim \mathcal{N}(0, \Sigma_{\eta})$ applies additive Gaussian noise to the observation. We denote the collection of all parameters as $\theta = \{f, L, \mu_0, \Sigma_0, L, Q, h, \Sigma_{\eta}\}$.
+We study (unknown) stochastic dynamical systems
+$\dot{x} = f(x,t) + L(x,t) \dot{w}$,
+where $x \in \mathbb{R}^{d_x}$, $x(0)=x_0 \sim \mathcal{N}(\mu_0, \Sigma_0)$, $f$ is a state and/or  time-dependent drift function, $L$ a possibly state and/or time-dependent diffusion coefficient, and $\dot{w}$ the derivative of a $d_x$-dimensional Brownian motion with covariance $Q$.
+Data are observed at \emph{arbitrary times} $\{t_k\}_{k=1}^K$ collected via a \emph{noisy measurement} process 
+$y(t) = h\big(x(t)\big) + \eta(t)$, where $h: \mathbb{R}^{d_x} \mapsto \mathbb{R}^{d_y}$
+%creates a $d_y$-dimensional observation from
+%the $d_x$-dimensional state of the dynamical system $x(t)$ ---a realization of the above SDE---
+%with additive Gaussian noise $\eta(t)\sim \mathcal{N}(0, \Sigma_{\eta})$.
+and $\eta(t)\sim \mathcal{N}(0, \Sigma_{\eta})$.
+We denote the collection of all parameters as $\theta = \{f, L, \mu_0, \Sigma_0, Q, h, \Sigma_{\eta}\}$.
 %
-Given a sequence of irregularly sampled, noisy observations $Y_K = [y(t_1), \dots , y(t_K)]$,
+Given a sequence of irregularly sampled and noisy observations $Y_K = [y(t_1), \dots , y(t_K)]$,
 we wish to
 ($i$) filter ---estimate $p(x(t_K) | Y_K, \theta$),
-($ii$) smooth ---estimate $p({x(t)}_t | Y_K, \theta$)
+($ii$) smooth ---estimate $p(\{x(t)\}_t | Y_K, \theta$)
 ($iii$) predict ---estimate $p(x(t > t_K) | Y_K, \theta$),
-and ($iv$) infer parameters (estimate $p(\theta | Y_K$),
-for both linear and non-linear unknown functions $f$ and $h$.
+and ($iv$) infer parameters ---estimate $p(\theta | Y_K$),
+for systems with linear and non-linear unknown functions $f$ and $h$.
 
 We merge machine learning tools (i.e., automatic differentiation) 
 with state-of-the-art data-assimilation
-to solve all these interconnected Bayesian inference problems~\cite{sarkka},
+to solve all these interconnected Bayesian inference problems~\cite{sarkka}.
 %(note that parameter inference relies on marginalizing out unobserved states ${x(t)}_t$).
 %This marginalization can be performed (approximately, in cases of non-linear dynamics) via filtering/smoothing algorithms. 
-and devise a framework that allows for differentiation through filtering/smoothing algorithms and the SDE solver~\cite{cheng2022}.
+We devise a framework that allows for differentiation through filtering/smoothing algorithms~\cite{cheng2022}
+and the SDE solver.
 %in partially-observed continuous-discrete linear and nonlinear dynamical systems.
 %
 By virtue of this novel synergy,
 we enable usage of modern optimization and inference techniques
 (e.g., stochastic gradient descent, Hamiltonian Monte Carlo)
-for parameter inference and system identification of 
-continuous-time dynamics with measurements sampled at possibly irregular discrete times.
+for learning and parameter inference of continuous-time dynamics.
+%with measurements sampled at possibly irregular discrete times.
 Our work opens up novel research directions on
 uncertainty quantification
-and the combination of mechanistic and machine-learning models~\cite{matt}
+and the combination of mechanistic and machine-learning models %~\cite{matt}
 for improved dynamical system identification from irregularly-sampled, noisy data.
 
 %- If $\eta(t)$ had temporal correlations, we would likely adopt a mathematical setting that defines the observation process continuously in time via its own SDE.
@@ -103,8 +108,9 @@ for improved dynamical system identification from irregularly-sampled, noisy dat
 \bibitem{sarkka} Simo S\"arkk\"a and Lennart Svensson (2023).
 Bayesian Filtering and Smoothing. Second
 Edition. Cambridge University Press.
+\vspace*{-1ex}
 \bibitem{cheng2022} Yuming Chen, Daniel Sanz-Alonso, and Rebecca Willett. ``Autodifferentiable ensemble Kalman filters.'' SIAM Journal on Mathematics of Data Science 4, no. 2 (2022): 801-833.
-\bibitem{matt} Matthew Levine and Andrew Stuart. ``A framework for machine learning of model error in dynamical systems.'' Communications of the American Mathematical Society 2, no. 07 (2022): 283-344.
+%\bibitem{matt} Matthew Levine and Andrew Stuart. ``A framework for machine learning of model error in dynamical systems.'' Communications of the American Mathematical Society 2, no. 07 (2022): 283-344.
 \end{thebibliography}
 
 %-----------------------------------------------------------------------------
