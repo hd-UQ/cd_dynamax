@@ -1,17 +1,3 @@
-# Release todos
-
-- Revise our own README with
-    - intro to problem
-    - how to install
-    - summary of notebooks
-
-- Make sure the links work
-
-- When ready,
-    - Tag v0
-    - Make v0 public
-        - via new branch
-
 # cd-dynamax 
 
 Goal is to extend dynamax to deal with irregular sampling, via continuous-discrete dynamics modeling
@@ -119,7 +105,8 @@ Goal is to extend dynamax to deal with irregular sampling, via continuous-discre
 	- use `output_fields` in filters to control granularity of returned posterior
 	- Diffeqsolve
 		- debug feature
-    - Incorporate important SGD tricks (gradient clipping, learning rate schedulers)
+    - Incorporate important SGD tricks:
+        - gradient clipping, learning rate schedulers (some available in cdlgssm_learParams_oscillator_irregularSampleRate notebook)
     - Look carefully at tolerance/solver choices for SDEs (Brownian Tree tolerance, etc.)
     - Set up parameter inference notebooks to batchify long trajectories (for efficiency)
     - Implement progress bars (e.g. for SGD) that are compatible with lax.scan
