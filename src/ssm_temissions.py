@@ -523,6 +523,8 @@ class SSM(ABC):
         batch_size: int=1,
         num_epochs: int=50,
         shuffle: bool=False,
+        return_param_history: bool=False,
+        return_grad_history: bool=False,
         key: PRNGKey=jr.PRNGKey(0)
     ) -> Tuple[ParameterSet, Float[Array, "niter"]]:
         r"""Compute parameter MLE/ MAP estimate using Stochastic Gradient Descent (SGD).
@@ -543,11 +545,13 @@ class SSM(ABC):
             props: properties specifying which parameters should be learned
             emissions: one or more sequences of emissions
             filter_hyperparams: if needed, hyperparameters of the filtering algorithm
-            t_emissions: continuous-time specific time instants: if not None, it is an array 
+            t_emissions: continuous-time specific time instants: if not None, it is an array
             inputs: one or more sequences of corresponding inputs
             optimizer: an `optax` optimizer for minimization
             batch_size: number of sequences per minibatch
             num_epochs: number of epochs of SGD to run
+            return_param_history: whether to return the history of parameters
+            return_grad_history: whether to return the history of gradients
             key: a random number generator for selecting minibatches
             verbose: whether or not to show a progress bar
 
@@ -572,17 +576,29 @@ class SSM(ABC):
             return -lp / batch_emissions.size
 
         dataset = (batch_emissions, batch_t_emissions, batch_inputs)
-        unc_params, losses = run_sgd(_loss_fn,
+        unc_params, unc_params_history, grad_history, losses = run_sgd(_loss_fn,
                                      unc_params,
                                      dataset,
                                      optimizer=optimizer,
                                      batch_size=batch_size,
                                      num_epochs=num_epochs,
                                      shuffle=shuffle,
+                                     return_param_history=return_param_history,
+                                     return_grad_history=return_grad_history,
                                      key=key)
 
         params = from_unconstrained(unc_params, props)
-        return params, losses
+        params_history = from_unconstrained(unc_params_history, props)
+        if return_param_history:
+            if return_grad_history:
+                return params, params_history, grad_history, losses
+            else:
+                return params, params_history, losses
+        else:
+            if return_grad_history:
+                return params, grad_history, losses
+            else:
+                return params, losses
 
     def fit_hmc(
         self,
