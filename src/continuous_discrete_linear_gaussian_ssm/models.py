@@ -233,11 +233,12 @@ class ContDiscreteLinearGaussianSSM(SSM):
     def marginal_log_prob(
         self,
         params: ParamsCDLGSSM,
-        filter_hyperparams: Any,
         emissions: Float[Array, "ntime emission_dim"],
         t_emissions: Optional[Float[Array, "ntime 1"]]=None,
+        filter_hyperparams: Optional[Any]=None,
         inputs: Optional[Float[Array, "ntime input_dim"]] = None
     ) -> Scalar:
+        print('running CD-linear Gaussian Filter with filter_hyperparams={}'.format(filter_hyperparams))
         filtered_posterior = cdlgssm_filter(params, emissions, t_emissions, inputs)
         return filtered_posterior.marginal_loglik
 
