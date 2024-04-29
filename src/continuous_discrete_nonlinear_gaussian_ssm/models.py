@@ -322,16 +322,17 @@ class ContDiscreteNonlinearGaussianSSM(SSM):
     def marginal_log_prob(
         self,
         params: ParamsCDNLGSSM,
-        filter_hyperparams: Optional[Union[EKFHyperParams, EnKFHyperParams, UKFHyperParams]],
         emissions: Float[Array, "ntime emission_dim"],
         t_emissions: Optional[Float[Array, "ntime 1"]]=None,
+        hyperparams: Optional[Union[EKFHyperParams, EnKFHyperParams, UKFHyperParams]]=EKFHyperParams(),
         inputs: Optional[Float[Array, "ntime input_dim"]] = None,
     ) -> Scalar:
+        print('running CD-Nonlinear Gaussian Filter with filter_hyperparams={}'.format(filter_hyperparams))
         filtered_posterior = cdnlgssm_filter(
             params=params,
             emissions=emissions,
-            hyperparams=filter_hyperparams,
             t_emissions=t_emissions,
+            hyperparams=filter_hyperparams,
             inputs=inputs
         )
         return filtered_posterior.marginal_loglik
@@ -339,8 +340,8 @@ class ContDiscreteNonlinearGaussianSSM(SSM):
 def cdnlgssm_filter(
     params: ParamsCDNLGSSM,
     emissions: Float[Array, "ntime emission_dim"],
-    hyperparams: Optional[Union[EKFHyperParams, EnKFHyperParams, UKFHyperParams]]=EKFHyperParams(),
     t_emissions: Optional[Float[Array, "num_timesteps 1"]]=None,
+    hyperparams: Optional[Union[EKFHyperParams, EnKFHyperParams, UKFHyperParams]]=EKFHyperParams(),
     inputs: Optional[Float[Array, "ntime input_dim"]] = None,
     num_iter: Optional[int] = 1,
     output_fields: Optional[List[str]]=["filtered_means", "filtered_covariances", "predicted_means", "predicted_covariances"],
@@ -353,8 +354,8 @@ def cdnlgssm_filter(
     Args:
         params: model parameters.
         emissions: observation sequence.
-        hyperparams: hyper-parameters of the filter
         t_emissions: continuous-time specific time instants of observations: if not None, it is an array 
+        hyperparams: hyper-parameters of the filter
         inputs: optional array of inputs.
         num_iter: number of linearizations around posterior for update step (default 1).
         output_fields: list of fields to return in posterior object.
@@ -398,8 +399,8 @@ def cdnlgssm_filter(
 def cdnlgssm_smoother(
     params: ParamsCDNLGSSM,
     emissions: Float[Array, "ntime emission_dim"],
-    hyperparams: Optional[Union[EKFHyperParams, EnKFHyperParams, UKFHyperParams]]=EKFHyperParams(),
     t_emissions: Optional[Float[Array, "num_timesteps 1"]]=None,
+    hyperparams: Optional[Union[EKFHyperParams, EnKFHyperParams, UKFHyperParams]]=EKFHyperParams(),
     inputs: Optional[Float[Array, "ntime input_dim"]] = None,
     num_iter: Optional[int] = 1,
     output_fields: Optional[List[str]]=["filtered_means", "filtered_covariances", "predicted_means", "predicted_covariances"],
@@ -412,8 +413,8 @@ def cdnlgssm_smoother(
     Args:
         params: model parameters.
         emissions: observation sequence.
-        hyperparams: hyper-parameters of the smoother to use
         t_emissions: continuous-time specific time instants of observations: if not None, it is an array 
+        hyperparams: hyper-parameters of the smoother to use
         inputs: optional array of inputs.
         num_iter: optinal, number of linearizations around posterior for update step (default 1).
         output_fields: list of fields to return in posterior object.
