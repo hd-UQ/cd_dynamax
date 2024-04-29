@@ -575,12 +575,13 @@ class SSM(ABC):
                     self.marginal_log_prob,
                     params,
                     filter_hyperparams=filter_hyperparams,
-                ) # partial with fixed params args and filter_hyperparams kargs
-            )(
+                    ) # partial with fixed params arg and filter_hyperparams kwarg
+                )(
+                # arguments to vmap over
                 emissions=minibatch_emissions,
                 t_emissions=minibatch_t_emissions,
                 inputs=minibatch_inputs
-            ) # arguments to vmap over
+            )
             lp = self.log_prior(params) + minibatch_lls.sum() * scale
             return -lp / batch_emissions.size
 
@@ -632,8 +633,8 @@ class SSM(ABC):
             initial_params: initial parameters $\theta$
             props: properties specifying which parameters should be learned
             emissions: one or more sequences of emissions
-            filter_hyperparams: if needed, hyperparameters of the filtering algorithm
             t_emissions: continuous-time specific time instants: if not None, it is an array
+            filter_hyperparams: if needed, hyperparameters of the filtering algorithm
             inputs: one or more sequences of corresponding inputs
             num_samples: number of samples to draw
             warmup_steps: number of warmup steps
@@ -667,8 +668,17 @@ class SSM(ABC):
                 props,
             )
             params = from_unconstrained(unc_params, props)
-            batch_lls = vmap(partial(self.marginal_log_prob, params, filter_hyperparams))(
-                batch_emissions, batch_t_emissions, batch_inputs
+            batch_lls = vmap(
+                partial(
+                    self.marginal_log_prob,
+                    params,
+                    filter_hyperparams=filter_hyperparams
+                    ) # partial with fixed params arg and filter_hyperparams kwarg
+                )(
+                # arguments to vmap over
+                emissions=batch_emissions,
+                t_emissions=batch_t_emissions,
+                inputs=batch_inputs
             )
             lp = self.log_prior(params) + batch_lls.sum()
             lp += log_det_jac_constrain(params, props)

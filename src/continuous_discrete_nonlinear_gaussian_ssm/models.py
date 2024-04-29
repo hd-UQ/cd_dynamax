@@ -327,7 +327,6 @@ class ContDiscreteNonlinearGaussianSSM(SSM):
         filter_hyperparams: Optional[Union[EKFHyperParams, EnKFHyperParams, UKFHyperParams]]=EKFHyperParams(),
         inputs: Optional[Float[Array, "ntime input_dim"]] = None,
     ) -> Scalar:
-        print('running CD-Nonlinear Gaussian Filter with filter_hyperparams={}'.format(filter_hyperparams))
         filtered_posterior = cdnlgssm_filter(
             params=params,
             emissions=emissions,
