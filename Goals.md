@@ -88,6 +88,12 @@ Goal is to extend dynamax to deal with irregular sampling, via continuous-discre
     
 # To dos
 
+- Oscillator learning
+    - we want to have 2 examples:
+        - identifiable Vs non-identifiable
+        - maybe simply fixing h
+        - learn all or learn only weights?
+
 - Uncertainty quantification via HMC
     - How to deal with MLE vs MAP
         - Simply editing log-priors? (Iñigo)

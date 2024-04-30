@@ -657,7 +657,7 @@ class SSM(ABC):
         initial_unc_params_trainable = tree_map(
             lambda param, prop: param if prop.trainable else None, initial_unc_params, props
         )
-
+        
         # The log likelihood that the HMC samples from
         def _logprob(unc_params_trainable):
             # Combine the trainable and non-trainable parameters, then convert them to constrained space
@@ -723,7 +723,7 @@ class SSM(ABC):
         # it is ignoring them altogether, and we add them here for easy downstream usage).
         param_samples = tree_map(
             lambda initial, sampled: (
-                jnp.broadcast_to(initial, (num_samples,) + initial.shape) if sampled is None else sampled
+                jnp.broadcast_to(jnp.array(initial), (num_samples,) + jnp.array(initial).shape) if sampled is None else sampled
             ),
             initial_params,
             stacked_samples,
