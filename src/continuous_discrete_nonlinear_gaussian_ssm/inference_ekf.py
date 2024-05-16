@@ -11,6 +11,7 @@ from dynamax.utils.utils import psd_solve, symmetrize
 from dynamax.types import PRNGKey
 
 import jax.debug as jdb
+from pdb import set_trace as bp
 
 # Dynamax shared code
 from dynamax.linear_gaussian_ssm.inference import PosteriorGSSMFiltered, PosteriorGSSMSmoothed
@@ -20,6 +21,8 @@ from dynamax.linear_gaussian_ssm.inference import PosteriorGSSMFiltered, Posteri
 from continuous_discrete_nonlinear_gaussian_ssm.cdnlgssm_utils import *
 # Diffrax based diff-eq solver
 from utils.diffrax_utils import diffeqsolve
+from utils.debug_utils import lax_scan
+DEBUG = False
 
 # Helper functions
 _get_params = lambda x, dim, t: x[t] if x.ndim == dim + 1 else x
@@ -110,7 +113,7 @@ def _predict(
     
     sol = diffeqsolve(rhs_all, t0=t0, t1=t1, y0=y0)
     return sol[0][-1], sol[1][-1]
-    
+
 # Condition on observations for EKF
 # Based on first order approximation, as in Equation 3.59
 # TODO: implement second order EKF, as in Equation 3.63
@@ -148,6 +151,10 @@ def _condition_on(m, P, h, H, R, u, y, t, num_iter, hyperparams):
         prior_mean, prior_cov = carry
         H_x = H(prior_mean, u, t)
         S = R + H_x @ prior_cov @ H_x.T
+        if not jnp.all(jnp.linalg.eigvals(S) > 0):
+            print(f"Condition number of S: {jnp.linalg.cond(S)}")
+            print(f"Most negative eigenvalue of S: {jnp.min(jnp.linalg.eigvals(S))}")
+            bp()
         K = psd_solve(S, H_x @ prior_cov).T
         posterior_cov = prior_cov - K @ S @ K.T
         posterior_mean = prior_mean + K @ (y - h(prior_mean, u, t))
@@ -155,7 +162,7 @@ def _condition_on(m, P, h, H, R, u, y, t, num_iter, hyperparams):
 
     # Iterate re-linearization over posterior mean and covariance
     carry = (m, P)
-    (mu_cond, Sigma_cond), _ = lax.scan(_step, carry, jnp.arange(num_iter))
+    (mu_cond, Sigma_cond), _ = lax_scan(_step, carry, jnp.arange(num_iter), debug=DEBUG)
     return mu_cond, symmetrize(Sigma_cond)
 
 
@@ -199,7 +206,7 @@ def extended_kalman_filter(
                 lambda x: jnp.concatenate(
                     (
                         t_emissions[1:,0],
-                        jnp.array([t_emissions[-1,0]+1]) # NB: t_{N+1} is simply t_{N}+1 
+                        jnp.array([t_emissions[-1,0]+10]) # NB: t_{N+1} is simply t_{N}+1 
                     )
                 ),
                 t_emissions
@@ -208,25 +215,32 @@ def extended_kalman_filter(
         num_timesteps = len(emissions)
         t0 = jnp.arange(num_timesteps)
         t1 = jnp.arange(1,num_timesteps+1)
-    
+
     t0_idx = jnp.arange(num_timesteps)
-    
+
     # Only emission function
     h = params.emissions.emission_function.f
     # First order EKF update implemented for now
     # TODO: consider second-order EKF updates
     H = jacfwd(h)
-    #h, H = (_process_fn(fn, inputs) for fn in (h, H))
+    # h, H = (_process_fn(fn, inputs) for fn in (h, H))
     inputs = _process_input(inputs, num_timesteps)
-    
+
     def _step(carry, args):
         ll, pred_mean, pred_cov = carry
         t0, t1, t0_idx = args
+        print(f"t0: {t0}, t1: {t1}, t0_idx: {t0_idx}")
+
+        # if pred_cov is not SPD, breakpoint
+        evals_pred_cov = jnp.linalg.eigvals(pred_cov)
+        if not jnp.all(evals_pred_cov > 0):
+            print(f"pred_cov is not SPD. Most negative eigenvalue: {jnp.min(evals_pred_cov)} at t0: {t0}")
+            # bp()
 
         # TODO:
         # Get parameters and inputs for time t0
-        #Q = _get_params(params.dynamics.diffusion_cov, 2, t0)
-        #R = _get_params(params.emissions.emission_cov, 2, t0)
+        # Q = _get_params(params.dynamics.diffusion_cov, 2, t0)
+        # R = _get_params(params.emissions.emission_cov, 2, t0)
         u = inputs[t0_idx]
         y = emissions[t0_idx]
         Q = params.dynamics.diffusion_cov.f(None,u,t0)
@@ -241,8 +255,20 @@ def extended_kalman_filter(
         # Condition on this emission
         filtered_mean, filtered_cov = _condition_on(pred_mean, pred_cov, h, H, R, u, y, t0, num_iter, hyperparams)
 
+        # print condition number of filtered_cov
+        print(f"Condition number of filtered_cov: {jnp.linalg.cond(filtered_cov)}")
+
+        # if filtered_cov is not SPD, breakpoint
+        evals_filtered_cov = jnp.linalg.eigvals(filtered_cov)
+        if not jnp.all(evals_filtered_cov > 0):
+            print(f"filtered_cov is not SPD. Most negative eigenvalue: {jnp.min(evals_filtered_cov)} at t0: {t0}")
+            # bp()
+
         # Predict the next state based on EKF approximations
         pred_mean, pred_cov = _predict(filtered_mean, filtered_cov, params, t0, t1, u, hyperparams)
+
+        # print condition number of pred_cov
+        print(f"Condition number of pred_cov: {jnp.linalg.cond(pred_cov)}")
 
         # Build carry and output states
         carry = (ll, pred_mean, pred_cov)
@@ -259,7 +285,7 @@ def extended_kalman_filter(
 
     # Run the extended Kalman filter
     carry = (0.0, params.initial.mean, params.initial.cov)
-    (ll, *_), outputs = lax.scan(_step, carry, (t0, t1, t0_idx))
+    (ll, *_), outputs = lax_scan(_step, carry, (t0, t1, t0_idx), debug=DEBUG)
     outputs = {"marginal_loglik": ll, **outputs}
     posterior_filtered = PosteriorGSSMFiltered(
         **outputs,
@@ -378,7 +404,7 @@ def _smooth(
     # from t1 to t0, BUT y0 contains initial conditions at t1
     sol = diffeqsolve(rhs_all, t0=t0, t1=t1, y0=y0, reverse=True, args=(m_filter, P_filter))
     return sol[0][-1], sol[1][-1]
-    
+
 def extended_kalman_smoother(
     params: ParamsCDNLGSSM,
     emissions:  Float[Array, "ntime emission_dim"],
@@ -608,4 +634,3 @@ def extended_kalman_posterior_sample(
     _, reversed_states = lax.scan(_step, last_state, args)
     states = jnp.row_stack([reversed_states[::-1], last_state])
     return states
-
