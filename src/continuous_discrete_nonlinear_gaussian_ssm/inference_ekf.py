@@ -22,7 +22,7 @@ from continuous_discrete_nonlinear_gaussian_ssm.cdnlgssm_utils import *
 # Diffrax based diff-eq solver
 from utils.diffrax_utils import diffeqsolve
 from utils.debug_utils import lax_scan
-DEBUG = False
+DEBUG = True
 
 # Helper functions
 _get_params = lambda x, dim, t: x[t] if x.ndim == dim + 1 else x
