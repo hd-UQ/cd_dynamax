@@ -63,13 +63,14 @@ def _predict(
         mu_pred (D_hid,): predicted mean.
         Sigma_pred (D_hid,D_hid): predicted covariance.
     """
-    
-    # Initialize
-    y0 = (m, P)
+
     # Predicted mean and covariance evolution, by using the EKF state order approximations
     def rhs_all(t, y, args):
-        m, P = y
-        
+        if hyperparams.state_order=='zeroth':
+            m = y
+        else:
+            m, P = y
+
         # TODO: possibly time- and parameter-dependent functions
         f=params.dynamics.drift.f
 
@@ -77,28 +78,30 @@ def _predict(
         Qc_t = params.dynamics.diffusion_cov.f(None,u,t)
         L_t = params.dynamics.diffusion_coefficient.f(None,u,t)
         # Get time-varying parameters
-        #Qc_t = _get_params(params.dynamics.diffusion_cov, 2, t)
-        #L_t = _get_params(params.dynamics.diffusion_coefficient, 2, t)
+        # Qc_t = _get_params(params.dynamics.diffusion_cov, 2, t)
+        # L_t = _get_params(params.dynamics.diffusion_coefficient, 2, t)
 
-       
         # following Sarkka thesis eq. 3.158
-        if hyperparams.state_order=='first':
-            # Evaluate the jacobian of the dynamics function at m and inputs
-            F_t=jacfwd(f)(m,u,t)
-            
+
+        # Evaluate the jacobian of the dynamics function at m and inputs
+        F_t = jacfwd(f)(m,u,t)
+
+        if hyperparams.state_order=='zeroth':
+            # Mean evolution
+            dmdt = f(m, u, t)
+
+        elif hyperparams.state_order=='first':
             # Mean evolution
             dmdt = f(m, u,t)
             # Covariance evolution
             dPdt = F_t @ P + P @ F_t.T + L_t @ Qc_t @ L_t.T
-        
+
         # follow Sarkka thesis eq. 3.159
         elif hyperparams.state_order=='second':
-            # Evaluate the jacobian of the dynamics function at m and inputs
-            F_t=jacfwd(f)(m,u,t)
             # Evaluate the Hessian of the dynamics function at m and inputs
             # Based on these recommendationshttps://jax.readthedocs.io/en/latest/notebooks/autodiff_cookbook.html#jacobians-and-hessians-using-jacfwd-and-jacrev
             H_t=jacfwd(jacrev(f))(m,u,t)
-        
+
             # Mean evolution
             dmdt = f(m,u,t) + 0.5*jnp.trace(H_t @ P)
             # Covariance evolution
@@ -106,11 +109,33 @@ def _predict(
         else:
             raise ValueError('EKF hyperparams.state_order = {} not implemented yet'.format(hyperparams.state_order))
 
-        return (dmdt, dPdt)
-    
-    sol = diffeqsolve(rhs_all, t0=t0, t1=t1, y0=y0)
-    return sol[0][-1], sol[1][-1]
-    
+        if hyperparams.state_order=='zeroth':
+            return dmdt
+        else:
+            return (dmdt, dPdt)
+
+    # Initialize
+    if hyperparams.state_order=='zeroth':
+        y0 = m
+
+        # Compute predicted mean
+        sol = diffeqsolve(rhs_all, t0=t0, t1=t1, y0=y0)
+        m_final = sol[0]
+
+        # Compute predicted covariance
+        dt = t1 - t0
+        Qc_t = params.dynamics.diffusion_cov.f(None,u,t0)
+        L_t = params.dynamics.diffusion_coefficient.f(None,u,t0)
+        P_final = P + jnp.sqrt(dt) * L_t @ Qc_t @ L_t.T
+    else:
+        y0 = (m, P)
+        # Compute predicted mean and covariance
+        sol = diffeqsolve(rhs_all, t0=t0, t1=t1, y0=y0)
+        m_final = sol[0][-1]
+        P_final = sol[1][-1]
+
+    return m_final, P_final
+
 # Condition on observations for EKF
 # Based on first order approximation, as in Equation 3.59
 # TODO: implement second order EKF, as in Equation 3.63
@@ -378,7 +403,7 @@ def _smooth(
     # from t1 to t0, BUT y0 contains initial conditions at t1
     sol = diffeqsolve(rhs_all, t0=t0, t1=t1, y0=y0, reverse=True, args=(m_filter, P_filter))
     return sol[0][-1], sol[1][-1]
-    
+
 def extended_kalman_smoother(
     params: ParamsCDNLGSSM,
     emissions:  Float[Array, "ntime emission_dim"],
@@ -608,4 +633,3 @@ def extended_kalman_posterior_sample(
     _, reversed_states = lax.scan(_step, last_state, args)
     states = jnp.row_stack([reversed_states[::-1], last_state])
     return states
-
