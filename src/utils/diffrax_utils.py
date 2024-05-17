@@ -56,7 +56,7 @@ def diffeqsolve(
 
     if debug:
         # run hand-written Euler and/or Euler-Maruyama using a for loop with fixed step size dt0
-        N = 6 # if this is too small, then the error will be too large and covariances can be very non-SPD.
+        N = 200 # if this is too small, then the error will be too large and covariances can be very non-SPD.
         dt = (t1 - t0) / N
         if key is None:
             key = jr.PRNGKey(0)

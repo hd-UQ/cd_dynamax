@@ -15,6 +15,8 @@ from itertools import count
 from dynamax.parameters import to_unconstrained, from_unconstrained, log_det_jac_constrain
 from dynamax.utils.utils import ensure_array_has_batch_dim, pytree_stack
 
+from pdb import set_trace as bp
+
 # use custom src codebase
 from utils.plotting_utils import *
 
@@ -33,8 +35,8 @@ matplotlib.rcParams['figure.figsize'] = [16, 9]
 state_dim = 3
 emission_dim = 1
 num_sequences = 1000
-T = 1
-num_timesteps = int(T / 0.01)
+num_timesteps = 4
+T = 0.01 * num_timesteps
 t_emissions = jnp.array(sorted(jr.uniform(jr.PRNGKey(0), (num_timesteps, 1), minval=0, maxval=T)))
 # drop duplicates
 t_emissions = jnp.unique(t_emissions)[:,None]
@@ -499,3 +501,24 @@ print(jnp.max(jnp.abs(grads.dynamics.drift.bias2)))
 print(jnp.max(jnp.abs(grads.dynamics.drift.bias1)))
 print(jnp.max(jnp.abs(grads.dynamics.drift.weights1)))
 print(jnp.max(jnp.abs(grads.dynamics.drift.weights2)))
+
+bp()
+
+# Now just run filter on the bad parameters with the same emissions
+# and see if the log likelihood is the same as the loss
+def _new_filter_fn(my_params):
+    filtered_posterior = cdnlgssm_filter(
+        params=my_params, emissions=emissions[em_ind], t_emissions=t_emissions, hyperparams=filter_hyperparams
+    )
+    print(filtered_posterior)
+    return filtered_posterior.marginal_loglik
+
+filter_grad_fn = value_and_grad(_new_filter_fn)
+filter_loss, filter_grads = filter_grad_fn(new_params)
+print(filter_loss)
+print(jnp.max(jnp.abs(filter_grads.dynamics.drift.bias2)))
+print(jnp.max(jnp.abs(filter_grads.dynamics.drift.bias1)))
+print(jnp.max(jnp.abs(filter_grads.dynamics.drift.weights1)))
+print(jnp.max(jnp.abs(filter_grads.dynamics.drift.weights2)))
+
+bp()

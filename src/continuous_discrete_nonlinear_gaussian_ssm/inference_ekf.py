@@ -66,13 +66,13 @@ def _predict(
         mu_pred (D_hid,): predicted mean.
         Sigma_pred (D_hid,D_hid): predicted covariance.
     """
-    
+
     # Initialize
     y0 = (m, P)
     # Predicted mean and covariance evolution, by using the EKF state order approximations
     def rhs_all(t, y, args):
         m, P = y
-        
+
         # TODO: possibly time- and parameter-dependent functions
         f=params.dynamics.drift.f
 
@@ -80,20 +80,19 @@ def _predict(
         Qc_t = params.dynamics.diffusion_cov.f(None,u,t)
         L_t = params.dynamics.diffusion_coefficient.f(None,u,t)
         # Get time-varying parameters
-        #Qc_t = _get_params(params.dynamics.diffusion_cov, 2, t)
-        #L_t = _get_params(params.dynamics.diffusion_coefficient, 2, t)
+        # Qc_t = _get_params(params.dynamics.diffusion_cov, 2, t)
+        # L_t = _get_params(params.dynamics.diffusion_coefficient, 2, t)
 
-       
         # following Sarkka thesis eq. 3.158
         if hyperparams.state_order=='first':
             # Evaluate the jacobian of the dynamics function at m and inputs
             F_t=jacfwd(f)(m,u,t)
-            
+
             # Mean evolution
             dmdt = f(m, u,t)
             # Covariance evolution
             dPdt = F_t @ P + P @ F_t.T + L_t @ Qc_t @ L_t.T
-        
+
         # follow Sarkka thesis eq. 3.159
         elif hyperparams.state_order=='second':
             # Evaluate the jacobian of the dynamics function at m and inputs
@@ -101,7 +100,7 @@ def _predict(
             # Evaluate the Hessian of the dynamics function at m and inputs
             # Based on these recommendationshttps://jax.readthedocs.io/en/latest/notebooks/autodiff_cookbook.html#jacobians-and-hessians-using-jacfwd-and-jacrev
             H_t=jacfwd(jacrev(f))(m,u,t)
-        
+
             # Mean evolution
             dmdt = f(m,u,t) + 0.5*jnp.trace(H_t @ P)
             # Covariance evolution
@@ -110,9 +109,16 @@ def _predict(
             raise ValueError('EKF hyperparams.state_order = {} not implemented yet'.format(hyperparams.state_order))
 
         return (dmdt, dPdt)
-    
+
     sol = diffeqsolve(rhs_all, t0=t0, t1=t1, y0=y0)
-    return sol[0][-1], sol[1][-1]
+    m_final, P_final = sol[0][-1], sol[1][-1]
+
+    # evals_P = jnp.linalg.eigvals(P_final)
+    # if not jnp.all(evals_P > 0):
+    #     print(f"Predicted covariance is not SPD. Most negative eigenvalue: {jnp.min(evals_P)} at t0: {t0}")
+        # bp()
+
+    return m_final, P_final
 
 # Condition on observations for EKF
 # Based on first order approximation, as in Equation 3.59
@@ -151,10 +157,10 @@ def _condition_on(m, P, h, H, R, u, y, t, num_iter, hyperparams):
         prior_mean, prior_cov = carry
         H_x = H(prior_mean, u, t)
         S = R + H_x @ prior_cov @ H_x.T
-        if not jnp.all(jnp.linalg.eigvals(S) > 0):
-            print(f"Condition number of S: {jnp.linalg.cond(S)}")
-            print(f"Most negative eigenvalue of S: {jnp.min(jnp.linalg.eigvals(S))}")
-            bp()
+        # if not jnp.all(jnp.linalg.eigvals(S) > 0):
+        #     print(f"Condition number of S: {jnp.linalg.cond(S)}")
+        #     print(f"Most negative eigenvalue of S: {jnp.min(jnp.linalg.eigvals(S))}")
+            # bp()
         K = psd_solve(S, H_x @ prior_cov).T
         posterior_cov = prior_cov - K @ S @ K.T
         posterior_mean = prior_mean + K @ (y - h(prior_mean, u, t))
@@ -232,10 +238,10 @@ def extended_kalman_filter(
         print(f"t0: {t0}, t1: {t1}, t0_idx: {t0_idx}")
 
         # if pred_cov is not SPD, breakpoint
-        evals_pred_cov = jnp.linalg.eigvals(pred_cov)
-        if not jnp.all(evals_pred_cov > 0):
-            print(f"pred_cov is not SPD. Most negative eigenvalue: {jnp.min(evals_pred_cov)} at t0: {t0}")
-            # bp()
+        # evals_pred_cov = jnp.linalg.eigvals(pred_cov)
+        # if not jnp.all(evals_pred_cov > 0):
+        #     print(f"pred_cov is not SPD. Most negative eigenvalue: {jnp.min(evals_pred_cov)} at t0: {t0}")
+        #     # bp()
 
         # TODO:
         # Get parameters and inputs for time t0
@@ -256,19 +262,19 @@ def extended_kalman_filter(
         filtered_mean, filtered_cov = _condition_on(pred_mean, pred_cov, h, H, R, u, y, t0, num_iter, hyperparams)
 
         # print condition number of filtered_cov
-        print(f"Condition number of filtered_cov: {jnp.linalg.cond(filtered_cov)}")
+        # print(f"Condition number of filtered_cov: {jnp.linalg.cond(filtered_cov)}")
 
         # if filtered_cov is not SPD, breakpoint
-        evals_filtered_cov = jnp.linalg.eigvals(filtered_cov)
-        if not jnp.all(evals_filtered_cov > 0):
-            print(f"filtered_cov is not SPD. Most negative eigenvalue: {jnp.min(evals_filtered_cov)} at t0: {t0}")
+        # evals_filtered_cov = jnp.linalg.eigvals(filtered_cov)
+        # if not jnp.all(evals_filtered_cov > 0):
+        #     print(f"filtered_cov is not SPD. Most negative eigenvalue: {jnp.min(evals_filtered_cov)} at t0: {t0}")
             # bp()
 
         # Predict the next state based on EKF approximations
         pred_mean, pred_cov = _predict(filtered_mean, filtered_cov, params, t0, t1, u, hyperparams)
 
         # print condition number of pred_cov
-        print(f"Condition number of pred_cov: {jnp.linalg.cond(pred_cov)}")
+        # print(f"Condition number of pred_cov: {jnp.linalg.cond(pred_cov)}")
 
         # Build carry and output states
         carry = (ll, pred_mean, pred_cov)
