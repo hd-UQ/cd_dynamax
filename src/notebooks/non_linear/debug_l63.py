@@ -99,11 +99,15 @@ true_states, emissions = true_model.sample_batch(
 # compute the log likelihood of the true model
 ## WARNING: only computing it for the first sequence
 # this is to avoid batching for now...
-first_emissions = emissions[0]
-ll_true = true_model.marginal_log_prob(
-    params=true_params, filter_hyperparams=EKFHyperParams(), emissions=first_emissions, t_emissions=t_emissions
-)
-print(f"Log likelihood of true model (approximated by EKF): {-ll_true}")
+for state_order in ["zeroth", "first", "second"]:
+    print(f"Computing log likelihood for {state_order} order EKF.")
+    filter_hyperparams = EKFHyperParams(state_order=state_order)
+
+    first_emissions = emissions[0]
+    ll_true = true_model.marginal_log_prob(
+        params=true_params, filter_hyperparams=filter_hyperparams, emissions=first_emissions, t_emissions=t_emissions
+    )
+    print(f"Log likelihood of true model (approximated by EKF): {-ll_true}")
 
 
 # ## Create a class for a learnable neural network, which we will use to parameterize the drift function
@@ -474,7 +478,6 @@ new_params = ParamsCDNLGSSM(
 )
 
 # ## Compute gradients of loss @ bad parameter set
-filter_hyperparams = EKFHyperParams(state_order="first")
 test_model = ContDiscreteNonlinearGaussianSSM(state_dim, emission_dim)
 
 
@@ -485,17 +488,22 @@ batch_emissions = ensure_array_has_batch_dim(emissions[em_ind], test_model.emiss
 # batch_t_emissions = ensure_array_has_batch_dim(t_emissions, (1,))
 batch_t_emissions = jnp.repeat(t_emissions[jnp.newaxis, :, :], batch_emissions.shape[0], axis=0)
 
-def _new_loss_fn(my_params):
-    batch_lls = vmap(
-        partial(test_model.marginal_log_prob, my_params, filter_hyperparams=filter_hyperparams),
-    )(emissions=batch_emissions, t_emissions=batch_t_emissions, inputs=batch_inputs)
-    lp = test_model.log_prior(my_params) + batch_lls.sum()
-    return -lp / len(batch_emissions)
-loss_grad_fn = value_and_grad(_new_loss_fn)
-## USING THE MANUALLY LOADED PARAMETERS
-this_loss, grads = loss_grad_fn(new_params)
-print(this_loss)
-print(jnp.max(jnp.abs(grads.dynamics.drift.bias2)))
-print(jnp.max(jnp.abs(grads.dynamics.drift.bias1)))
-print(jnp.max(jnp.abs(grads.dynamics.drift.weights1)))
-print(jnp.max(jnp.abs(grads.dynamics.drift.weights2)))
+
+for state_order in ["zeroth", "first", "second"]:
+    print(f"Computing log likelihood and its gradients for {state_order} order EKF on single emission sequence.")
+    filter_hyperparams = EKFHyperParams(state_order=state_order)
+
+    def _new_loss_fn(my_params):
+        batch_lls = vmap(
+            partial(test_model.marginal_log_prob, my_params, filter_hyperparams=filter_hyperparams),
+        )(emissions=batch_emissions, t_emissions=batch_t_emissions, inputs=batch_inputs)
+        lp = test_model.log_prior(my_params) + batch_lls.sum()
+        return -lp / len(batch_emissions)
+    loss_grad_fn = value_and_grad(_new_loss_fn)
+    ## USING THE MANUALLY LOADED PARAMETERS
+    this_loss, grads = loss_grad_fn(new_params)
+    print(this_loss)
+    print(jnp.max(jnp.abs(grads.dynamics.drift.bias2)))
+    print(jnp.max(jnp.abs(grads.dynamics.drift.bias1)))
+    print(jnp.max(jnp.abs(grads.dynamics.drift.weights1)))
+    print(jnp.max(jnp.abs(grads.dynamics.drift.weights2)))
