@@ -24,7 +24,7 @@ from utils.debug_utils import lax_scan
 import blackjax
 from fastprogress.fastprogress import progress_bar
 
-DEBUG = True
+DEBUG = False
 
 class Posterior(Protocol):
     """A :class:`NamedTuple` with parameters stored as :class:`jax.DeviceArray` in the leaf nodes."""
