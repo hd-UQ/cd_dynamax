@@ -7,7 +7,7 @@ from jax import vmap, lax
 from pdb import set_trace as bp
 import jax.debug as jdb
 
-DEBUG = True
+DEBUG = False
 
 def reverse_rhs(rhs, t1, ref_var):
     if rhs is None:

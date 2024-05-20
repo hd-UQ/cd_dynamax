@@ -22,7 +22,7 @@ from continuous_discrete_nonlinear_gaussian_ssm.cdnlgssm_utils import *
 # Diffrax based diff-eq solver
 from utils.diffrax_utils import diffeqsolve
 from utils.debug_utils import lax_scan
-DEBUG = True
+DEBUG = False
 
 # Helper functions
 _get_params = lambda x, dim, t: x[t] if x.ndim == dim + 1 else x
@@ -199,6 +199,7 @@ def extended_kalman_filter(
     hyperparams: EKFHyperParams = EKFHyperParams(),
     inputs: Optional[Float[Array, "ntime input_dim"]] = None,
     output_fields: Optional[List[str]]=["filtered_means", "filtered_covariances", "predicted_means", "predicted_covariances"],
+    dt_final: Optional[float] = 1e-10
 ) -> PosteriorGSSMFiltered:
     r"""Run an (iterated) extended Kalman filter to produce the
     marginal likelihood and filtered state estimates.
@@ -209,13 +210,15 @@ def extended_kalman_filter(
     Args:
         params: model parameters.
         emissions: observation sequence.
-        t_emissions: continuous-time specific time instants of observations: if not None, it is an array 
+        t_emissions: continuous-time specific time instants of observations: if not None, it is an array
         num_iter: number of linearizations around posterior for update step (default 1).
         hyperparams: hyper-parameters of the EKF, related to the approximation order
         inputs: optional array of inputs.
         output_fields: list of fields to return in posterior object.
             These can take the values "filtered_means", "filtered_covariances",
             "predicted_means", "predicted_covariances", and "marginal_loglik".
+        dt_final: final time instant for the continuous-time solution (creates an unused prediction)
+
 
     Returns:
         post: posterior object.
@@ -231,7 +234,7 @@ def extended_kalman_filter(
                 lambda x: jnp.concatenate(
                     (
                         t_emissions[1:,0],
-                        jnp.array([t_emissions[-1,0]+10]) # NB: t_{N+1} is simply t_{N}+1 
+                        jnp.array([t_emissions[-1,0]+dt_final]) # NB: t_{N+1} is simply t_{N}+dt_final
                     )
                 ),
                 t_emissions
@@ -254,7 +257,7 @@ def extended_kalman_filter(
     def _step(carry, args):
         ll, pred_mean, pred_cov = carry
         t0, t1, t0_idx = args
-        print(f"t0: {t0}, t1: {t1}, t0_idx: {t0_idx}")
+        # print(f"t0: {t0}, t1: {t1}, t0_idx: {t0_idx}")
 
         # if pred_cov is not SPD, breakpoint
         # evals_pred_cov = jnp.linalg.eigvals(pred_cov)
@@ -287,7 +290,7 @@ def extended_kalman_filter(
         # evals_filtered_cov = jnp.linalg.eigvals(filtered_cov)
         # if not jnp.all(evals_filtered_cov > 0):
         #     print(f"filtered_cov is not SPD. Most negative eigenvalue: {jnp.min(evals_filtered_cov)} at t0: {t0}")
-            # bp()
+        # bp()
 
         # Predict the next state based on EKF approximations
         pred_mean, pred_cov = _predict(filtered_mean, filtered_cov, params, t0, t1, u, hyperparams)
@@ -580,7 +583,8 @@ def extended_kalman_posterior_sample(
     params: ParamsCDNLGSSM,
     emissions:  Float[Array, "ntime emission_dim"],
     t_emissions: Optional[Float[Array, "num_timesteps 1"]]=None,
-    inputs: Optional[Float[Array, "ntime input_dim"]] = None
+    inputs: Optional[Float[Array, "ntime input_dim"]] = None,
+    dt_final: Optional[float] = 1e-10
 ) -> Float[Array, "ntime state_dim"]:
     r"""Run forward-filtering, backward-sampling to draw samples.
 
@@ -589,7 +593,8 @@ def extended_kalman_posterior_sample(
         params: model parameters.
         emissions: observation sequence.
         t_emissions: continuous-time specific time instants of observations: if not None, it is an array 
-        inputs: optional array of inputs.
+        inputs: optional array of inputs
+        dt_final: final time instant for the continuous-time solution (creates an unused prediction)
 
     Returns:
         Float[Array, "ntime state_dim"]: one sample of $z_{1:T}$ from the posterior distribution on latent states.
@@ -601,19 +606,16 @@ def extended_kalman_posterior_sample(
         num_timesteps = t_emissions.shape[0]
         t0 = tree_map(lambda x: x[:,0], t_emissions)
         t1 = tree_map(
-                lambda x: jnp.concatenate(
-                    (
-                        t_emissions[1:,0],
-                        jnp.array([t_emissions[-1,0]+1]) # NB: t_{N+1} is simply t_{N}+1 
-                    )
-                ),
-                t_emissions
-            )
+            lambda x: jnp.concatenate(
+                (t_emissions[1:, 0], jnp.array([t_emissions[-1, 0] + dt_final]))  # NB: t_{N+1} is simply t_{N}+dt_final
+            ),
+            t_emissions,
+        )
     else:
         num_timesteps = len(emissions)
         t0 = jnp.arange(num_timesteps)
         t1 = jnp.arange(1,num_timesteps+1)
-    
+
     t0_idx = jnp.arange(num_timesteps)
 
     # Get filtered posterior
@@ -636,7 +638,7 @@ def extended_kalman_posterior_sample(
 
         # TODO:
         # Get parameters and inputs for time t0
-        #Q = _get_params(params.dynamics.diffusion_cov, 2, t0)
+        # Q = _get_params(params.dynamics.diffusion_cov, 2, t0)
         u = inputs[t0_idx]
         Q = params.dynamics.diffusion_cov.f(None,u,t0)
 
@@ -648,14 +650,14 @@ def extended_kalman_posterior_sample(
     # Initialize the last state
     key, this_key = jr.split(key, 2)
     last_state = MVN(filtered_means[-1], filtered_covs[-1]).sample(seed=this_key)
-    
+
     args = (
         jr.split(key, num_timesteps - 1),
         t0[::-1], t1[::-1], # jnp.arange(num_timesteps - 2, -1, -1),
         t0_idx[::-1],
         filtered_means[:-1][::-1], filtered_covs[:-1][::-1],
     )
-    
+
     _, reversed_states = lax.scan(_step, last_state, args)
     states = jnp.row_stack([reversed_states[::-1], last_state])
     return states

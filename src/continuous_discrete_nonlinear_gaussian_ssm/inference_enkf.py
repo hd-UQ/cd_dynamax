@@ -153,6 +153,7 @@ def ensemble_kalman_filter(
         "predicted_means",
         "predicted_covariances",
     ],
+    dt_final: Optional[float] = 1e-10,
 ) -> PosteriorGSSMFiltered:
     """Run a ensemble Kalman filter to produce the marginal likelihood and
     filtered state estimates.
@@ -165,6 +166,7 @@ def ensemble_kalman_filter(
         hyperparams: hyper-parameters.
         inputs: optional array of inputs.
         output_fields: list of fields to include in the output.
+        dt_final: final time instant for the continuous-time solution (creates an unused prediction)
 
     Returns:
         filtered_posterior: posterior object.
@@ -178,7 +180,7 @@ def ensemble_kalman_filter(
         t0 = tree_map(lambda x: x[:, 0], t_emissions)
         t1 = tree_map(
             lambda x: jnp.concatenate(
-                (t_emissions[1:, 0], jnp.array([t_emissions[-1, 0] + 1]))  # NB: t_{N+1} is simply t_{N}+1
+                (t_emissions[1:, 0], jnp.array([t_emissions[-1, 0] + dt_final]))  # NB: t_{N+1} is simply t_{N}+dt_final
             ),
             t_emissions,
         )
