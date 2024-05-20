@@ -59,7 +59,7 @@ In the codebase, we also allow for doing filtering, smoothing, and parameter inf
             - [Tracking: regular sampling times](./src/notebooks/non_linear/cd_ekf_ukf_enkf_Lorenz63.ipynb),
             - [Tracking: irregular sampling times](./src/notebooks/non_linear/cd_ekf_ukf_enkf_Lorenz63_irregular_times.ipynb)
             - [Parameter estimation: mechanistic](./src/notebooks/non_linear/cdnlgssm_hmc_l63_partialObs_learnSigma.ipynb)
-            - Pending: Parameter estimation for neural network
+            - [Parameter estimation: neural network (needs tuning)](./src/notebooks/non_linear/cdnlgssm_hmc_l63_partial_learnNeuralNetDrift.ipynb)
 
 - Important pending features:
     - Support generic parameter estimation for problems with non-linear dynamics

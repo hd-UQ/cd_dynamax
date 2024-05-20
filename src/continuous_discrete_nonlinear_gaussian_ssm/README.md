@@ -22,7 +22,10 @@
     
     - The [Second-order Continuous Discrete Extended Kalman Filter implementation](./inference_ekf.py#L95)
         - i.e., Algorithm 3.22 in [[1]](https://aaltodoc.aalto.fi/items/cc45c44e-ff66-4907-bfff-03293391fe1d)
-     
+
+    - The [Zeroth-order Continuous Discrete Extended Kalman Filter implementation](./inference_ekf.py#L121)
+      - i.e., Discrete-Discrete EKF with predicted covariance scaled by $\sqrt{\Delta t_k}$
+
 - The [Continuous Discrete Extended Kalman smoother](./inference_ekf.py#L382), with 
 
     - The [First-order Continuous Discrete Extended Kalman Smoother implementation](./inference_ekf.py#L295)
