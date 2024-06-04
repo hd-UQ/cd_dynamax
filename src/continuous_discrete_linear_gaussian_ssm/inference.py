@@ -379,15 +379,17 @@ def cdlgssm_filter(
     params: ParamsCDLGSSM,
     emissions:  Float[Array, "num_timesteps emission_dim"],
     t_emissions: Optional[Float[Array, "num_timesteps 1"]]=None,
-    inputs: Optional[Float[Array, "num_timesteps input_dim"]]=None
+    inputs: Optional[Float[Array, "num_timesteps input_dim"]]=None,
+    dt_final: Optional[Float]=1e-10
 ) -> PosteriorGSSMFiltered:
     r"""Run a Continuous Discrete Kalman filter to produce the marginal likelihood and filtered state estimates.
 
     Args:
         params: model parameters
         emissions: array of observations.
-        t_emissions: continuous-time specific time instants of observations: if not None, it is an array 
+        t_emissions: continuous-time specific time instants of observations: if not None, it is an array
         inputs: optional array of inputs.
+        dt_final: final time instant for the continuous-time solution (creates an unused prediction)
 
     Returns:
         PosteriorGSSMFiltered: filtered posterior object
@@ -403,7 +405,7 @@ def cdlgssm_filter(
                 lambda x: jnp.concatenate(
                     (
                         t_emissions[1:,0],
-                        jnp.array([t_emissions[-1,0]+1]) # NB: t_{N+1} is simply t_{N}+1 
+                        jnp.array([t_emissions[-1,0]+dt_final]) # NB: t_{N+1} is simply t_{N}+dt_final
                     )
                 ),
                 t_emissions
@@ -509,9 +511,9 @@ def _smooth(
     sol = diffeqsolve(rhs_all, t0=t0, t1=t1, y0=y0, reverse=True, args=(m_filter, P_filter))
     #jdb.breakpoint()
     return sol[0][-1], sol[1][-1]
-    
-#TODO: fix preprocess_args to accommodate smoother_type if it is really necessary
-#@preprocess_args
+
+# TODO: fix preprocess_args to accommodate smoother_type if it is really necessary
+# @preprocess_args
 def cdlgssm_smoother(
     params: ParamsCDLGSSM,
     emissions: Float[Array, "num_timesteps emission_dim"],
