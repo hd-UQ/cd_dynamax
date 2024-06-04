@@ -12,6 +12,17 @@ from dynamax.types import PRNGKey
 
 import jax.debug as jdb
 
+# iurteaga trying to debug
+import jax
+
+def breakpoint_if_nan(x):
+    is_nan = jnp.isnan(x).any()
+    def true_fn(x):
+        jdb.breakpoint()
+    def false_fn(x):
+        pass
+    lax.cond(is_nan, true_fn, false_fn, x)
+
 # Dynamax shared code
 from dynamax.linear_gaussian_ssm.inference import PosteriorGSSMFiltered, PosteriorGSSMSmoothed
 
@@ -69,7 +80,8 @@ def _predict(
     # Predicted mean and covariance evolution, by using the EKF state order approximations
     def rhs_all(t, y, args):
         m, P = y
-        
+        breakpoint_if_nan(P)
+        breakpoint_if_nan(m)
         # TODO: possibly time- and parameter-dependent functions
         f=params.dynamics.drift.f
 
@@ -89,6 +101,7 @@ def _predict(
             # Mean evolution
             dmdt = f(m, u,t)
             # Covariance evolution
+            breakpoint_if_nan(F_t)
             dPdt = F_t @ P + P @ F_t.T + L_t @ Qc_t @ L_t.T
         
         # follow Sarkka thesis eq. 3.159
@@ -102,6 +115,7 @@ def _predict(
             # Mean evolution
             dmdt = f(m,u,t) + 0.5*jnp.trace(H_t @ P)
             # Covariance evolution
+            breakpoint_if_nan(F_t)
             dPdt = F_t @ P + P @ F_t.T + L_t @ Qc_t @ L_t.T
         else:
             raise ValueError('EKF hyperparams.state_order = {} not implemented yet'.format(hyperparams.state_order))
@@ -243,7 +257,15 @@ def extended_kalman_filter(
 
         # Predict the next state based on EKF approximations
         pred_mean, pred_cov = _predict(filtered_mean, filtered_cov, params, t0, t1, u, hyperparams)
-
+        
+        # Debugging
+        '''
+        breakpoint_if_nan(filtered_mean)
+        breakpoint_if_nan(filtered_cov)
+        breakpoint_if_nan(pred_mean)
+        breakpoint_if_nan(pred_cov)
+        '''
+        
         # Build carry and output states
         carry = (ll, pred_mean, pred_cov)
         outputs = {
