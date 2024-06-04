@@ -11,17 +11,7 @@ from dynamax.utils.utils import psd_solve, symmetrize
 from dynamax.types import PRNGKey
 
 import jax.debug as jdb
-
-# iurteaga trying to debug
-import jax
-
-def breakpoint_if_nan(x):
-    is_nan = jnp.isnan(x).any()
-    def true_fn(x):
-        jdb.breakpoint()
-    def false_fn(x):
-        pass
-    lax.cond(is_nan, true_fn, false_fn, x)
+from pdb import set_trace as bp
 
 # Dynamax shared code
 from dynamax.linear_gaussian_ssm.inference import PosteriorGSSMFiltered, PosteriorGSSMSmoothed
@@ -31,6 +21,8 @@ from dynamax.linear_gaussian_ssm.inference import PosteriorGSSMFiltered, Posteri
 from continuous_discrete_nonlinear_gaussian_ssm.cdnlgssm_utils import *
 # Diffrax based diff-eq solver
 from utils.diffrax_utils import diffeqsolve
+from utils.debug_utils import lax_scan
+DEBUG = False
 
 # Helper functions
 _get_params = lambda x, dim, t: x[t] if x.ndim == dim + 1 else x
@@ -74,14 +66,14 @@ def _predict(
         mu_pred (D_hid,): predicted mean.
         Sigma_pred (D_hid,D_hid): predicted covariance.
     """
-    
-    # Initialize
-    y0 = (m, P)
+
     # Predicted mean and covariance evolution, by using the EKF state order approximations
     def rhs_all(t, y, args):
-        m, P = y
-        breakpoint_if_nan(P)
-        breakpoint_if_nan(m)
+        if hyperparams.state_order=='zeroth':
+            m, = y
+        else:
+            m, P = y
+
         # TODO: possibly time- and parameter-dependent functions
         f=params.dynamics.drift.f
 
@@ -89,42 +81,64 @@ def _predict(
         Qc_t = params.dynamics.diffusion_cov.f(None,u,t)
         L_t = params.dynamics.diffusion_coefficient.f(None,u,t)
         # Get time-varying parameters
-        #Qc_t = _get_params(params.dynamics.diffusion_cov, 2, t)
-        #L_t = _get_params(params.dynamics.diffusion_coefficient, 2, t)
+        # Qc_t = _get_params(params.dynamics.diffusion_cov, 2, t)
+        # L_t = _get_params(params.dynamics.diffusion_coefficient, 2, t)
 
-       
         # following Sarkka thesis eq. 3.158
-        if hyperparams.state_order=='first':
-            # Evaluate the jacobian of the dynamics function at m and inputs
-            F_t=jacfwd(f)(m,u,t)
-            
+
+        # Evaluate the jacobian of the dynamics function at m and inputs
+        F_t = jacfwd(f)(m,u,t)
+
+        if hyperparams.state_order=='zeroth':
+            # Mean evolution
+            dmdt = f(m, u, t)
+
+        elif hyperparams.state_order=='first':
             # Mean evolution
             dmdt = f(m, u,t)
             # Covariance evolution
-            breakpoint_if_nan(F_t)
             dPdt = F_t @ P + P @ F_t.T + L_t @ Qc_t @ L_t.T
-        
+
         # follow Sarkka thesis eq. 3.159
         elif hyperparams.state_order=='second':
-            # Evaluate the jacobian of the dynamics function at m and inputs
-            F_t=jacfwd(f)(m,u,t)
             # Evaluate the Hessian of the dynamics function at m and inputs
             # Based on these recommendationshttps://jax.readthedocs.io/en/latest/notebooks/autodiff_cookbook.html#jacobians-and-hessians-using-jacfwd-and-jacrev
             H_t=jacfwd(jacrev(f))(m,u,t)
-        
+
             # Mean evolution
             dmdt = f(m,u,t) + 0.5*jnp.trace(H_t @ P)
             # Covariance evolution
-            breakpoint_if_nan(F_t)
             dPdt = F_t @ P + P @ F_t.T + L_t @ Qc_t @ L_t.T
         else:
             raise ValueError('EKF hyperparams.state_order = {} not implemented yet'.format(hyperparams.state_order))
 
-        return (dmdt, dPdt)
-    
-    sol = diffeqsolve(rhs_all, t0=t0, t1=t1, y0=y0)
-    return sol[0][-1], sol[1][-1]
-    
+        if hyperparams.state_order=='zeroth':
+            return (dmdt, )
+        else:
+            return (dmdt, dPdt)
+
+    # Initialize
+    if hyperparams.state_order=='zeroth':
+        y0 = (m,)
+
+        # Compute predicted mean
+        sol = diffeqsolve(rhs_all, t0=t0, t1=t1, y0=y0)
+        m_final = sol[0][-1]
+
+        # Compute predicted covariance
+        dt = t1 - t0
+        Qc_t = params.dynamics.diffusion_cov.f(None,u,t0)
+        L_t = params.dynamics.diffusion_coefficient.f(None,u,t0)
+        P_final = P + jnp.sqrt(dt) * L_t @ Qc_t @ L_t.T
+    else:
+        y0 = (m, P)
+        # Compute predicted mean and covariance
+        sol = diffeqsolve(rhs_all, t0=t0, t1=t1, y0=y0)
+        m_final = sol[0][-1]
+        P_final = sol[1][-1]
+
+    return m_final, P_final
+
 # Condition on observations for EKF
 # Based on first order approximation, as in Equation 3.59
 # TODO: implement second order EKF, as in Equation 3.63
@@ -162,6 +176,10 @@ def _condition_on(m, P, h, H, R, u, y, t, num_iter, hyperparams):
         prior_mean, prior_cov = carry
         H_x = H(prior_mean, u, t)
         S = R + H_x @ prior_cov @ H_x.T
+        # if not jnp.all(jnp.linalg.eigvals(S) > 0):
+        #     print(f"Condition number of S: {jnp.linalg.cond(S)}")
+        #     print(f"Most negative eigenvalue of S: {jnp.min(jnp.linalg.eigvals(S))}")
+            # bp()
         K = psd_solve(S, H_x @ prior_cov).T
         posterior_cov = prior_cov - K @ S @ K.T
         posterior_mean = prior_mean + K @ (y - h(prior_mean, u, t))
@@ -169,7 +187,7 @@ def _condition_on(m, P, h, H, R, u, y, t, num_iter, hyperparams):
 
     # Iterate re-linearization over posterior mean and covariance
     carry = (m, P)
-    (mu_cond, Sigma_cond), _ = lax.scan(_step, carry, jnp.arange(num_iter))
+    (mu_cond, Sigma_cond), _ = lax_scan(_step, carry, jnp.arange(num_iter), debug=DEBUG)
     return mu_cond, symmetrize(Sigma_cond)
 
 
@@ -181,6 +199,7 @@ def extended_kalman_filter(
     hyperparams: EKFHyperParams = EKFHyperParams(),
     inputs: Optional[Float[Array, "ntime input_dim"]] = None,
     output_fields: Optional[List[str]]=["filtered_means", "filtered_covariances", "predicted_means", "predicted_covariances"],
+    dt_final: Optional[float] = 1e-10
 ) -> PosteriorGSSMFiltered:
     r"""Run an (iterated) extended Kalman filter to produce the
     marginal likelihood and filtered state estimates.
@@ -191,13 +210,15 @@ def extended_kalman_filter(
     Args:
         params: model parameters.
         emissions: observation sequence.
-        t_emissions: continuous-time specific time instants of observations: if not None, it is an array 
+        t_emissions: continuous-time specific time instants of observations: if not None, it is an array
         num_iter: number of linearizations around posterior for update step (default 1).
         hyperparams: hyper-parameters of the EKF, related to the approximation order
         inputs: optional array of inputs.
         output_fields: list of fields to return in posterior object.
             These can take the values "filtered_means", "filtered_covariances",
             "predicted_means", "predicted_covariances", and "marginal_loglik".
+        dt_final: final time instant for the continuous-time solution (creates an unused prediction)
+
 
     Returns:
         post: posterior object.
@@ -213,7 +234,7 @@ def extended_kalman_filter(
                 lambda x: jnp.concatenate(
                     (
                         t_emissions[1:,0],
-                        jnp.array([t_emissions[-1,0]+1]) # NB: t_{N+1} is simply t_{N}+1 
+                        jnp.array([t_emissions[-1,0]+dt_final]) # NB: t_{N+1} is simply t_{N}+dt_final
                     )
                 ),
                 t_emissions
@@ -222,25 +243,32 @@ def extended_kalman_filter(
         num_timesteps = len(emissions)
         t0 = jnp.arange(num_timesteps)
         t1 = jnp.arange(1,num_timesteps+1)
-    
+
     t0_idx = jnp.arange(num_timesteps)
-    
+
     # Only emission function
     h = params.emissions.emission_function.f
     # First order EKF update implemented for now
     # TODO: consider second-order EKF updates
     H = jacfwd(h)
-    #h, H = (_process_fn(fn, inputs) for fn in (h, H))
+    # h, H = (_process_fn(fn, inputs) for fn in (h, H))
     inputs = _process_input(inputs, num_timesteps)
-    
+
     def _step(carry, args):
         ll, pred_mean, pred_cov = carry
         t0, t1, t0_idx = args
+        # print(f"t0: {t0}, t1: {t1}, t0_idx: {t0_idx}")
+
+        # if pred_cov is not SPD, breakpoint
+        # evals_pred_cov = jnp.linalg.eigvals(pred_cov)
+        # if not jnp.all(evals_pred_cov > 0):
+        #     print(f"pred_cov is not SPD. Most negative eigenvalue: {jnp.min(evals_pred_cov)} at t0: {t0}")
+        #     # bp()
 
         # TODO:
         # Get parameters and inputs for time t0
-        #Q = _get_params(params.dynamics.diffusion_cov, 2, t0)
-        #R = _get_params(params.emissions.emission_cov, 2, t0)
+        # Q = _get_params(params.dynamics.diffusion_cov, 2, t0)
+        # R = _get_params(params.emissions.emission_cov, 2, t0)
         u = inputs[t0_idx]
         y = emissions[t0_idx]
         Q = params.dynamics.diffusion_cov.f(None,u,t0)
@@ -255,17 +283,21 @@ def extended_kalman_filter(
         # Condition on this emission
         filtered_mean, filtered_cov = _condition_on(pred_mean, pred_cov, h, H, R, u, y, t0, num_iter, hyperparams)
 
+        # print condition number of filtered_cov
+        # print(f"Condition number of filtered_cov: {jnp.linalg.cond(filtered_cov)}")
+
+        # if filtered_cov is not SPD, breakpoint
+        # evals_filtered_cov = jnp.linalg.eigvals(filtered_cov)
+        # if not jnp.all(evals_filtered_cov > 0):
+        #     print(f"filtered_cov is not SPD. Most negative eigenvalue: {jnp.min(evals_filtered_cov)} at t0: {t0}")
+        # bp()
+
         # Predict the next state based on EKF approximations
         pred_mean, pred_cov = _predict(filtered_mean, filtered_cov, params, t0, t1, u, hyperparams)
-        
-        # Debugging
-        '''
-        breakpoint_if_nan(filtered_mean)
-        breakpoint_if_nan(filtered_cov)
-        breakpoint_if_nan(pred_mean)
-        breakpoint_if_nan(pred_cov)
-        '''
-        
+
+        # print condition number of pred_cov
+        # print(f"Condition number of pred_cov: {jnp.linalg.cond(pred_cov)}")
+
         # Build carry and output states
         carry = (ll, pred_mean, pred_cov)
         outputs = {
@@ -281,7 +313,7 @@ def extended_kalman_filter(
 
     # Run the extended Kalman filter
     carry = (0.0, params.initial.mean, params.initial.cov)
-    (ll, *_), outputs = lax.scan(_step, carry, (t0, t1, t0_idx))
+    (ll, *_), outputs = lax_scan(_step, carry, (t0, t1, t0_idx), debug=DEBUG)
     outputs = {"marginal_loglik": ll, **outputs}
     posterior_filtered = PosteriorGSSMFiltered(
         **outputs,
@@ -400,7 +432,7 @@ def _smooth(
     # from t1 to t0, BUT y0 contains initial conditions at t1
     sol = diffeqsolve(rhs_all, t0=t0, t1=t1, y0=y0, reverse=True, args=(m_filter, P_filter))
     return sol[0][-1], sol[1][-1]
-    
+
 def extended_kalman_smoother(
     params: ParamsCDNLGSSM,
     emissions:  Float[Array, "ntime emission_dim"],
@@ -551,7 +583,8 @@ def extended_kalman_posterior_sample(
     params: ParamsCDNLGSSM,
     emissions:  Float[Array, "ntime emission_dim"],
     t_emissions: Optional[Float[Array, "num_timesteps 1"]]=None,
-    inputs: Optional[Float[Array, "ntime input_dim"]] = None
+    inputs: Optional[Float[Array, "ntime input_dim"]] = None,
+    dt_final: Optional[float] = 1e-10
 ) -> Float[Array, "ntime state_dim"]:
     r"""Run forward-filtering, backward-sampling to draw samples.
 
@@ -560,7 +593,8 @@ def extended_kalman_posterior_sample(
         params: model parameters.
         emissions: observation sequence.
         t_emissions: continuous-time specific time instants of observations: if not None, it is an array 
-        inputs: optional array of inputs.
+        inputs: optional array of inputs
+        dt_final: final time instant for the continuous-time solution (creates an unused prediction)
 
     Returns:
         Float[Array, "ntime state_dim"]: one sample of $z_{1:T}$ from the posterior distribution on latent states.
@@ -572,19 +606,16 @@ def extended_kalman_posterior_sample(
         num_timesteps = t_emissions.shape[0]
         t0 = tree_map(lambda x: x[:,0], t_emissions)
         t1 = tree_map(
-                lambda x: jnp.concatenate(
-                    (
-                        t_emissions[1:,0],
-                        jnp.array([t_emissions[-1,0]+1]) # NB: t_{N+1} is simply t_{N}+1 
-                    )
-                ),
-                t_emissions
-            )
+            lambda x: jnp.concatenate(
+                (t_emissions[1:, 0], jnp.array([t_emissions[-1, 0] + dt_final]))  # NB: t_{N+1} is simply t_{N}+dt_final
+            ),
+            t_emissions,
+        )
     else:
         num_timesteps = len(emissions)
         t0 = jnp.arange(num_timesteps)
         t1 = jnp.arange(1,num_timesteps+1)
-    
+
     t0_idx = jnp.arange(num_timesteps)
 
     # Get filtered posterior
@@ -607,7 +638,7 @@ def extended_kalman_posterior_sample(
 
         # TODO:
         # Get parameters and inputs for time t0
-        #Q = _get_params(params.dynamics.diffusion_cov, 2, t0)
+        # Q = _get_params(params.dynamics.diffusion_cov, 2, t0)
         u = inputs[t0_idx]
         Q = params.dynamics.diffusion_cov.f(None,u,t0)
 
@@ -619,15 +650,14 @@ def extended_kalman_posterior_sample(
     # Initialize the last state
     key, this_key = jr.split(key, 2)
     last_state = MVN(filtered_means[-1], filtered_covs[-1]).sample(seed=this_key)
-    
+
     args = (
         jr.split(key, num_timesteps - 1),
         t0[::-1], t1[::-1], # jnp.arange(num_timesteps - 2, -1, -1),
         t0_idx[::-1],
         filtered_means[:-1][::-1], filtered_covs[:-1][::-1],
     )
-    
+
     _, reversed_states = lax.scan(_step, last_state, args)
     states = jnp.row_stack([reversed_states[::-1], last_state])
     return states
-

@@ -37,12 +37,30 @@ def lax_scan(f, init, xs, length=None, reverse=False, debug=False):
         x_i = tuple(x[i] if x is not None else None for x in xs)
         carry, y = f(carry, x_i)
 
+        if y is None:
+            continue
+
+        # Initialize the ys_lists structure based on the type of y
         if ys_lists is None:
-            ys_lists = tuple([] for _ in range(len(y)))
+            if isinstance(y, dict):
+                ys_lists = {key: [] for key in y.keys()}
+            else:
+                ys_lists = tuple([] for _ in range(len(y)))
 
-        for list_index, y_component in enumerate(y):
-            ys_lists[list_index].append(y_component)
+        # Append the y components to the appropriate lists
+        if isinstance(y, dict):
+            for key, y_component in y.items():
+                ys_lists[key].append(y_component)
+        else:
+            for list_index, y_component in enumerate(y):
+                ys_lists[list_index].append(y_component)
 
-    ys = tuple(jnp.stack(y_list, axis=0) for y_list in ys_lists)
+    if ys_lists is None:
+        ys = None
+    else:
+        if isinstance(ys_lists, dict):
+            ys = {key: jnp.stack(y_list, axis=0) for key, y_list in ys_lists.items()}
+        else:
+            ys = tuple(jnp.stack(y_list, axis=0) for y_list in ys_lists)
 
     return carry, ys

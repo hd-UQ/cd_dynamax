@@ -19,9 +19,12 @@ from dynamax.utils.optimize import run_sgd
 from dynamax.utils.utils import ensure_array_has_batch_dim, pytree_stack
 
 from utils.diffrax_utils import diffeqsolve
+from utils.debug_utils import lax_scan
 
 import blackjax
 from fastprogress.fastprogress import progress_bar
+
+DEBUG = False
 
 class Posterior(Protocol):
     """A :class:`NamedTuple` with parameters stored as :class:`jax.DeviceArray` in the leaf nodes."""
@@ -286,7 +289,7 @@ class SSM(ABC):
         # Sample the remaining emissions and states
         next_keys = jr.split(key, num_timesteps - 1)
         next_inputs = tree_map(lambda x: x[1:], inputs)
-        _, (next_states, next_emissions) = lax.scan(_step, initial_state, (next_keys, t0, t1, next_inputs))
+        _, (next_states, next_emissions) = lax_scan(_step, initial_state, (next_keys, t0, t1, next_inputs), debug=DEBUG)
 
         # Concatenate the initial state and emission with the following ones
         expand_and_cat = lambda x0, x1T: jnp.concatenate((jnp.expand_dims(x0, 0), x1T))
@@ -657,7 +660,7 @@ class SSM(ABC):
         initial_unc_params_trainable = tree_map(
             lambda param, prop: param if prop.trainable else None, initial_unc_params, props
         )
-        
+
         # The log likelihood that the HMC samples from
         def _logprob(unc_params_trainable):
             # Combine the trainable and non-trainable parameters, then convert them to constrained space
