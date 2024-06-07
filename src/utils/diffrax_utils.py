@@ -48,11 +48,14 @@ def diffeqsolve(
     adjoint: dfx.AbstractAdjoint = dfx.DirectAdjoint(),
     dt0: float = 0.01,
     tol_vbt: float = 1e-1, # tolerance for virtual brownian tree
+    max_steps: int = 1e5,
     diffusion = None,
     key = None,
     debug = DEBUG,
     **kwargs
 ) -> jnp.ndarray:
+
+    max_steps = int(max_steps)
 
     if debug:
         # run hand-written Euler and/or Euler-Maruyama using a for loop with fixed step size dt0
@@ -132,6 +135,7 @@ def diffeqsolve(
         dt0=dt0,
         saveat=dfx.SaveAt(t1=True),
         adjoint=adjoint,
+        max_steps=max_steps,
         **kwargs
     ).ys
 
