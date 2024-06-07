@@ -25,8 +25,12 @@ import dynamax
 from jax import numpy as jnp
 from jax import vmap
 import jax.random as jr
-from matplotlib import pyplot as plt
 
+jax.config.update("jax_debug_nans", True)
+#os.environ["JAX_DEBUG_NANS"] = "TRUE"
+#os.environ["JAX_DISABLE_JIT"] = "TRUE"
+
+from matplotlib import pyplot as plt
 
 # use custom src codebase
 from utils.plotting_utils import *
@@ -36,9 +40,6 @@ from continuous_discrete_nonlinear_gaussian_ssm import ContDiscreteNonlinearGaus
 from continuous_discrete_nonlinear_gaussian_ssm.models import *
 
 import blackjax
-
-os.environ["JAX_DEBUG_NANS"] = "TRUE"
-os.environ["JAX_DISABLE_JIT"] = "TRUE"
 
 # If your gradients only arise on the backward pass, but not the forward pass, then try:
 
