@@ -37,6 +37,7 @@ class EKFHyperParams(NamedTuple):
     state_order: str = 'second'
     emission_order: str = 'first'
     smooth_order: str = 'first'
+    cov_rescaling: float = 1.0
 
 def _predict(
     m, P, # Current mean and covariance
@@ -128,7 +129,7 @@ def _predict(
         # Compute predicted covariance
         dt = t1 - t0
         Qc_t = params.dynamics.diffusion_cov.f(None,u,t0)
-        L_t = params.dynamics.diffusion_coefficient.f(None,u,t0)
+        L_t = params.dynamics.diffusion_coefficient.f(None, u, t0) * hyperparams.cov_rescaling
         P_final = P + jnp.sqrt(dt) * L_t @ Qc_t @ L_t.T
     else:
         y0 = (m, P)
