@@ -122,6 +122,14 @@ for dynamics_approx_order in [1., 2.]:
     # Initialize models with linear learnable functions
     cdnl_params, cdnl_param_props = cdnl_model.initialize(
         key1,
+        initial_mean = {
+            "params": jnp.zeros(cdnl_model.state_dim),
+            "props": ParameterProperties() # Also want to learn this
+        },
+        initial_cov = {
+            "params": jnp.eye(cdnl_model.state_dim),
+            "props": ParameterProperties(constrainer=RealToPSDBijector()) # Also want to learn these
+        },
         dynamics_drift={
             "params": LearnableLinear(weights=cd_params.dynamics.weights, bias=cd_params.dynamics.bias),
             "props": LearnableLinear(weights=ParameterProperties(), bias=ParameterProperties()),
@@ -139,6 +147,10 @@ for dynamics_approx_order in [1., 2.]:
             "params": LearnableLinear(weights=cd_params.emissions.weights, bias=cd_params.emissions.bias),
             "props": LearnableLinear(weights=ParameterProperties(), bias=ParameterProperties()),
         },
+        emission_cov = {
+            "params": LearnableMatrix(params=0.1*jnp.eye(cdnl_model.emission_dim)),
+            "props": LearnableMatrix(params=ParameterProperties(constrainer=RealToPSDBijector())) # Also want to learn these
+        }
     )
 
     # Simulate from continuous-discrete nl model

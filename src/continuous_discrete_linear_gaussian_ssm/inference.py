@@ -380,7 +380,7 @@ def cdlgssm_filter(
     emissions:  Float[Array, "num_timesteps emission_dim"],
     t_emissions: Optional[Float[Array, "num_timesteps 1"]]=None,
     inputs: Optional[Float[Array, "num_timesteps input_dim"]]=None,
-    dt_final: Optional[Float]=1e-10
+    dt_final: Optional[Float]=1#e-10
 ) -> PosteriorGSSMFiltered:
     r"""Run a Continuous Discrete Kalman filter to produce the marginal likelihood and filtered state estimates.
 
