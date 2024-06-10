@@ -153,7 +153,7 @@ def ensemble_kalman_filter(
         "predicted_means",
         "predicted_covariances",
     ],
-    dt_final: Optional[float] = 1e-10,
+    dt_final: Optional[float] = 1,
 ) -> PosteriorGSSMFiltered:
     """Run a ensemble Kalman filter to produce the marginal likelihood and
     filtered state estimates.

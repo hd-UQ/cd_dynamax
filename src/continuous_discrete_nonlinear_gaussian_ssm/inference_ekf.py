@@ -89,7 +89,7 @@ def _predict(
 
         # Evaluate the jacobian of the dynamics function at m and inputs
         F_t = jacfwd(f)(m,u,t)
-
+        
         if hyperparams.state_order=='zeroth':
             # Mean evolution
             dmdt = f(m, u, t)
@@ -118,20 +118,23 @@ def _predict(
         else:
             return (dmdt, dPdt)
 
-    # Initialize
+    # Zero-th approach, only mean is pushed via RHS ODE
     if hyperparams.state_order=='zeroth':
+        # Initialize
         y0 = (m,)
 
         # Compute predicted mean
         sol = diffeqsolve(rhs_all, t0=t0, t1=t1, y0=y0)
         m_final = sol[0][-1]
 
-        # Compute predicted covariance
+        # Predicted covariance
         dt = t1 - t0
         Qc_t = params.dynamics.diffusion_cov.f(None,u,t0)
         L_t = params.dynamics.diffusion_coefficient.f(None, u, t0) * hyperparams.cov_rescaling
         P_final = P + jnp.sqrt(dt) * L_t @ Qc_t @ L_t.T
+    # Otherwise, both mean and covariance pushed via RHS ODE
     else:
+        # Initialize
         y0 = (m, P)
         # Compute predicted mean and covariance
         sol = diffeqsolve(rhs_all, t0=t0, t1=t1, y0=y0)
@@ -200,7 +203,7 @@ def extended_kalman_filter(
     hyperparams: EKFHyperParams = EKFHyperParams(),
     inputs: Optional[Float[Array, "ntime input_dim"]] = None,
     output_fields: Optional[List[str]]=["filtered_means", "filtered_covariances", "predicted_means", "predicted_covariances"],
-    dt_final: Optional[float] = 1e-10
+    dt_final: Optional[float] = 1
 ) -> PosteriorGSSMFiltered:
     r"""Run an (iterated) extended Kalman filter to produce the
     marginal likelihood and filtered state estimates.
@@ -585,7 +588,7 @@ def extended_kalman_posterior_sample(
     emissions:  Float[Array, "ntime emission_dim"],
     t_emissions: Optional[Float[Array, "num_timesteps 1"]]=None,
     inputs: Optional[Float[Array, "ntime input_dim"]] = None,
-    dt_final: Optional[float] = 1e-10
+    dt_final: Optional[float] = 1
 ) -> Float[Array, "ntime state_dim"]:
     r"""Run forward-filtering, backward-sampling to draw samples.
 
