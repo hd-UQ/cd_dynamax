@@ -29,6 +29,7 @@ from ssm_temissions import SSM
 from dynamax.linear_gaussian_ssm.inference import ParamsLGSSMInitial, ParamsLGSSMEmissions, PosteriorGSSMFiltered, PosteriorGSSMSmoothed
 # Param definition
 from continuous_discrete_linear_gaussian_ssm.inference import ParamsCDLGSSMDynamics, ParamsCDLGSSM
+from continuous_discrete_linear_gaussian_ssm.inference import KFHyperParams
 from continuous_discrete_linear_gaussian_ssm.inference import cdlgssm_filter, cdlgssm_smoother, cdlgssm_posterior_sample
 from continuous_discrete_linear_gaussian_ssm.inference import compute_pushforward
 
@@ -235,10 +236,10 @@ class ContDiscreteLinearGaussianSSM(SSM):
         params: ParamsCDLGSSM,
         emissions: Float[Array, "ntime emission_dim"],
         t_emissions: Optional[Float[Array, "ntime 1"]]=None,
-        filter_hyperparams: Optional[Any]=None,
+        filter_hyperparams: Optional[KFHyperParams]=None,
         inputs: Optional[Float[Array, "ntime input_dim"]] = None
     ) -> Scalar:
-        filtered_posterior = cdlgssm_filter(params, emissions, t_emissions, inputs)
+        filtered_posterior = cdlgssm_filter(params, emissions, t_emissions, filter_hyperparams, inputs)
         return filtered_posterior.marginal_loglik
 
     def filter(
@@ -246,18 +247,20 @@ class ContDiscreteLinearGaussianSSM(SSM):
         params: ParamsCDLGSSM,
         emissions: Float[Array, "ntime emission_dim"],
         t_emissions: Optional[Float[Array, "ntime 1"]]=None,
+        filter_hyperparams: Optional[KFHyperParams]=None,
         inputs: Optional[Float[Array, "ntime input_dim"]] = None
     ) -> PosteriorGSSMFiltered:
-        return cdlgssm_filter(params, emissions, t_emissions, inputs)
+        return cdlgssm_filter(params, emissions, t_emissions, filter_hyperparams, inputs)
 
     def smoother(
         self,
         params: ParamsCDLGSSM,
         emissions: Float[Array, "ntime emission_dim"],
         t_emissions: Optional[Float[Array, "ntime 1"]]=None,
+        filter_hyperparams: Optional[KFHyperParams]=None,
         inputs: Optional[Float[Array, "ntime input_dim"]] = None
     ) -> PosteriorGSSMSmoothed:
-        return cdlgssm_smoother(params, emissions, t_emissions, inputs)
+        return cdlgssm_smoother(params, emissions, t_emissions, filter_hyperparams, inputs)
 
     def posterior_sample(
         self,
@@ -274,6 +277,7 @@ class ContDiscreteLinearGaussianSSM(SSM):
         params: ParamsCDLGSSM,
         emissions: Float[Array, "ntime emission_dim"],
         t_emissions: Optional[Float[Array, "ntime 1"]]=None,
+        filter_hyperparams: Optional[KFHyperParams]=None,
         inputs: Optional[Float[Array, "ntime input_dim"]]=None
     ) -> Tuple[Float[Array, "ntime emission_dim"], Float[Array, "ntime emission_dim"]]:
         r"""Compute marginal posterior predictive smoothing distribution for each observation.
@@ -287,7 +291,7 @@ class ContDiscreteLinearGaussianSSM(SSM):
             :posterior predictive means $\mathbb{E}[y_{t,d} \mid y_{1:T}]$ and standard deviations $\mathrm{std}[y_{t,d} \mid y_{1:T}]$
 
         """
-        posterior = cdlgssm_smoother(params, emissions, t_emissions, inputs)
+        posterior = cdlgssm_smoother(params, emissions, t_emissions, filter_hyperparams, inputs)
         H = params.emissions.weights
         b = params.emissions.bias
         R = params.emissions.cov
@@ -306,6 +310,7 @@ class ContDiscreteLinearGaussianSSM(SSM):
                          Float[Array, "num_batches num_timesteps emission_dim"]],
         t_emissions: Optional[Union[Float[Array, "num_timesteps 1"],
                         Float[Array, "num_batches num_timesteps 1"]]]=None,
+        filter_hyperparams: Optional[KFHyperParams]=None,
         inputs: Optional[Union[Float[Array, "num_timesteps input_dim"],
                                Float[Array, "num_batches num_timesteps input_dim"]]]=None,
     ) -> Tuple[SuffStatsCDLGSSM, Scalar]:
@@ -315,7 +320,7 @@ class ContDiscreteLinearGaussianSSM(SSM):
             inputs = jnp.zeros((num_timesteps, 0))
 
         # Run the smoother to get posterior expectations
-        posterior = cdlgssm_smoother(params, emissions, t_emissions, inputs)
+        posterior = cdlgssm_smoother(params, emissions, t_emissions, filter_hyperparams, inputs)
 
         # shorthand
         Ex = posterior.smoothed_means

@@ -146,13 +146,16 @@ print("\tChecking emissions...")
 compare(d_emissions, cd_emissions)
 
 print("Continuous-Discrete time filtering: pre-fit")
-from continuous_discrete_linear_gaussian_ssm.inference import cdlgssm_filter
+from continuous_discrete_linear_gaussian_ssm.inference import cdlgssm_filter, KFHyperParams
+# We set dt_final=1 so that predicted mean and covariance at the end of sequence match those of discrete filtering
+kf_hyperparams=KFHyperParams(dt_final = 1.)
 # Define CD linear filter
 cd_filtered_posterior = cdlgssm_filter(
     cd_params,
     cd_emissions,
     t_emissions,
-    inputs
+    filter_hyperparams=kf_hyperparams,
+    inputs=inputs
 )
 
 print("Comparing filtered posteriors...")
@@ -164,6 +167,7 @@ cd_sgd_fitted_params, cd_sgd_lps = cd_model.fit_sgd(
     cd_param_props,
     cd_emissions,
     t_emissions,
+    filter_hyperparams=kf_hyperparams,
     inputs=inputs,
     num_epochs=10
 )
@@ -182,7 +186,8 @@ cd_sgd_fitted_filtered_posterior = cdlgssm_filter(
     cd_sgd_fitted_params,
     cd_emissions,
     t_emissions,
-    inputs
+    filter_hyperparams=kf_hyperparams,
+    inputs=inputs
 )
 
 print("WARNING: Please take the following comparisons with a grain of salt.")

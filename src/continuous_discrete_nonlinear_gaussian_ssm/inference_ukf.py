@@ -17,8 +17,18 @@ from continuous_discrete_nonlinear_gaussian_ssm.cdnlgssm_utils import *
 # Diffrax based diff-eq solver
 from utils.diffrax_utils import diffeqsolve
 
-# Instead of redefining, import UKFHyperParams from dynamax
-from dynamax.nonlinear_gaussian_ssm.inference_ukf import UKFHyperParams
+# We redefe UKFHyperParams, due to dt_final
+#from dynamax.nonlinear_gaussian_ssm.inference_ukf import UKFHyperParams
+class UKFHyperParams(NamedTuple):
+    """Lightweight container for UKF hyperparameters.
+
+    Default values taken from https://github.com/sbitzer/UKF-exposed
+    """
+    dt_final: float = 1e-10 # Small dt_final for predicted mean and covariance at the end of sequence 
+    alpha: float = jnp.sqrt(3)
+    beta: int = 2
+    kappa: int = 1
+    
 
 # Helper functions
 _get_params = lambda x, dim, t: x[t] if x.ndim == dim + 1 else x
@@ -200,7 +210,6 @@ def unscented_kalman_filter(
         "predicted_means",
         "predicted_covariances",
     ],
-    dt_final: Optional[float] = 1,
 ) -> PosteriorGSSMFiltered:
     """Run a unscented Kalman filter to produce the marginal likelihood and
     filtered state estimates.
@@ -212,7 +221,6 @@ def unscented_kalman_filter(
         hyperparams: hyper-parameters.
         inputs: optional array of inputs.
         output_fields: list of fields to include in the output.
-        dt_final: final time instant for the continuous-time solution (creates an unused prediction)
 
     Returns:
         filtered_posterior: posterior object.
@@ -226,7 +234,7 @@ def unscented_kalman_filter(
         t0 = tree_map(lambda x: x[:, 0], t_emissions)
         t1 = tree_map(
             lambda x: jnp.concatenate(
-                (t_emissions[1:, 0], jnp.array([t_emissions[-1, 0] + dt_final]))  # NB: t_{N+1} is simply t_{N}+dt_final
+                (t_emissions[1:, 0], jnp.array([t_emissions[-1, 0] + hyperparams.dt_final]))  # NB: t_{N+1} is simply t_{N}+dt_final
             ),
             t_emissions,
         )
@@ -325,7 +333,7 @@ def unscented_kalman_smoother(
         t0 = tree_map(lambda x: x[:, 0], t_emissions)
         t1 = tree_map(
             lambda x: jnp.concatenate(
-                (t_emissions[1:, 0], jnp.array([t_emissions[-1, 0] + dt_final]))  # NB: t_{N+1} is simply t_{N}+dt_final
+                (t_emissions[1:, 0], jnp.array([t_emissions[-1, 0] + hyperparams.dt_final]))  # NB: t_{N+1} is simply t_{N}+dt_final
             ),
             t_emissions,
         )
