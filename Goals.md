@@ -141,6 +141,7 @@ Goal is to extend dynamax to deal with irregular sampling, via continuous-discre
 
 - How to modify learnable parameters, to have a parameter set
     - Build it for linear function with weights and biases
+
 - How to be able to initialize params across many NL functions
     - Maybe within function wrapper?
 
@@ -148,6 +149,15 @@ Goal is to extend dynamax to deal with irregular sampling, via continuous-discre
     - How to incorporate DL within Jax?
 
 ## Longer term ideas
+
+- Model error learning
+    - not over the whole RHS
+    - over specific variables, with specific variable dependencies
+
+- Model error with GPs
+
+- Having different losses to be fit by SGD
+    - i.e., redefine fit_sgd to have different losses as input
 
 ## Uncertainty Quantification
 
