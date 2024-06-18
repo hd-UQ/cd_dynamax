@@ -26,6 +26,12 @@ from dynamax.linear_gaussian_ssm.inference import ParamsLGSSMInitial, ParamsLGSS
 from dynamax.linear_gaussian_ssm.inference import PosteriorGSSMFiltered
 from dynamax.linear_gaussian_ssm.inference import PosteriorGSSMSmoothed
 
+# Default filtering
+class KFHyperParams(NamedTuple):
+    """Lightweight container for filtering hyperparameters.
+    """
+    dt_final: float = 1e-10 # Small dt_final for predicted mean and covariance at the end of sequence 
+
 # Helper functions
 # _get_params = lambda x, dim, t: x[t] if x.ndim == dim + 1 else x
 def _get_params(x, dim, t):
@@ -269,12 +275,13 @@ def preprocess_args(f):
         params = bound_args.arguments['params']
         emissions = bound_args.arguments['emissions']
         t_emissions = bound_args.arguments['t_emissions']
+        filter_hyperparams = bound_args.arguments['filter_hyperparams']
         inputs = bound_args.arguments['inputs']
 
         num_timesteps = len(emissions)
         full_params, inputs = preprocess_params_and_inputs(params, num_timesteps, inputs)
 
-        return f(full_params, emissions, t_emissions, inputs=inputs)
+        return f(full_params, emissions, t_emissions, filter_hyperparams=filter_hyperparams, inputs=inputs)
     return wrapper
 
 def cdlgssm_joint_sample(
@@ -379,8 +386,8 @@ def cdlgssm_filter(
     params: ParamsCDLGSSM,
     emissions:  Float[Array, "num_timesteps emission_dim"],
     t_emissions: Optional[Float[Array, "num_timesteps 1"]]=None,
+    filter_hyperparams: KFHyperParams = KFHyperParams(),
     inputs: Optional[Float[Array, "num_timesteps input_dim"]]=None,
-    dt_final: Optional[Float]=1 
 ) -> PosteriorGSSMFiltered:
     r"""Run a Continuous Discrete Kalman filter to produce the marginal likelihood and filtered state estimates.
 
@@ -389,7 +396,6 @@ def cdlgssm_filter(
         emissions: array of observations.
         t_emissions: continuous-time specific time instants of observations: if not None, it is an array
         inputs: optional array of inputs.
-        dt_final: final time instant for the continuous-time solution (creates an unused prediction)
 
     Returns:
         PosteriorGSSMFiltered: filtered posterior object
@@ -405,7 +411,7 @@ def cdlgssm_filter(
                 lambda x: jnp.concatenate(
                     (
                         t_emissions[1:,0],
-                        jnp.array([t_emissions[-1,0]+dt_final]) # NB: t_{N+1} is simply t_{N}+dt_final
+                        jnp.array([t_emissions[-1,0]+filter_hyperparams.dt_final]) # NB: t_{N+1} is simply t_{N}+dt_final
                     )
                 ),
                 t_emissions
@@ -518,6 +524,7 @@ def cdlgssm_smoother(
     params: ParamsCDLGSSM,
     emissions: Float[Array, "num_timesteps emission_dim"],
     t_emissions: Optional[Float[Array, "num_timesteps 1"]]=None,
+    filter_hyperparams: Optional[KFHyperParams]=None,
     inputs: Optional[Float[Array, "num_timesteps input_dim"]]=None,
     smoother_type: Optional[str]='cd_smoother_1'
 ) -> PosteriorGSSMSmoothed:
@@ -554,7 +561,7 @@ def cdlgssm_smoother(
     inputs = jnp.zeros((num_timesteps, 0)) if inputs is None else inputs
 
     # Run the Kalman filter
-    filtered_posterior = cdlgssm_filter(params, emissions, t_emissions, inputs)
+    filtered_posterior = cdlgssm_filter(params, emissions, t_emissions, filter_hyperparams, inputs)
     ll, filtered_means, filtered_covs, *_ = filtered_posterior
 
     print('Running KF smoother type = {}'.format(smoother_type))
@@ -646,6 +653,7 @@ def cdlgssm_posterior_sample(
     params: ParamsCDLGSSM,
     emissions:  Float[Array, "num_timesteps emission_dim"],
     t_emissions: Optional[Float[Array, "num_timesteps 1"]]=None,
+    filter_hyperparams: Optional[KFHyperParams]=None,
     inputs: Optional[Float[Array, "num_timesteps input_dim"]]=None,
     jitter: Optional[Scalar]=0
     
@@ -679,7 +687,7 @@ def cdlgssm_posterior_sample(
     inputs = jnp.zeros((num_timesteps, 0)) if inputs is None else inputs
 
     # Run the Kalman filter
-    filtered_posterior = cdlgssm_filter(params, emissions, t_emissions, inputs)
+    filtered_posterior = cdlgssm_filter(params, emissions, t_emissions, filter_hyperparams, inputs)
     ll, filtered_means, filtered_covs, *_ = filtered_posterior
 
     # Sample backward in time

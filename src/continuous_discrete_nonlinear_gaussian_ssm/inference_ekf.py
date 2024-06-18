@@ -34,6 +34,7 @@ class EKFHyperParams(NamedTuple):
 
     """
 
+    dt_final: float = 1e-10 # Small dt_final for predicted mean and covariance at the end of sequence 
     state_order: str = 'second'
     emission_order: str = 'first'
     smooth_order: str = 'first'
@@ -203,7 +204,6 @@ def extended_kalman_filter(
     hyperparams: EKFHyperParams = EKFHyperParams(),
     inputs: Optional[Float[Array, "ntime input_dim"]] = None,
     output_fields: Optional[List[str]]=["filtered_means", "filtered_covariances", "predicted_means", "predicted_covariances"],
-    dt_final: Optional[float] = 1
 ) -> PosteriorGSSMFiltered:
     r"""Run an (iterated) extended Kalman filter to produce the
     marginal likelihood and filtered state estimates.
@@ -221,8 +221,6 @@ def extended_kalman_filter(
         output_fields: list of fields to return in posterior object.
             These can take the values "filtered_means", "filtered_covariances",
             "predicted_means", "predicted_covariances", and "marginal_loglik".
-        dt_final: final time instant for the continuous-time solution (creates an unused prediction)
-
 
     Returns:
         post: posterior object.
@@ -238,7 +236,7 @@ def extended_kalman_filter(
                 lambda x: jnp.concatenate(
                     (
                         t_emissions[1:,0],
-                        jnp.array([t_emissions[-1,0]+dt_final]) # NB: t_{N+1} is simply t_{N}+dt_final
+                        jnp.array([t_emissions[-1,0]+hyperparams.dt_final]) # NB: t_{N+1} is simply t_{N}+dt_final
                     )
                 ),
                 t_emissions
@@ -588,7 +586,6 @@ def extended_kalman_posterior_sample(
     emissions:  Float[Array, "ntime emission_dim"],
     t_emissions: Optional[Float[Array, "num_timesteps 1"]]=None,
     inputs: Optional[Float[Array, "ntime input_dim"]] = None,
-    dt_final: Optional[float] = 1
 ) -> Float[Array, "ntime state_dim"]:
     r"""Run forward-filtering, backward-sampling to draw samples.
 
@@ -598,7 +595,6 @@ def extended_kalman_posterior_sample(
         emissions: observation sequence.
         t_emissions: continuous-time specific time instants of observations: if not None, it is an array 
         inputs: optional array of inputs
-        dt_final: final time instant for the continuous-time solution (creates an unused prediction)
 
     Returns:
         Float[Array, "ntime state_dim"]: one sample of $z_{1:T}$ from the posterior distribution on latent states.
@@ -611,7 +607,7 @@ def extended_kalman_posterior_sample(
         t0 = tree_map(lambda x: x[:,0], t_emissions)
         t1 = tree_map(
             lambda x: jnp.concatenate(
-                (t_emissions[1:, 0], jnp.array([t_emissions[-1, 0] + dt_final]))  # NB: t_{N+1} is simply t_{N}+dt_final
+                (t_emissions[1:, 0], jnp.array([t_emissions[-1, 0] + hyperparams.dt_final]))  # NB: t_{N+1} is simply t_{N}+dt_final
             ),
             t_emissions,
         )

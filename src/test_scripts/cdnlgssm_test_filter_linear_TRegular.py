@@ -80,13 +80,16 @@ print("\tChecking emissions...")
 compare(cd_num_timesteps_emissions, cd_emissions)
 
 print("Continuous-Discrete time filtering: pre-fit")
-from continuous_discrete_linear_gaussian_ssm.inference import cdlgssm_filter
+from continuous_discrete_linear_gaussian_ssm.inference import cdlgssm_filter, KFHyperParams
+# We set dt_final=1 so that predicted mean and covariance at the end of sequence match those of discrete filtering
+kf_hyperparams=KFHyperParams(dt_final = 1.)
 # Define CD linear filter
 cd_filtered_posterior = cdlgssm_filter(
     cd_params,
     cd_emissions,
     t_emissions,
-    inputs
+    filter_hyperparams=kf_hyperparams,
+    inputs=inputs
 )
 
 print("Fitting continuous-discrete time linear with SGD")
@@ -95,6 +98,7 @@ cd_sgd_fitted_params, cd_sgd_lps = cd_model.fit_sgd(
     cd_param_props,
     cd_emissions,
     t_emissions,
+    filter_hyperparams=kf_hyperparams,
     inputs=inputs,
     num_epochs=10
 )
@@ -104,7 +108,8 @@ cd_sgd_fitted_filtered_posterior = cdlgssm_filter(
     cd_sgd_fitted_params,
     cd_emissions,
     t_emissions,
-    inputs
+    filter_hyperparams=kf_hyperparams,
+    inputs=inputs
 )
 
 ########### Now make non-linear models, assuming linearity ########
@@ -176,7 +181,7 @@ for dynamics_approx_order in [1., 2.]:
         cd_ekf_post = cdnlgssm_filter(
                 cdnl_params,
                 cdnl_emissions,
-                hyperparams=EKFHyperParams(state_order=state_order, emission_order="first"),
+                hyperparams=EKFHyperParams(dt_final=1., state_order=state_order, emission_order="first"),
                 t_emissions=t_emissions,
                 inputs=inputs,
             )
@@ -191,7 +196,7 @@ for dynamics_approx_order in [1., 2.]:
                 cdnl_params,
                 cdnl_param_props,
                 cdnl_emissions,
-                filter_hyperparams=EKFHyperParams(state_order=state_order, emission_order="first"),
+                filter_hyperparams=EKFHyperParams(dt_final=1., state_order=state_order, emission_order="first"),
                 t_emissions=t_emissions,
                 inputs=inputs,
                 num_epochs=10
@@ -248,7 +253,7 @@ for dynamics_approx_order in [1., 2.]:
         cdnl_sgd_fitted_filtered_posterior = cdnlgssm_filter(
                 cdnl_sgd_fitted_params,
                 cdnl_emissions,
-                hyperparams=EKFHyperParams(state_order=state_order, emission_order="first"),
+                hyperparams=EKFHyperParams(dt_final=1., state_order=state_order, emission_order="first"),
                 t_emissions=t_emissions,
                 inputs=inputs,
         )
@@ -267,7 +272,7 @@ from continuous_discrete_nonlinear_gaussian_ssm import UKFHyperParams
 print(f"**********************************")
 print("Running Unscented Kalman Filter with non-linear model class and data from first-order CDNLGSSM model")    
 # define hyperparameters
-ukf_params = UKFHyperParams()
+ukf_params = UKFHyperParams(dt_final=1.)
 
 cd_ukf_post = cdnlgssm_filter(
     cdnl_params,
@@ -296,7 +301,7 @@ for N_particles in [1e2, 1e3, 1e4]:
         print(f"Running Ensemble Kalman Filter (perturb_measurements={perturb_measurements}, N_particles={N_particles}) with non-linear model class and data from first-order CDNLGSSM model")
 
         # define hyperparameters
-        enkf_params = EnKFHyperParams(N_particles=int(N_particles), perturb_measurements=perturb_measurements)
+        enkf_params = EnKFHyperParams(dt_final=1., N_particles=int(N_particles), perturb_measurements=perturb_measurements)
 
         cd_enkf_post = cdnlgssm_filter(
             cdnl_params,

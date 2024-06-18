@@ -123,7 +123,9 @@ compare(d_states, cd_states)
 print("\tChecking emissions...")
 compare(d_emissions, cd_emissions)
 
-from continuous_discrete_linear_gaussian_ssm.inference import cdlgssm_smoother
+from continuous_discrete_linear_gaussian_ssm.inference import cdlgssm_smoother, KFHyperParams
+# We set dt_final=1 so that predicted mean and covariance at the end of sequence match those of discrete filtering
+kf_hyperparams=KFHyperParams(dt_final = 1.)
 
 for smoother_type in ["cd_smoother_1", "cd_smoother_2"]:
     print(f'Continuous-Discrete time KF smoothing {smoother_type}')
@@ -131,7 +133,8 @@ for smoother_type in ["cd_smoother_1", "cd_smoother_2"]:
         cd_params,
         cd_emissions,
         t_emissions,
-        inputs,
+        filter_hyperparams=kf_hyperparams,
+        inputs=inputs,
         smoother_type=smoother_type
     )
 
