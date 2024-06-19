@@ -171,9 +171,8 @@ class ContDiscreteNonlinearGaussianSSM(SSM):
         emission_cov: dict = None,
     ) -> Tuple[ParamsCDNLGSSM, PyTree]:
 
-        # Arbitrary default values, for demo purposes
+        ### Arbitrary default values, for demo purposes
         # Default is to have NOTHING learnable.
-
         ## Initial
         _initial_mean = {
             "params": jnp.zeros(self.state_dim),
