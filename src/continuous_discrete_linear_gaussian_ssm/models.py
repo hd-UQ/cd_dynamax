@@ -98,20 +98,22 @@ class ContDiscreteLinearGaussianSSM(SSM):
     def inputs_shape(self):
         return (self.input_dim,) if self.input_dim > 0 else None
 
+    # This is a revised initialize, consistent across cd-dynamax, based on dicts
     def initialize(
         self,
         key: PRNGKey =jr.PRNGKey(0),
-        initial_mean: Optional[Float[Array, "state_dim"]]=None,
-        initial_cov=None,
-        dynamics_weights=None,
-        dynamics_bias=None,
-        dynamics_input_weights=None,
-        dynamics_diffusion_coefficient=None,
-        dynamics_diffusion_cov=None,
-        emission_weights=None,
-        emission_bias=None,
-        emission_input_weights=None,
-        emission_cov=None
+        initial_mean: dict = None,
+        initial_cov: dict = None,
+        dynamics_weights: dict = None,
+        dynamics_bias: dict = None,
+        dynamics_input_weights: dict = None,
+        dynamics_diffusion_coefficient: dict = None,
+        dynamics_diffusion_cov: dict = None,
+        dynamics_approx_order: Optional[float] = 2.,
+        emission_weights: dict = None,
+        emission_bias: dict = None,
+        emission_input_weights: dict = None,
+        emission_cov: dict = None,
     ) -> Tuple[ParamsCDLGSSM, ParamsCDLGSSM]:
         r"""Initialize model parameters that are set to None, and their corresponding properties.
 
@@ -133,61 +135,104 @@ class ContDiscreteLinearGaussianSSM(SSM):
             Tuple[ParamsCDLGSSM, ParamsCDLGSSM]: parameters and their properties.
         """
 
-        # Arbitrary default values, for demo purposes.
-        _initial_mean = jnp.zeros(self.state_dim)
-        _initial_cov = jnp.eye(self.state_dim)
-        _dynamics_weights = -0.1 * jnp.eye(self.state_dim)
-        _dynamics_input_weights = jnp.zeros((self.state_dim, self.input_dim))
-        _dynamics_bias = jnp.zeros((self.state_dim,)) if self.has_dynamics_bias else None
-        _dynamics_diffusion_coefficient = 0.1 * jnp.eye(self.state_dim)
-        _dynamics_diffusion_cov = 0.1 * jnp.eye(self.state_dim)
-        _emission_weights = jr.normal(key, (self.emission_dim, self.state_dim))
-        _emission_input_weights = jnp.zeros((self.emission_dim, self.input_dim))
-        _emission_bias = jnp.zeros((self.emission_dim,)) if self.has_emissions_bias else None
-        _emission_cov = 0.1 * jnp.eye(self.emission_dim)
+        ### Arbitrary default values, for demo purposes
+        # Default is to have NOTHING learnable.
+        ## Initial
+        _initial_mean = {
+            "params": jnp.zeros(self.state_dim),
+            "props": ParameterProperties(trainable=False)
+        }
+
+        _initial_cov = {
+            "params": jnp.eye(self.state_dim),
+            "props": ParameterProperties(
+                        trainable=False,
+                        constrainer=RealToPSDBijector()
+                    )
+        }
+
+        ## Dynamics
+        _dynamics_weights = {
+            "params": -0.1 * jnp.eye(self.state_dim),
+            "props": ParameterProperties(trainable=False)
+        }
+        _dynamics_input_weights = {
+            "params": jnp.zeros((self.state_dim, self.input_dim)),
+            "props": ParameterProperties(trainable=False)
+        }
+        _dynamics_bias = {
+            "params": jnp.zeros((self.state_dim,)) if self.has_dynamics_bias else None,
+            "props": ParameterProperties(trainable=False)
+        }
+        _dynamics_diffusion_coefficient = {
+            "params": 0.1 * jnp.eye(self.state_dim),
+            "props": ParameterProperties(trainable=False)
+        }
+        _dynamics_diffusion_cov = {
+            "params": 0.1 * jnp.eye(self.state_dim),
+            "props": ParameterProperties(trainable=False, constrainer=RealToPSDBijector())
+        }
+        
+        ## Emission
+        _emission_weights = {
+            "params": jr.normal(key, (self.emission_dim, self.state_dim)),
+            "props": ParameterProperties(trainable=False)
+        }
+        _emission_input_weights = {
+            "params": jnp.zeros((self.emission_dim, self.input_dim)),
+            "props": ParameterProperties(trainable=False)
+        }
+        _emission_bias = {
+            "params": jnp.zeros((self.emission_dim,)) if self.has_emissions_bias else None,
+            "props": ParameterProperties(trainable=False)
+        }
+        _emission_cov = {
+            "params": 0.1 * jnp.eye(self.emission_dim),
+            "props": ParameterProperties(trainable=False, constrainer=RealToPSDBijector())
+        }
 
         # Only use the values above if the user hasn't specified their own
         default = lambda x, x0: x if x is not None else x0
 
-        # Create nested dictionary of params
-        params = ParamsCDLGSSM(
-            initial=ParamsLGSSMInitial(
-                mean=default(initial_mean, _initial_mean),
-                cov=default(initial_cov, _initial_cov)
+        # replace defaults as needed
+        initial_mean = default(initial_mean, _initial_mean)
+        initial_cov = default(initial_cov, _initial_cov)
+
+        dynamics_weights = default(dynamics_weights, _dynamics_weights)
+        dynamics_input_weights = default(dynamics_input_weights, _dynamics_input_weights)
+        dynamics_bias = default(dynamics_bias, _dynamics_bias)
+        dynamics_diffusion_coefficient = default(dynamics_diffusion_coefficient, _dynamics_diffusion_coefficient)
+        dynamics_diffusion_cov = default(dynamics_diffusion_cov, _dynamics_diffusion_cov)
+        
+        emission_weights = default(emission_weights, _emission_weights)
+        emission_input_weights = default(emission_input_weights, _emission_input_weights)
+        emission_bias = default(emission_bias, _emission_bias)
+        emission_cov = default(emission_cov, _emission_cov)
+        
+        ## Create nested dictionary of params
+        params_dict = {"params": {}, "props": {}}
+        for key in params_dict.keys():
+            params_dict[key] = ParamsCDLGSSM(
+                initial=ParamsLGSSMInitial(
+                    mean=initial_mean[key],
+                    cov=initial_cov[key]
                 ),
-            dynamics=ParamsCDLGSSMDynamics(
-                weights=default(dynamics_weights, _dynamics_weights),
-                bias=default(dynamics_bias, _dynamics_bias),
-                input_weights=default(dynamics_input_weights, _dynamics_input_weights),
-                diffusion_coefficient=default(dynamics_diffusion_coefficient, _dynamics_diffusion_coefficient),
-                diffusion_cov=default(dynamics_diffusion_cov, _dynamics_diffusion_cov)
+                dynamics=ParamsCDLGSSMDynamics(
+                    weights=dynamics_weights[key],
+                    input_weights=dynamics_input_weights[key],
+                    bias=dynamics_bias[key],
+                    diffusion_coefficient=dynamics_diffusion_coefficient[key],
+                    diffusion_cov=dynamics_diffusion_cov[key],
                 ),
-            emissions=ParamsLGSSMEmissions(
-                weights=default(emission_weights, _emission_weights),
-                bias=default(emission_bias, _emission_bias),
-                input_weights=default(emission_input_weights, _emission_input_weights),
-                cov=default(emission_cov, _emission_cov)
+                emissions=ParamsLGSSMEmissions(
+                    weights=emission_weights[key],
+                    input_weights=emission_input_weights[key],
+                    bias=emission_bias[key],
+                    cov=emission_cov[key],
                 )
             )
-        
-        # The keys of param_props must match those of params!
-        props = ParamsCDLGSSM(
-            initial=ParamsLGSSMInitial(
-                mean=ParameterProperties(),
-                cov=ParameterProperties(constrainer=RealToPSDBijector())),
-            dynamics=ParamsCDLGSSMDynamics(
-                weights=ParameterProperties(),
-                bias=ParameterProperties(),
-                input_weights=ParameterProperties(),
-                diffusion_coefficient=ParameterProperties(),
-                diffusion_cov=ParameterProperties(constrainer=RealToPSDBijector())),
-            emissions=ParamsLGSSMEmissions(
-                weights=ParameterProperties(),
-                bias=ParameterProperties(),
-                input_weights=ParameterProperties(),
-                cov=ParameterProperties(constrainer=RealToPSDBijector()))
-            )
-        return params, props
+
+        return params_dict["params"], params_dict["props"]
 
     def initial_distribution(
         self,
