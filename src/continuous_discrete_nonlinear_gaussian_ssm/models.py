@@ -157,7 +157,7 @@ class ContDiscreteNonlinearGaussianSSM(SSM):
     def inputs_shape(self):
         return (self.input_dim,) if self.input_dim > 0 else None
 
-    # TODO: why no need to define initialize()?
+    # This is a revised initialize, consistent across cd-dynamax, based on dicts
     def initialize(
         self,
         rnd_key: Float[Array, "key"],

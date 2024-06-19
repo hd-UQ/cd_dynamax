@@ -47,13 +47,49 @@ cd_model = ContDiscreteLinearGaussianSSM(
     has_dynamics_bias = True,
     has_emissions_bias = True,
 )
+# Initialize, controlling what is learned
+from continuous_discrete_linear_gaussian_ssm.models import *
 cd_params, cd_param_props = cd_model.initialize(
     key1,
-    dynamics_weights=-0.1 * jnp.eye(cd_model.state_dim),  # Hard coded here for tests to match with default in linear
-    dynamics_diffusion_coefficient=0.5 * jnp.eye(cd_model.state_dim),
-    dynamics_diffusion_cov=0.5 * jnp.eye(cd_model.state_dim),
-    dynamics_bias=jnp.zeros(cd_model.state_dim),
-    emission_bias=jnp.zeros(cd_model.emission_dim),
+    ## Initial
+    initial_mean = {
+            "params": jnp.zeros(cd_model.state_dim),
+            "props": ParameterProperties()
+    },
+    initial_cov = {
+        "params": jnp.eye(cd_model.state_dim),
+        "props": ParameterProperties(constrainer=RealToPSDBijector())
+    },
+    ## Dynamics
+    dynamics_weights = {
+        "params": -0.1 * jnp.eye(cd_model.state_dim),
+        "props": ParameterProperties()
+    },
+    dynamics_bias = {
+        "params": jnp.zeros((cd_model.state_dim,)),
+        "props": ParameterProperties(trainable=False) # We do not learn bias term!
+    },
+    dynamics_diffusion_coefficient = {
+        "params": 0.1 * jnp.eye(cd_model.state_dim),
+        "props": ParameterProperties()
+    },
+    dynamics_diffusion_cov = {
+        "params": 0.1 * jnp.eye(cd_model.state_dim),
+        "props": ParameterProperties(constrainer=RealToPSDBijector())
+    },
+    ## Emission
+    emission_weights = {
+        "params": jr.normal(key1, (cd_model.emission_dim, cd_model.state_dim)),
+        "props": ParameterProperties()
+    },
+    emission_bias = {
+        "params": jnp.zeros((cd_model.emission_dim,)),
+        "props": ParameterProperties(trainable=False) # We do not learn bias term!
+    },
+    emission_cov = {
+        "params": 0.1 * jnp.eye(cd_model.emission_dim),
+        "props": ParameterProperties(constrainer=RealToPSDBijector())
+    }
 )
 
 # Simulate from continuous model
@@ -129,15 +165,21 @@ for dynamics_approx_order in [1., 2.]:
         key1,
         initial_mean = {
             "params": jnp.zeros(cdnl_model.state_dim),
-            "props": ParameterProperties() # Also want to learn this
+            "props": ParameterProperties()
         },
         initial_cov = {
             "params": jnp.eye(cdnl_model.state_dim),
-            "props": ParameterProperties(constrainer=RealToPSDBijector()) # Also want to learn these
+            "props": ParameterProperties(constrainer=RealToPSDBijector())
         },
         dynamics_drift={
-            "params": LearnableLinear(weights=cd_params.dynamics.weights, bias=cd_params.dynamics.bias),
-            "props": LearnableLinear(weights=ParameterProperties(), bias=ParameterProperties()),
+            "params": LearnableLinear(
+                weights=cd_params.dynamics.weights,
+                bias=cd_params.dynamics.bias
+            ),
+            "props": LearnableLinear(
+                weights=ParameterProperties(),
+                bias=ParameterProperties(trainable=False) # We do not learn bias term!
+            ),
         },
         dynamics_diffusion_coefficient={
             "params": LearnableMatrix(params=cd_params.dynamics.diffusion_coefficient),
@@ -149,12 +191,18 @@ for dynamics_approx_order in [1., 2.]:
         },
         dynamics_approx_order=dynamics_approx_order,
         emission_function={
-            "params": LearnableLinear(weights=cd_params.emissions.weights, bias=cd_params.emissions.bias),
-            "props": LearnableLinear(weights=ParameterProperties(), bias=ParameterProperties()),
+            "params": LearnableLinear(
+                weights=cd_params.emissions.weights,
+                bias=cd_params.emissions.bias
+            ),
+            "props": LearnableLinear(
+                weights=ParameterProperties(),
+                bias=ParameterProperties(trainable=False) # We do not learn bias term!
+            ),
         },
         emission_cov = {
             "params": LearnableMatrix(params=0.1*jnp.eye(cdnl_model.emission_dim)),
-            "props": LearnableMatrix(params=ParameterProperties(constrainer=RealToPSDBijector())) # Also want to learn these
+            "props": LearnableMatrix(params=ParameterProperties(constrainer=RealToPSDBijector()))
         }
     )
 
@@ -262,7 +310,7 @@ for dynamics_approx_order in [1., 2.]:
         compare_structs(
             cd_sgd_fitted_filtered_posterior,
             cdnl_sgd_fitted_filtered_posterior,
-            accept_failure=True
+            accept_failure=False
         )
 
 
