@@ -97,23 +97,93 @@ cd_model = ContDiscreteLinearGaussianSSM(
     emission_dim=EMISSION_DIM,
 )
 
-# Equivalent initializations
+# Initialize, controlling what is learned
+from continuous_discrete_linear_gaussian_ssm.models import *
 cd_params, cd_param_props = cd_model.initialize(
     key_init,
-    dynamics_weights=-0.1 * jnp.eye(cd_model.state_dim),  # Hard coded here for tests to match with default in linear
-    dynamics_diffusion_coefficient=0.5*jnp.eye(cd_model.state_dim),
-    dynamics_diffusion_cov=0.5*jnp.eye(cd_model.state_dim),
-    dynamics_bias=jnp.zeros(d_model.state_dim),
-    emission_bias=jnp.zeros(d_model.emission_dim),
+    ## Initial
+    initial_mean = {
+            "params": jnp.zeros(cd_model.state_dim),
+            "props": ParameterProperties()
+    },
+    initial_cov = {
+        "params": jnp.eye(cd_model.state_dim),
+        "props": ParameterProperties(constrainer=RealToPSDBijector())
+    },
+    ## Dynamics
+    dynamics_weights = {
+        "params": -0.1 * jnp.eye(cd_model.state_dim),
+        "props": ParameterProperties()
+    },
+    dynamics_bias = {
+        "params": jnp.zeros((cd_model.state_dim,)),
+        "props": ParameterProperties()
+    },
+    dynamics_diffusion_coefficient = {
+        "params": 0.5 * jnp.eye(cd_model.state_dim),
+        "props": ParameterProperties()
+    },
+    dynamics_diffusion_cov = {
+        "params": 0.5 * jnp.eye(cd_model.state_dim),
+        "props": ParameterProperties(constrainer=RealToPSDBijector())
+    },
+    ## Emission
+    emission_weights = {
+        "params": jr.normal(key_init, (cd_model.emission_dim, cd_model.state_dim)),
+        "props": ParameterProperties()
+    },
+    emission_bias = {
+        "params": jnp.zeros((cd_model.emission_dim,)),
+        "props": ParameterProperties()
+    },
+    emission_cov = {
+        "params": 0.1 * jnp.eye(cd_model.emission_dim),
+        "props": ParameterProperties(constrainer=RealToPSDBijector())
+    }
 )
 
+# Equivalent initialization to above
 cd_params, cd_param_props = cd_model.initialize(
     key_init,
-    dynamics_weights=-0.1 * jnp.eye(cd_model.state_dim),  # Hard coded here for tests to match with default in linear
-    dynamics_diffusion_coefficient=jnp.eye(cd_model.state_dim),
-    dynamics_diffusion_cov=(0.5*0.5)*0.5*jnp.eye(cd_model.state_dim),
-    dynamics_bias=jnp.zeros(d_model.state_dim),
-    emission_bias=jnp.zeros(d_model.emission_dim),
+    ## Initial
+    initial_mean = {
+            "params": jnp.zeros(cd_model.state_dim),
+            "props": ParameterProperties()
+    },
+    initial_cov = {
+        "params": jnp.eye(cd_model.state_dim),
+        "props": ParameterProperties(constrainer=RealToPSDBijector())
+    },
+    ## Dynamics
+    dynamics_weights = {
+        "params": -0.1 * jnp.eye(cd_model.state_dim),
+        "props": ParameterProperties()
+    },
+    dynamics_bias = {
+        "params": jnp.zeros((cd_model.state_dim,)),
+        "props": ParameterProperties()
+    },
+    dynamics_diffusion_coefficient = {
+        "params": jnp.eye(cd_model.state_dim),
+        "props": ParameterProperties()
+    },
+    dynamics_diffusion_cov = {
+        "params": (0.5*0.5)*0.5 * jnp.eye(cd_model.state_dim),
+        "props": ParameterProperties(constrainer=RealToPSDBijector())
+    },
+    ## Emission
+    emission_weights = {
+        "params": jr.normal(key_init, (cd_model.emission_dim, cd_model.state_dim)),
+        "props": ParameterProperties()
+    },
+    emission_bias = {
+        "params": jnp.zeros((cd_model.emission_dim,)),
+        "props": ParameterProperties()
+    },
+    emission_cov = {
+        "params": 0.1 * jnp.eye(cd_model.emission_dim),
+        "props": ParameterProperties(constrainer=RealToPSDBijector())
+    }
 )
 
 # Simulate from continuous model
