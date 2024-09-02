@@ -98,7 +98,35 @@ Goal is to extend dynamax to deal with irregular sampling, via continuous-discre
     - How to deal with MLE vs MAP
         - Simply editing log-priors? (Iñigo)
         - Editing fit_sgd with an argument?
-        
+   
+## From Matt's notes
+
+Things to go after next:
+
+1. Scalings and normalizations.
+-Currently, I “cheat” by using the mean/std of all 3 true states to normalize the RHS. 
+-We should be trying to discover any necessary scalings or only use mean/std from the observables
+
+2. Automate and improve SGD
+-Re-implement the validation loss options in SGD
+-Start using “ReduceLR_on_Plateau” (https://optax.readthedocs.io/en/latest/_collections/examples/contrib/reduce_on_plateau.html)
+—> note that this was added to optax ~6 months ago, and thus is not available in our conda env. We should probably update, but do this carefully in a new branch
+
+3. Understand likelihoods better
+-What does it mean to change the diffusion covariance from Bayesian perspective?
+-Are the likelihoods for the learned model very similar to the true model? Why / why not?
+
+4. Build very targeted evaluations
+-e.g., we filter a time series for T_1 time units, then make a forecast over a horizon of length T_2
+
+5. Quantify uncertainties!
+-Run MCMC initialized at fitted_params, and see what chains look like!
+-For each MCMC sample, perform the evaluation in (4)….then plot the resulting *distribution* of forecasts. How well does this capture our uncertainty?
+
+6. Ensure all COVs are PSD
+-We should think about how to implement all of our filters to behave better!
+-I believe many people have faced these issues, and have devised ways to deal with them.
+     
 ### Code optimization (All Pending)
 
 - Pending:
@@ -119,6 +147,10 @@ Goal is to extend dynamax to deal with irregular sampling, via continuous-discre
     - Add data normalizations
     - Start running on GPUs!
 
+- Do we want to modify dynamax code?
+    - this may break backward compabilities
+    - i.e., https://github.com/iurteaga/hybrid_dynamics_uq/commit/3ddb6eea41aff08e1348e2675500429c577bb4be 
+    
 ## For v0 
 
 - Tests for linear and nonlinear CD filtering and smoothing with regular and irregular sampling
@@ -151,13 +183,19 @@ Goal is to extend dynamax to deal with irregular sampling, via continuous-discre
 ## Longer term ideas
 
 - Model error learning
-    - not over the whole RHS
-    - over specific variables, with specific variable dependencies
+    - NNs
+        - not over the whole RHS
+        - over specific variables, with specific variable dependencies
+    - GPs
+    
+- UQ for things with ML
+    - How to do this for NNs?
+    - How does GP help/facilitate this
 
-- Model error with GPs
-
-- Having different losses to be fit by SGD
-    - i.e., redefine fit_sgd to have different losses as input
+- Improved optimizations
+    - Having different losses to be fit by SGD
+        - i.e., redefine fit_sgd to have different losses as input
+    - start with coarse/cheap/robust approximations of likelihood….then refine learning with higher-fidelity approximations of likelihood
 
 ## Uncertainty Quantification
 
@@ -188,7 +226,6 @@ Goal is to extend dynamax to deal with irregular sampling, via continuous-discre
     - [Reduced Graham, Elhadad + Albers model](https://www.sciencedirect.com/science/article/abs/pii/S0025556423000202?via%3Dihub)
         - A version available [in arxiv](https://arxiv.org/abs/2006.05034)
         - this is clearly an ODE!
-        
 
 ## Others
 
