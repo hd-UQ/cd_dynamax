@@ -146,10 +146,6 @@ Things to go after next:
     - Implement progress bars (e.g. for SGD) that are compatible with lax.scan
     - Add data normalizations
     - Start running on GPUs!
-
-- Do we want to modify dynamax code?
-    - this may break backward compabilities
-    - i.e., https://github.com/iurteaga/hybrid_dynamics_uq/commit/3ddb6eea41aff08e1348e2675500429c577bb4be 
     
 ## For v0 
 

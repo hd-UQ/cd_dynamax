@@ -343,7 +343,7 @@ optimizer = optax.chain(
     optax.scale(-1.0),
 )
 
-fitted_params, fitted_params_history, grad_history, marginal_lls = true_model.fit_sgd(
+fitted_params, marginal_lls, fitted_params_history, grad_history = true_model.fit_sgd(
     # true_params,
     # true_props,
     initial_params,
@@ -403,7 +403,7 @@ optimizer = optax.chain(
 )
 
 # Re-run 1 epoch of SGD to see if it still switches to NAN
-fitted_params2, fitted_params_history2, grad_history2, marginal_lls2 = test_model.fit_sgd(
+fitted_params2, marginal_lls2, fitted_params_history2, grad_history2 = test_model.fit_sgd(
     # true_params,
     # true_props,
     tree_map(lambda x: x[1], fitted_params_history),
