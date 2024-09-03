@@ -25,8 +25,6 @@ def run_sgd(loss_fn,
             batch_size=1,
             num_epochs=50,
             shuffle=False,
-            return_param_history=False,
-            return_grad_history=False,
             key=jr.PRNGKey(0)):
     """
     Note that batch_emissions is initially of shape (N,T)
@@ -43,8 +41,6 @@ def run_sgd(loss_fn,
         batch_size: Number of sequences used at each update step.
         num_iters: Iterations made on only one mini-batch.
         shuffle: Indicates whether to shuffle emissions.
-        return_param_history: Indicates whether to return history of parameters.
-        return_grad_history: Indicates whether to return history of gradients.
         key: RNG key.
 
     Returns:
@@ -67,54 +63,24 @@ def run_sgd(loss_fn,
         sample_generator = sample_minibatches(key, dataset, batch_size, shuffle)
 
         def cond_fun(state):
-            itr, params, opt_state, avg_loss, grads = state
+            itr, params, opt_state, avg_loss = state
             return itr < num_batches
 
         def body_fun(state):
-            itr, params, opt_state, avg_loss, grads = state
+            itr, params, opt_state, avg_loss = state
             minibatch = next(sample_generator)  ## TODO: Does this work inside while_loop??
             this_loss, grads = loss_grad_fn(params, minibatch)
             updates, opt_state = optimizer.update(grads, opt_state)
             params = optax.apply_updates(params, updates)
-            # only returns the last gradient
-            # if not return_grad_history:
-            #     grads = None
-            return itr + 1, params, opt_state, (avg_loss * itr + this_loss) / (itr + 1), grads
+            return itr + 1, params, opt_state, (avg_loss * itr + this_loss) / (itr + 1)
 
-        init_val = (0, params, opt_state, 0.0, params) # last param is dummy for grads.
-        _, params, opt_state, avg_loss, grads = lax.while_loop(cond_fun, body_fun, init_val)
-
-        if return_param_history:
-            if return_grad_history:
-                history = (avg_loss, params, grads)
-            else:
-                history = (avg_loss, params)
-        else:
-            if return_grad_history:
-                history = (avg_loss, grads)
-            else:
-                history = (avg_loss)
-
-        return (params, opt_state), history
+        init_val = (0, params, opt_state, 0.0)
+        _, params, opt_state, avg_loss = lax.while_loop(cond_fun, body_fun, init_val)
+        return (params, opt_state), avg_loss
 
     keys = jr.split(key, num_epochs)
-    (params, _), history = lax.scan(train_step, (params, opt_state), keys)
-    if return_param_history:
-        if return_grad_history:
-            losses, param_history, grad_history = history
-        else:
-            grad_history = None
-            losses, param_history = history
-    else:
-        if return_grad_history:
-            losses, grad_history = history
-        else:
-            grad_history = None
-            losses = history
-        losses = history
-        param_history = None
-
-    return params, param_history, grad_history, losses
+    (params, _), losses = lax.scan(train_step, (params, opt_state), keys)
+    return params, losses
 
 def run_gradient_descent(objective,
                          params,

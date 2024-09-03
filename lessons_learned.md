@@ -29,3 +29,8 @@
     - dt_final is incorporated as hyperparameter in filter_hyperparams (with default 1e-10)
         - user can edit, for instance, to pass discrete Vs continous-discrete tests
     
+# Codebase maintenance
+
+- As much as possible, we try to **not modify** original dynamax code
+    - Instead, we write wrapper or utility functions if additional or complementary functionalities are needed.
+

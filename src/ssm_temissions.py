@@ -15,11 +15,12 @@ from typing_extensions import Protocol
 from dynamax.parameters import to_unconstrained, from_unconstrained, log_det_jac_constrain
 from dynamax.parameters import ParameterSet, PropertySet
 from dynamax.types import PRNGKey, Scalar
-from dynamax.utils.optimize import run_sgd
 from dynamax.utils.utils import ensure_array_has_batch_dim, pytree_stack
 
+# From our codebase
 from utils.diffrax_utils import diffeqsolve
 from utils.debug_utils import lax_scan
+from utils.optimize_utils import run_sgd
 
 import blackjax
 from fastprogress.fastprogress import progress_bar
@@ -560,6 +561,7 @@ class SSM(ABC):
 
         Returns:
             tuple of new parameters and losses (negative scaled marginal log probs) over the course of SGD iterations.
+            if interested in the history of parameters and gradients, these are returned as well.
 
         """
         # Make sure the emissions and inputs have batch dimensions
@@ -589,29 +591,35 @@ class SSM(ABC):
             return -lp / batch_emissions.size
 
         dataset = (batch_emissions, batch_t_emissions, batch_inputs)
-        unc_params, unc_params_history, grad_history, losses = run_sgd(_loss_fn,
-                                     unc_params,
-                                     dataset,
-                                     optimizer=optimizer,
-                                     batch_size=batch_size,
-                                     num_epochs=num_epochs,
-                                     shuffle=shuffle,
-                                     return_param_history=return_param_history,
-                                     return_grad_history=return_grad_history,
-                                     key=key)
+        unc_params, losses, unc_params_history, grad_history = run_sgd(_loss_fn,
+                                    unc_params,
+                                    dataset,
+                                    optimizer=optimizer,
+                                    batch_size=batch_size,
+                                    num_epochs=num_epochs,
+                                    shuffle=shuffle,
+                                    return_param_history=return_param_history,
+                                    return_grad_history=return_grad_history,
+                                    key=key
+                                )
 
+        # Convert unconstrained parameters back to constrained space
         params = from_unconstrained(unc_params, props)
         params_history = from_unconstrained(unc_params_history, props)
-        if return_param_history:
-            if return_grad_history:
-                return params, params_history, grad_history, losses
-            else:
-                return params, params_history, losses
+
+        # If interested in history of parameters and gradients
+        if return_param_history and return_grad_history:
+            # Return all
+            return params, losses, params_history, grad_history
+        # If not interested in history of parameters
+        elif not return_param_history and return_grad_history:
+            return params, losses, grad_history
+        # If not interested in history of gradients
+        elif return_param_history and not return_grad_history:
+            return params, losses, params_history
+        # If not interested in history of parameters and gradients
         else:
-            if return_grad_history:
-                return params, grad_history, losses
-            else:
-                return params, losses
+            return params, losses
 
     def fit_hmc(
         self,

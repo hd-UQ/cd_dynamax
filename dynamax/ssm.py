@@ -457,7 +457,7 @@ class SSM(ABC):
             return -lp / batch_emissions.size
 
         dataset = (batch_emissions, batch_inputs)
-        unc_params, param_history, grad_history, losses = run_sgd(_loss_fn,
+        unc_params, losses = run_sgd(_loss_fn,
                                      unc_params,
                                      dataset,
                                      optimizer=optimizer,
