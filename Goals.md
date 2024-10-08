@@ -121,7 +121,7 @@ Things to go after next:
 
 5. Quantify uncertainties!
 -Run MCMC initialized at fitted_params, and see what chains look like!
--For each MCMC sample, perform the evaluation in (4)….then plot the resulting *distribution* of forecasts. How well does this capture our uncertainty?
+-For each MCMC sample, perform the evaluation in (4), then plot the resulting *distribution* of forecasts. How well does this capture our uncertainty?
 
 6. Ensure all COVs are PSD
 -We should think about how to implement all of our filters to behave better!
@@ -133,18 +133,29 @@ Things to go after next:
     - Can CD-dynamax deal with noiseless state evolution?
         - i.e, ODE mode
         - i.e., What happens if Q=0
+    
     - fit_SGD function with validation option, given train-validation data (preliminary existing in add_validation branch)   
+	
 	- build a lax_scan_debug function that behaves like lax.scan but actually just implements a for loop for easy debugging
+	
 	- add predicted_means/covs to lgssm_filter (in dynamax code)
+	
 	- use `output_fields` in filters to control granularity of returned posterior
+	
 	- Diffeqsolve
 		- debug feature
+    
     - Incorporate important SGD tricks:
         - gradient clipping, learning rate schedulers (some available in cdlgssm_learParams_oscillator_irregularSampleRate notebook)
+    
     - Look carefully at tolerance/solver choices for SDEs (Brownian Tree tolerance, etc.)
+    
     - Set up parameter inference notebooks to batchify long trajectories (for efficiency)
+    
     - Implement progress bars (e.g. for SGD) that are compatible with lax.scan
+    
     - Add data normalizations
+    
     - Start running on GPUs!
     
 ## For v0 
@@ -176,19 +187,24 @@ Things to go after next:
 - Modify the pushforward to incorporate physics + NN
     - How to incorporate DL within Jax?
 
-### For v0.2 ---prior to Iñigo arriving Boston
+### For v0.2
 
 - tutorial on 
     - State estimation
         - how to learn partially observed dynamics, given a model (1 notebook)
- 
+        -   we filter a time series for T_1 time units, then make a forecast over a horizon of length T_2
+    
     - System identification
         - Parameter estimation for mechanistic models:
             - how to learn the parameters of a dynamic model, given observed data (1 notebook)
-                - MCMC (Nuts and HMC)
+                - MLE (SGD)
+                - MAP with MCMC
+                    - BlackJax HMC
+                    - BlackJax Nuts?
         
         - Learning RHS of ODE via flexible functions (NNs)
             - parameter estimation of neural network weights
+                - MLE and MAP
         
         - Learning hybrid models:
             - RHS of ODE equals mechanistic model + flexible functions (NNs)
@@ -197,6 +213,7 @@ Things to go after next:
     - Fully observed, noisy Lorenz (easy)
     - Partially observed, noisy Lorenz (difficult)
         - then replicate
+
 ## Longer term ideas
 
 - Model error learning
