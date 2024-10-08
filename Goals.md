@@ -161,7 +161,7 @@ Things to go after next:
         - [regular sampling times](./src/notebooks/non_linear/cd_ekf_ukf_enkf_Lorenz63.ipynb),
         - [irregular sampling times](./src/notebooks/non_linear/cd_ekf_ukf_enkf_Lorenz63_irregular_times.ipynb)
     
-### For v+
+### For v0.1
 
 - Process inputs in dynamic functions
 
@@ -176,6 +176,27 @@ Things to go after next:
 - Modify the pushforward to incorporate physics + NN
     - How to incorporate DL within Jax?
 
+### For v0.2 ---prior to Iñigo arriving Boston
+
+- tutorial on 
+    - State estimation
+        - how to learn partially observed dynamics, given a model (1 notebook)
+ 
+    - System identification
+        - Parameter estimation for mechanistic models:
+            - how to learn the parameters of a dynamic model, given observed data (1 notebook)
+                - MCMC (Nuts and HMC)
+        
+        - Learning RHS of ODE via flexible functions (NNs)
+            - parameter estimation of neural network weights
+        
+        - Learning hybrid models:
+            - RHS of ODE equals mechanistic model + flexible functions (NNs)
+
+- Start with easy tutorial
+    - Fully observed, noisy Lorenz (easy)
+    - Partially observed, noisy Lorenz (difficult)
+        - then replicate
 ## Longer term ideas
 
 - Model error learning
