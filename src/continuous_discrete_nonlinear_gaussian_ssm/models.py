@@ -283,7 +283,7 @@ class ContDiscreteNonlinearGaussianSSM(SSM):
         params: ParamsCDNLGSSM,
         inputs: Optional[Float[Array, "input_dim"]] = None
     ) -> tfd.Distribution:
-        return MVN(params.initial.mean, params.initial.cov)
+        return MVN(params.initial.mean.f(), params.initial.cov.f())
 
     def transition_distribution(
         self,

@@ -39,7 +39,7 @@ class EKFHyperParams(NamedTuple):
     emission_order: str = 'first'
     smooth_order: str = 'first'
     cov_rescaling: float = 1.0
-
+    
 def _predict(
     m, P, # Current mean and covariance
     params: ParamsCDNLGSSM,  # All necessary CD dynamic params
@@ -314,7 +314,7 @@ def extended_kalman_filter(
         return carry, outputs
 
     # Run the extended Kalman filter
-    carry = (0.0, params.initial.mean, params.initial.cov)
+    carry = (0.0, params.initial.mean.f(), params.initial.cov.f())
     (ll, *_), outputs = lax_scan(_step, carry, (t0, t1, t0_idx), debug=DEBUG)
     outputs = {"marginal_loglik": ll, **outputs}
     posterior_filtered = PosteriorGSSMFiltered(

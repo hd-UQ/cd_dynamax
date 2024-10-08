@@ -38,13 +38,13 @@ class LearnableFunction(NamedTuple):
 class LearnableVector(NamedTuple):
     params: Union[Float[Array, "dim"], ParameterProperties]
 
-    def f(self, x, u=None, t=None):
+    def f(self, x=None, u=None, t=None):
         return self.params
 
 class LearnableMatrix(NamedTuple):
     params: Union[Float[Array, "row_dim col_dim"], ParameterProperties]
 
-    def f(self, x, u=None, t=None):
+    def f(self, x=None, u=None, t=None):
         return self.params
 
 class LearnableLinear(NamedTuple):
@@ -54,7 +54,7 @@ class LearnableLinear(NamedTuple):
 
             f(x) = weights @ x + bias
     '''
-    weights: Union[Float[Array, "input_dim output_dim"], ParameterProperties]
+    weights: Union[Float[Array, "output_dim input_dim"], ParameterProperties]
     bias: Union[Float[Array, "output_dim"], ParameterProperties]
 
     def f(self, x, u=None, t=None):

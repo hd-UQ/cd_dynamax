@@ -251,7 +251,7 @@ def ensemble_kalman_filter(
     # Run the Ensemble Kalman Filter
     # draw initial particles from the prior
     x_ens_init = jr.multivariate_normal(
-        key=key_init, mean=params.initial.mean, cov=params.initial.cov, shape=(hyperparams.N_particles,)
+        key=key_init, mean=params.initial.mean.f(), cov=params.initial.cov.f(), shape=(hyperparams.N_particles,)
     )
     carry = (0.0, x_ens_init)
 
