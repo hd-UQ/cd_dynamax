@@ -3,6 +3,8 @@ import jax.random as jr
 from jax import lax
 from jax import jacfwd,jacrev
 from tensorflow_probability.substrates.jax.distributions import MultivariateNormalFullCovariance as MVN
+import tensorflow_probability.substrates.jax.distributions as tfd
+
 from jaxtyping import Array, Float
 from typing import NamedTuple, List, Optional
 
@@ -328,7 +330,8 @@ def iterated_extended_kalman_filter(
     t_emissions: Optional[Float[Array, "num_timesteps 1"]]=None,
     num_iter: int = 2,
     hyperparams: EKFHyperParams = EKFHyperParams(),
-    inputs: Optional[Float[Array, "ntime input_dim"]] = None
+    inputs: Optional[Float[Array, "ntime input_dim"]] = None,
+    output_fields: Optional[List[str]]=["filtered_means", "filtered_covariances", "predicted_means", "predicted_covariances"],
 ) -> PosteriorGSSMFiltered:
     r"""Run an iterated extended Kalman filter to produce the
     marginal likelihood and filtered state estimates.
@@ -345,7 +348,15 @@ def iterated_extended_kalman_filter(
         post: posterior object.
 
     """
-    filtered_posterior = extended_kalman_filter(params, emissions, t_emissions, num_iter, hyperparams, inputs)
+    filtered_posterior = extended_kalman_filter(
+        params,
+        emissions,
+        t_emissions,
+        num_iter,
+        hyperparams,
+        inputs,
+        output_fields
+    )
     return filtered_posterior
 
 def _smooth(
@@ -661,3 +672,103 @@ def extended_kalman_posterior_sample(
     _, reversed_states = lax.scan(_step, last_state, args)
     states = jnp.row_stack([reversed_states[::-1], last_state])
     return states
+
+def forecast_extended_kalman_filter(
+    params: ParamsCDNLGSSM,
+    init_forecast: tfd.Distribution,
+    t_emissions: Optional[Float[Array, "num_timesteps 1"]]=None,
+    hyperparams: EKFHyperParams = EKFHyperParams(),
+    inputs: Optional[Float[Array, "ntime input_dim"]] = None,
+    output_fields: Optional[List[str]]=[
+        "forecasted_state_means",
+        "forecasted_state_covariances",
+        "forecasted_emission_means",
+        "forecasted_emission_covariances",
+    ],
+) -> GSSMForecast:
+    r"""Run an extended Kalman filter to forecast state and emissions.
+        Two implementations are available,
+        based on first- and second-order approximations
+            i.e. Algorithms 3.21 and 3.22 in Sarkka's thesis
+
+    Args:
+        params: model parameters.
+        init_forecast: initial distribution to forecast with.
+        t_emissions: continuous-time specific time instants of observations: if not None, it is an array
+        hyperparams: hyper-parameters of the EKF, related to the approximation order
+        inputs: optional array of inputs.
+        output_fields: list of fields to return 
+
+    Returns:
+        post: forecast object.
+
+    """
+    # Figure out timestamps, as vectors to scan over
+    # t_emissions is of shape num_timesteps \times 1
+    # t0 and t1 are num_timesteps \times 0
+    if t_emissions is not None:
+        num_timesteps = t_emissions.shape[0]
+        t0 = tree_map(lambda x: x[:,0], t_emissions)
+        t1 = tree_map(
+                lambda x: jnp.concatenate(
+                    (
+                        t_emissions[1:,0],
+                        jnp.array([t_emissions[-1,0]+hyperparams.dt_final]) # NB: t_{N+1} is simply t_{N}+dt_final
+                    )
+                ),
+                t_emissions
+            )
+    else:
+        raise ValueError("t_emissions must be provided for forecasting")
+
+    t0_idx = jnp.arange(num_timesteps)
+
+    # Only emission function
+    h = params.emissions.emission_function.f
+    # First order EKF update implemented for now
+    # TODO: consider second-order EKF updates
+    H = jacfwd(h)
+    # h, H = (_process_fn(fn, inputs) for fn in (h, H))
+    inputs = _process_input(inputs, num_timesteps)
+    
+    def _step(carry, args):
+        current_state_mean, current_state_cov = carry
+        t0, t1, t0_idx = args
+        # print(f"t0: {t0}, t1: {t1}, t0_idx: {t0_idx}")
+
+        # TODO:
+        # Get parameters and inputs for time t0
+        # R = _get_params(params.emissions.emission_cov, 2, t0)
+        u = inputs[t0_idx]
+        R = params.emissions.emission_cov.f(None,u,t0)
+
+        # Predict the next state based on EKF approximations
+        pred_state_mean, pred_state_cov = _predict(current_state_mean, current_state_cov, params, t0, t1, u, hyperparams)
+
+        # Corresponding emissions
+        # According to first order EKF update
+        # TODO: incorporate second order EKF updates!
+        H_x = H(pred_state_mean, u, t0)
+        pred_emission_mean = h(pred_state_mean, u, t0)
+        pred_emission_cov = H_x @ pred_state_cov @ H_x.T + R
+        
+        # Build carry and output states
+        carry = (pred_state_mean, pred_state_cov)
+        outputs = {
+            "forecasted_state_means": pred_state_mean,
+            "forecasted_state_covariances": pred_state_cov,
+            "forecasted_emission_means": pred_emission_mean,
+            "forecasted_emission_covariances": pred_emission_cov,
+        }
+        outputs = {key: val for key, val in outputs.items() if key in output_fields}
+
+        return carry, outputs
+
+    # Initialize the state, based on provided initial distribution's mean and covariance
+    carry = (init_forecast.mean(), init_forecast.covariance())
+    # Run the extended Kalman filter
+    _, outputs = lax_scan(_step, carry, (t0, t1, t0_idx), debug=DEBUG)
+    forecast = GSSMForecast(
+        **outputs,
+    )
+    return forecast

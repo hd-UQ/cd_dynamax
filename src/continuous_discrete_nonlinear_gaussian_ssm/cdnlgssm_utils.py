@@ -222,3 +222,22 @@ class ParamsCDNLGSSM(NamedTuple):
     dynamics: ParamsCDNLSSMDynamics
     emissions: ParamsCDNLGSSMEmissions 
 '''
+
+# TODO: Move this for linear Gaussian SSM
+class GSSMForecast(NamedTuple):
+    r"""Forecasted Gaussian densities.
+
+    :param forecasted_state_means: array of forecasted state means $\mathbb{E}[z_{t+1:t+t_f} \mid y_{1:t}, u_{1:t}, u_{t+1:t+f}]$
+    :param filtered_covariances: array of forecasted state covariances $\mathrm{Cov}[z_{t+1:t+t_f} \mid y_{1:t}, u_{1:t}, u_{t+1:t+f}]$
+    :param forecasted_emission_means: array of forecasted emission means $\mathbb{E}[y_{t+1:t+t_f} \mid y_{1:t}, u_{1:t}, u_{t+1:t+f}]$
+    :param forecasted_emission_covariances: array of forecasted emission covariances $\mathrm{Cov}[y_{t+1:t+t_f} \mid y_{1:t}, u_{1:t}, u_{t+1:t+f}]$
+
+    """
+    forecasted_state_means: Optional[Float[Array, "ntime state_dim"]] = None
+    forecasted_state_covariances: Optional[Float[Array, "ntime state_dim"]] = None
+    forecasted_state_path: Optional[Float[Array, "ntime state_dim"]] = None
+    forecasted_emission_means: Optional[Float[Array, "ntime state_dim"]] = None
+    forecasted_emission_covariances: Optional[Float[Array, "ntime state_dim"]] = None
+    forecasted_emission_path: Optional[Float[Array, "ntime state_dim"]] = None
+
+    # TODO: consider how to extend for multiple paths
