@@ -28,7 +28,7 @@ tfb = tfp.bijectors
 from ssm_temissions import SSM
 # CDNLGSSM param and function definition
 from continuous_discrete_nonlinear_gaussian_ssm.cdnlgssm_utils import *
-from continuous_discrete_nonlinear_gaussian_ssm.inference_ekf import EKFHyperParams, iterated_extended_kalman_filter, iterated_extended_kalman_smoother
+from continuous_discrete_nonlinear_gaussian_ssm.inference_ekf import EKFHyperParams, iterated_extended_kalman_filter, iterated_extended_kalman_smoother, forecast_extended_kalman_filter
 from continuous_discrete_nonlinear_gaussian_ssm.inference_enkf import EnKFHyperParams, ensemble_kalman_filter
 from continuous_discrete_nonlinear_gaussian_ssm.inference_ukf import UKFHyperParams, unscented_kalman_filter
 # Diffrax based diff-eq solver
@@ -371,9 +371,10 @@ def cdnlgssm_filter(
             params = params,
             emissions = emissions,
             t_emissions = t_emissions,
+            num_iter = num_iter,
             hyperparams = hyperparams,
             inputs = inputs,
-            num_iter = num_iter,
+            output_fields=output_fields
         )
     elif isinstance(hyperparams, EnKFHyperParams):
         filtered_posterior=ensemble_kalman_filter(
@@ -382,6 +383,7 @@ def cdnlgssm_filter(
             t_emissions = t_emissions,
             hyperparams = hyperparams,
             inputs = inputs,
+            output_fields=output_fields
         )
     elif isinstance(hyperparams, UKFHyperParams):
         filtered_posterior=unscented_kalman_filter(
@@ -390,6 +392,7 @@ def cdnlgssm_filter(
             t_emissions = t_emissions,
             hyperparams = hyperparams,
             inputs = inputs,
+            output_fields=output_fields
         )
     
     return filtered_posterior
@@ -401,7 +404,6 @@ def cdnlgssm_smoother(
     hyperparams: Optional[Union[EKFHyperParams, EnKFHyperParams, UKFHyperParams]]=EKFHyperParams(),
     inputs: Optional[Float[Array, "ntime input_dim"]] = None,
     num_iter: Optional[int] = 1,
-    output_fields: Optional[List[str]]=["filtered_means", "filtered_covariances", "predicted_means", "predicted_covariances"],
 ) -> PosteriorGSSMFiltered:
     r"""Run an continuous-discrete nonlinear smoother to produce the
         marginal likelihood and smoothed state estimates.
@@ -440,3 +442,68 @@ def cdnlgssm_smoother(
         raise ValueError('UKS not implemented yet')
     
     return smoothed_posterior
+
+# TODO: replicate this for linear models 
+def cdnlgssm_forecast(
+    params: ParamsCDNLGSSM,
+    init_forecast: tfd.Distribution,
+    t_emissions: Optional[Float[Array, "num_timesteps 1"]]=None,
+    hyperparams: Optional[Union[EKFHyperParams, EnKFHyperParams, UKFHyperParams]]=EKFHyperParams(),
+    inputs: Optional[Float[Array, "ntime input_dim"]] = None,
+    output_fields: Optional[List[str]]=[
+        "forecasted_state_means",
+        "forecasted_state_covariances",
+        "forecasted_emission_means",
+        "forecasted_emission_covariances",
+    ],
+) -> GSSMForecast:
+    r"""Run an continuous-discrete nonlinear model to produce the forecasted state and emisison estimates
+        
+        Depending on the hyperparameter class provided, it can execute EKF, UKF or EnKF
+    
+    Args:
+        params: model parameters.
+        init_forecast: initial distribution to start forecasting with.
+        t_emissions: continuous-time specific time instants of observations: if not None, it is an array 
+        hyperparams: hyper-parameters of the filter
+        inputs: optional array of inputs.
+        output_fields: list of fields to return in posterior object.
+            These can take the values
+            "forecasted_state_means",
+            "forecasted_state_covariances",
+            "forecasted_emission_means",
+            "forecasted_emission_covariances".
+
+    Returns:
+        post: forecasted object.
+
+    """
+    if isinstance(hyperparams, EKFHyperParams):
+        forecast=forecast_extended_kalman_filter(
+            params = params,
+            init_forecast = init_forecast,
+            t_emissions = t_emissions,
+            hyperparams = hyperparams,
+            inputs = inputs,
+            output_fields=output_fields
+        )
+    elif isinstance(hyperparams, EnKFHyperParams):
+        forecast=forecast_ensemble_kalman_filter(
+            params = params,
+            init_forecast = init_forecast,
+            t_emissions = t_emissions,
+            hyperparams = hyperparams,
+            inputs = inputs,
+            output_fields=output_fields
+        )
+    elif isinstance(hyperparams, UKFHyperParams):
+        forecast=forecast_unscented_kalman_filter(
+            params = params,
+            init_forecast = init_forecast,
+            t_emissions = t_emissions,
+            hyperparams = hyperparams,
+            inputs = inputs,
+            output_fields=output_fields
+        )
+    
+    return forecast
