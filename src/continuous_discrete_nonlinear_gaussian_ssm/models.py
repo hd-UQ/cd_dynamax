@@ -33,6 +33,8 @@ from continuous_discrete_nonlinear_gaussian_ssm.inference_enkf import EnKFHyperP
 from continuous_discrete_nonlinear_gaussian_ssm.inference_ukf import UKFHyperParams, unscented_kalman_filter, forecast_unscented_kalman_filter
 # Diffrax based diff-eq solver
 from utils.diffrax_utils import diffeqsolve
+from utils.debug_utils import lax_scan
+DEBUG = False
 
 # TODO: This function is defined in many places... unclear whether we need to redefine, or move to utils
 def _get_params(x, dim, t):
@@ -45,6 +47,8 @@ def _get_params(x, dim, t):
         return x[t]
     else:
         return x
+    
+_process_input = lambda x, y: jnp.zeros((y,1)) if x is None else x
 
 # CDNLGSSM push-forward is model-specific
 def compute_pushforward(
@@ -446,7 +450,7 @@ def cdnlgssm_smoother(
 # TODO: replicate this for linear models 
 def cdnlgssm_forecast(
     params: ParamsCDNLGSSM,
-    init_forecast: tfd.Distribution,
+    init_forecast: Union[tfd.Distribution, Float[Array, "state_dim 1"]],
     t_emissions: Optional[Float[Array, "num_timesteps 1"]]=None,
     hyperparams: Optional[Union[EKFHyperParams, EnKFHyperParams, UKFHyperParams]]=EKFHyperParams(),
     inputs: Optional[Float[Array, "ntime input_dim"]] = None,
@@ -456,6 +460,7 @@ def cdnlgssm_forecast(
         "forecasted_emission_means",
         "forecasted_emission_covariances",
     ],
+    key: Optional[Float[Array, "key"]] = jr.PRNGKey(0),
 ) -> GSSMForecast:
     r"""Run an continuous-discrete nonlinear model to produce the forecasted state and emisison estimates
         
@@ -463,47 +468,165 @@ def cdnlgssm_forecast(
     
     Args:
         params: model parameters.
-        init_forecast: initial distribution to start forecasting with.
+        init_forecast: initial condition to start forecasting with:
+            - if init_forecast is a distribution, then we forecast such distribution based on different filtering methods
+            - if init_forecast is a point estimate of state, then we forecast a forward path starting at that state
         t_emissions: continuous-time specific time instants of observations: if not None, it is an array 
         hyperparams: hyper-parameters of the filter
         inputs: optional array of inputs.
         output_fields: list of fields to return in posterior object.
             These can take the values
-            "forecasted_state_means",
-            "forecasted_state_covariances",
-            "forecasted_emission_means",
-            "forecasted_emission_covariances".
+                If we forecast Gaussian distributions, based on filtering methods
+                    "forecasted_state_means",
+                    "forecasted_state_covariances",
+                    "forecasted_emission_means",
+                    "forecasted_emission_covariances".
+                If we forecast paths, based on solving the SDE
+                    "forecasted_state_path",
+                    "forecasted_emission_path".
 
     Returns:
         post: forecasted object.
 
     """
-    if isinstance(hyperparams, EKFHyperParams):
-        forecast=forecast_extended_kalman_filter(
-            params = params,
-            init_forecast = init_forecast,
-            t_emissions = t_emissions,
-            hyperparams = hyperparams,
-            inputs = inputs,
-            output_fields=output_fields
+    # Check whether init_forecast is a distribution or a point estimate
+    if isinstance(init_forecast, tfd.Distribution):
+        # Forecasting a distribution, based on different filters
+        if isinstance(hyperparams, EKFHyperParams):
+            forecast=forecast_extended_kalman_filter(
+                params = params,
+                init_forecast = init_forecast,
+                t_emissions = t_emissions,
+                hyperparams = hyperparams,
+                inputs = inputs,
+                output_fields=output_fields
+            )
+        elif isinstance(hyperparams, EnKFHyperParams):
+            forecast=forecast_ensemble_kalman_filter(
+                params = params,
+                init_forecast = init_forecast,
+                t_emissions = t_emissions,
+                hyperparams = hyperparams,
+                inputs = inputs,
+                output_fields=output_fields
+            )
+        elif isinstance(hyperparams, UKFHyperParams):
+            forecast=forecast_unscented_kalman_filter(
+                params = params,
+                init_forecast = init_forecast,
+                t_emissions = t_emissions,
+                hyperparams = hyperparams,
+                inputs = inputs,
+                output_fields=output_fields
+            )
+    else:
+        # Forecasting a point estimate, based on solving the model
+        
+        # Figure out timestamps, as vectors to scan over
+        # t_emissions is of shape num_timesteps \times 1
+        # t0 and t1 are num_timesteps \times 0
+        if t_emissions is not None:
+            num_timesteps = t_emissions.shape[0]
+            t0 = tree_map(lambda x: x[0:-1,0], t_emissions)
+            t1 = tree_map(lambda x: x[1:,0], t_emissions)
+        else:
+            raise ValueError("t_emissions must be provided for forecasting")
+
+        # Set-up indexing and inputs
+        t0_idx = jnp.arange(num_timesteps-1)
+        t1_idx = jnp.arange(1,num_timesteps)
+        inputs = _process_input(inputs, num_timesteps)
+
+        # Define the function to scan over
+        def _step(prev_state, args):
+            key, t0, t1, t0_idx, t1_idx = args
+
+            # Split the key
+            key1, key2 = jr.split(key, 2)
+
+            # Define the drift and diffusion functions
+            def drift(t, y, args):
+                return params.dynamics.drift.f(y, inputs[t0_idx], t)
+            def diffusion(t, y, args):
+                Qc_t = params.dynamics.diffusion_cov.f(None, inputs[t0_idx], t)
+                L_t = params.dynamics.diffusion_coefficient.f(None, inputs[t0_idx], t)
+                Q_sqrt = jnp.linalg.cholesky(Qc_t)
+                combined_diffusion = L_t @ Q_sqrt
+                return combined_diffusion
+            
+            # Solve the SDE to compute the next state
+            state = diffeqsolve(
+                key=key2,
+                drift=drift,
+                diffusion=diffusion,
+                t0=t0, t1=t1,
+                y0=prev_state
+            )[0]
+            
+            # Sample the emission, at t1
+            emission = MVN(
+                params.emissions.emission_function.f(
+                    state,
+                    inputs[t1_idx],
+                    t=t1
+                ),
+                params.emissions.emission_cov.f(
+                    state,
+                    inputs[t1_idx],
+                    t=t1
+                )
+            ).sample(seed=key1)
+            
+            # Return the state and emission
+            return state, (state, emission)
+
+        # Split the key
+        key1, key = jr.split(key)
+
+        # The initial state to forecast is given, sample the initial emission
+        initial_input = inputs[0]
+        initial_emission = MVN(
+            params.emissions.emission_function.f(
+                init_forecast,
+                initial_input,
+                t=t0[0]
+            ),
+            params.emissions.emission_cov.f(
+                init_forecast,
+                initial_input,
+                t=t0[0]
+            )
+        ).sample(seed=key1)
+
+        # Forecast states and emissions, over time
+        next_keys = jr.split(key, num_timesteps-1)
+
+        # Run the scan
+        _, (next_states, next_emissions) = lax_scan(
+            _step,
+            init_forecast,
+            (next_keys, t0, t1, t0_idx, t1_idx),
+            debug=DEBUG
         )
-    elif isinstance(hyperparams, EnKFHyperParams):
-        forecast=forecast_ensemble_kalman_filter(
-            params = params,
-            init_forecast = init_forecast,
-            t_emissions = t_emissions,
-            hyperparams = hyperparams,
-            inputs = inputs,
-            output_fields=output_fields
+
+        # Lambda to concatenate the initial state and emission with the following ones
+        expand_and_cat = lambda x0, x1T: jnp.concatenate((jnp.expand_dims(x0, 0), x1T))
+
+        forecasted_states = tree_map(
+            expand_and_cat,
+            init_forecast,
+            next_states
         )
-    elif isinstance(hyperparams, UKFHyperParams):
-        forecast=forecast_unscented_kalman_filter(
-            params = params,
-            init_forecast = init_forecast,
-            t_emissions = t_emissions,
-            hyperparams = hyperparams,
-            inputs = inputs,
-            output_fields=output_fields
+        forecasted_emissions = tree_map(
+            expand_and_cat,
+            initial_emission,
+            next_emissions
+        )
+        
+        # Build the forecast object
+        forecast = GSSMForecast(
+            forecasted_state_path=forecasted_states,
+            forecasted_emission_path=forecasted_emissions
         )
     
     return forecast
