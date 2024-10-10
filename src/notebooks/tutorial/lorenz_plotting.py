@@ -15,6 +15,14 @@ def plot_simple(
     """
     Wrapper function to plot a simple time series.
 
+    Parameters:
+    - time_grid (array-like, optional): The time points corresponding to the true states and emissions.
+    - true_states (ndarray, optional): The ground truth states, shape (T, n_states).
+    - true_emissions_noisy (ndarray, optional): Noisy emissions from the true model, shape (T, n_emissions).
+    - filtered_states (ndarray, optional): Filtered states using the learned model, shape (T, n_states).
+    - t_start (float, optional): The start time for plotting.
+    - t_end (float, optional): The end time for plotting.
+
     """
 
     plot_advanced(
