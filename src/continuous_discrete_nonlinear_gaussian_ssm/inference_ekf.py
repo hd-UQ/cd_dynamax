@@ -722,6 +722,7 @@ def forecast_extended_kalman_filter(
         raise ValueError("t_emissions must be provided for forecasting")
 
     t0_idx = jnp.arange(num_timesteps)
+    t1_idx = jnp.arange(1,num_timesteps+1)
 
     # Only emission function
     h = params.emissions.emission_function.f
@@ -733,23 +734,26 @@ def forecast_extended_kalman_filter(
     
     def _step(carry, args):
         current_state_mean, current_state_cov = carry
-        t0, t1, t0_idx = args
-        # print(f"t0: {t0}, t1: {t1}, t0_idx: {t0_idx}")
+        t0, t1, t0_idx, t1_idx = args
+        
+        # Predict the next state based on EKF
+        pred_state_mean, pred_state_cov = _predict(
+            current_state_mean,
+            current_state_cov,
+            params,
+            t0, t1,
+            inputs[t0_idx], # Inputs impact state at t0
+            hyperparams
+        )
 
-        # TODO:
-        # Get parameters and inputs for time t0
-        # R = _get_params(params.emissions.emission_cov, 2, t0)
-        u = inputs[t0_idx]
-        R = params.emissions.emission_cov.f(None,u,t0)
-
-        # Predict the next state based on EKF approximations
-        pred_state_mean, pred_state_cov = _predict(current_state_mean, current_state_cov, params, t0, t1, u, hyperparams)
-
-        # Corresponding emissions
+        # Corresponding emissions at t1
+        # Emission covariance
+        R = params.emissions.emission_cov.f(None,inputs[t1_idx],t1)
+        
         # According to first order EKF update
         # TODO: incorporate second order EKF updates!
-        H_x = H(pred_state_mean, u, t0)
-        pred_emission_mean = h(pred_state_mean, u, t0)
+        H_x = H(pred_state_mean, inputs[t1_idx], t1)
+        pred_emission_mean = h(pred_state_mean, inputs[t1_idx], t1)
         pred_emission_cov = H_x @ pred_state_cov @ H_x.T + R
         
         # Build carry and output states
@@ -767,7 +771,14 @@ def forecast_extended_kalman_filter(
     # Initialize the state, based on provided initial distribution's mean and covariance
     carry = (init_forecast.mean(), init_forecast.covariance())
     # Run the extended Kalman filter
-    _, outputs = lax_scan(_step, carry, (t0, t1, t0_idx), debug=DEBUG)
+    _, outputs = lax_scan(
+        _step,
+        carry,
+        (t0, t1, t0_idx, t1_idx),
+        debug=DEBUG
+    )
+
+    # Build the forecast object
     forecast = GSSMForecast(
         **outputs,
     )

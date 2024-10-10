@@ -2,6 +2,7 @@ import jax.numpy as jnp
 from jax import lax
 from jax import vmap
 from tensorflow_probability.substrates.jax.distributions import MultivariateNormalFullCovariance as MVN
+import tensorflow_probability.substrates.jax.distributions as tfd
 from jaxtyping import Array, Float
 from typing import NamedTuple, Optional, List
 
@@ -16,6 +17,8 @@ from dynamax.linear_gaussian_ssm.inference import PosteriorGSSMFiltered, Posteri
 from continuous_discrete_nonlinear_gaussian_ssm.cdnlgssm_utils import *
 # Diffrax based diff-eq solver
 from utils.diffrax_utils import diffeqsolve
+from utils.debug_utils import lax_scan
+DEBUG = False
 
 # We redefe UKFHyperParams, due to dt_final
 #from dynamax.nonlinear_gaussian_ssm.inference_ukf import UKFHyperParams
@@ -400,3 +403,139 @@ def unscented_kalman_smoother(
         smoothed_means=smoothed_means,
         smoothed_covariances=smoothed_covs,
     )
+
+def forecast_unscented_kalman_filter(
+    params: ParamsCDNLGSSM,
+    init_forecast: tfd.Distribution,
+    t_emissions: Optional[Float[Array, "num_timesteps 1"]]=None,
+    hyperparams: UKFHyperParams = UKFHyperParams(),
+    inputs: Optional[Float[Array, "ntime input_dim"]] = None,
+    output_fields: Optional[List[str]]=[
+        "forecasted_state_means",
+        "forecasted_state_covariances",
+        "forecasted_emission_means",
+        "forecasted_emission_covariances",
+    ],
+) -> GSSMForecast:
+    r"""Run an Unscented Kalman filter to forecast state and emissions.        
+
+    Args:
+        params: model parameters.
+        init_forecast: initial distribution to forecast with.
+        t_emissions: continuous-time specific time instants of observations: if not None, it is an array
+        hyperparams: hyper-parameters of the EKF, related to the approximation order
+        inputs: optional array of inputs.
+        output_fields: list of fields to return 
+
+    Returns:
+        post: forecast object.
+
+    """
+    # Figure out timestamps, as vectors to scan over
+    # t_emissions is of shape num_timesteps \times 1
+    # t0 and t1 are num_timesteps \times 0
+    if t_emissions is not None:
+        num_timesteps = t_emissions.shape[0]
+        t0 = tree_map(lambda x: x[:,0], t_emissions)
+        t1 = tree_map(
+                lambda x: jnp.concatenate(
+                    (
+                        t_emissions[1:,0],
+                        jnp.array([t_emissions[-1,0]+hyperparams.dt_final]) # NB: t_{N+1} is simply t_{N}+dt_final
+                    )
+                ),
+                t_emissions
+            )
+    else:
+        raise ValueError("t_emissions must be provided for forecasting")
+
+    t0_idx = jnp.arange(num_timesteps)
+    t1_idx = jnp.arange(1,num_timesteps+1)
+
+    # Preliminaries
+    state_dim = params.dynamics.diffusion_cov.params.shape[0]
+
+    # Compute lambda and weights from from hyperparameters
+    alpha, beta, kappa = hyperparams.alpha, hyperparams.beta, hyperparams.kappa
+    lamb = _compute_lambda(alpha, kappa, state_dim)
+    w_mean, w_cov, W_matrix = _compute_weights(state_dim, alpha, beta, lamb)
+
+    # Only emission function
+    h = params.emissions.emission_function.f
+    inputs = _process_input(inputs, num_timesteps)
+    
+    def _step(carry, args):
+        current_state_mean, current_state_cov = carry
+        t0, t1, t0_idx, t1_idx = args
+        
+        # Predict the next state based on EKF approximations
+        pred_state_mean, pred_state_cov = _predict(
+            current_state_mean,
+            current_state_cov,
+            params,
+            t0,
+            t1,
+            lamb,
+            w_mean, w_cov, W_matrix,
+            inputs[t0_idx],
+        )
+
+        # Corresponding emissions at t1
+        # Form sigma points
+        sigmas_cond = _compute_sigmas(
+            pred_state_mean,
+            pred_state_cov,
+            len(pred_state_mean),
+            lamb
+        )
+        # Propagate with inputs
+        u_s = jnp.array(
+            [inputs[t1_idx]] * len(sigmas_cond)
+        )
+        sigmas_cond_prop = vmap(
+            h, in_axes=(0, None, None)
+        )(sigmas_cond, u_s, t1)
+
+        # Emission covariance
+        R = params.emissions.emission_cov.f(None,inputs[t1_idx],t1)
+        # Compute sufficient statistics of sigmas
+        pred_emission_mean = jnp.tensordot(
+            w_mean,
+            sigmas_cond_prop,
+            axes=1
+        )
+        pred_emission_cov = jnp.tensordot(
+            w_cov,
+            _outer(sigmas_cond_prop - pred_emission_mean,
+                   sigmas_cond_prop - pred_emission_mean
+            ),
+            axes=1
+        ) + R
+        
+        # Build carry and output states
+        carry = (pred_state_mean, pred_state_cov)
+        outputs = {
+            "forecasted_state_means": pred_state_mean,
+            "forecasted_state_covariances": pred_state_cov,
+            "forecasted_emission_means": pred_emission_mean,
+            "forecasted_emission_covariances": pred_emission_cov,
+        }
+        outputs = {key: val for key, val in outputs.items() if key in output_fields}
+
+        return carry, outputs
+
+    # Initialize the state, based on provided initial distribution's mean and covariance
+    carry = (init_forecast.mean(), init_forecast.covariance())
+    # Run the extended Kalman filter
+    _, outputs = lax_scan(
+        _step,
+        carry,
+        (t0, t1, t0_idx, t1_idx),
+        debug=DEBUG
+    )
+    
+    # Build the forecast object
+    forecast = GSSMForecast(
+        **outputs,
+    )
+    return forecast

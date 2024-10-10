@@ -30,7 +30,7 @@ from ssm_temissions import SSM
 from continuous_discrete_nonlinear_gaussian_ssm.cdnlgssm_utils import *
 from continuous_discrete_nonlinear_gaussian_ssm.inference_ekf import EKFHyperParams, iterated_extended_kalman_filter, iterated_extended_kalman_smoother, forecast_extended_kalman_filter
 from continuous_discrete_nonlinear_gaussian_ssm.inference_enkf import EnKFHyperParams, ensemble_kalman_filter, forecast_ensemble_kalman_filter
-from continuous_discrete_nonlinear_gaussian_ssm.inference_ukf import UKFHyperParams, unscented_kalman_filter
+from continuous_discrete_nonlinear_gaussian_ssm.inference_ukf import UKFHyperParams, unscented_kalman_filter, forecast_unscented_kalman_filter
 # Diffrax based diff-eq solver
 from utils.diffrax_utils import diffeqsolve
 
