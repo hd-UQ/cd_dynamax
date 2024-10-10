@@ -202,9 +202,9 @@ def extended_kalman_filter(
     params: ParamsCDNLGSSM,
     emissions: Float[Array, "ntime emission_dim"],
     t_emissions: Optional[Float[Array, "num_timesteps 1"]]=None,
-    num_iter: int = 1,
     hyperparams: EKFHyperParams = EKFHyperParams(),
     inputs: Optional[Float[Array, "ntime input_dim"]] = None,
+    num_iter: int = 1,
     output_fields: Optional[List[str]]=["filtered_means", "filtered_covariances", "predicted_means", "predicted_covariances"],
 ) -> PosteriorGSSMFiltered:
     r"""Run an (iterated) extended Kalman filter to produce the
@@ -328,9 +328,9 @@ def iterated_extended_kalman_filter(
     params: ParamsCDNLGSSM,
     emissions:  Float[Array, "ntime emission_dim"],
     t_emissions: Optional[Float[Array, "num_timesteps 1"]]=None,
-    num_iter: int = 2,
     hyperparams: EKFHyperParams = EKFHyperParams(),
     inputs: Optional[Float[Array, "ntime input_dim"]] = None,
+    num_iter: int = 2,
     output_fields: Optional[List[str]]=["filtered_means", "filtered_covariances", "predicted_means", "predicted_covariances"],
 ) -> PosteriorGSSMFiltered:
     r"""Run an iterated extended Kalman filter to produce the
@@ -352,9 +352,9 @@ def iterated_extended_kalman_filter(
         params,
         emissions,
         t_emissions,
-        num_iter,
         hyperparams,
         inputs,
+        num_iter,
         output_fields
     )
     return filtered_posterior
