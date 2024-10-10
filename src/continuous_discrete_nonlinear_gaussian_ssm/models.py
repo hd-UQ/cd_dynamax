@@ -371,9 +371,9 @@ def cdnlgssm_filter(
             params = params,
             emissions = emissions,
             t_emissions = t_emissions,
-            num_iter = num_iter,
             hyperparams = hyperparams,
             inputs = inputs,
+            num_iter = num_iter,
             output_fields=output_fields
         )
     elif isinstance(hyperparams, EnKFHyperParams):
