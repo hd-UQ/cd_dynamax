@@ -708,21 +708,14 @@ def forecast_extended_kalman_filter(
     # t0 and t1 are num_timesteps \times 0
     if t_emissions is not None:
         num_timesteps = t_emissions.shape[0]
-        t0 = tree_map(lambda x: x[:,0], t_emissions)
-        t1 = tree_map(
-                lambda x: jnp.concatenate(
-                    (
-                        t_emissions[1:,0],
-                        jnp.array([t_emissions[-1,0]+hyperparams.dt_final]) # NB: t_{N+1} is simply t_{N}+dt_final
-                    )
-                ),
-                t_emissions
-            )
+        t0 = tree_map(lambda x: x[0:-1,0], t_emissions)
+        t1 = tree_map(lambda x: x[1:,0], t_emissions)
     else:
         raise ValueError("t_emissions must be provided for forecasting")
 
-    t0_idx = jnp.arange(num_timesteps)
-    t1_idx = jnp.arange(1,num_timesteps+1)
+    # Set-up indexing and inputs
+    t0_idx = jnp.arange(num_timesteps-1)
+    t1_idx = jnp.arange(1,num_timesteps)
 
     # Only emission function
     h = params.emissions.emission_function.f
