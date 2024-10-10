@@ -3,6 +3,7 @@ import jax.random as jr
 from jax import lax
 from jax import vmap
 from tensorflow_probability.substrates.jax.distributions import MultivariateNormalFullCovariance as MVN
+import tensorflow_probability.substrates.jax.distributions as tfd
 from jaxtyping import Array, Float
 from typing import NamedTuple, Optional, List
 
@@ -19,6 +20,8 @@ from dynamax.linear_gaussian_ssm.inference import PosteriorGSSMFiltered, Posteri
 from continuous_discrete_nonlinear_gaussian_ssm.cdnlgssm_utils import *
 # Diffrax based diff-eq solver
 from utils.diffrax_utils import diffeqsolve
+from utils.debug_utils import lax_scan
+DEBUG = False
 
 # Currently employing method from https://arxiv.org/abs/2205.02730 Neilsen et al. 2022
 
@@ -267,3 +270,127 @@ def ensemble_kalman_filter(
         **outputs,
     )
     return posterior_filtered
+
+def forecast_ensemble_kalman_filter(
+    params: ParamsCDNLGSSM,
+    init_forecast: tfd.Distribution,
+    t_emissions: Optional[Float[Array, "num_timesteps 1"]]=None,
+    hyperparams: EnKFHyperParams = EnKFHyperParams(),
+    inputs: Optional[Float[Array, "ntime input_dim"]] = None,
+    output_fields: Optional[List[str]]=[
+        "forecasted_state_means",
+        "forecasted_state_covariances",
+        "forecasted_emission_means",
+        "forecasted_emission_covariances",
+    ],
+) -> GSSMForecast:
+    r"""Run an Ensemble Kalman filter to forecast state and emissions.
+        Two implementations are available,
+        based on first- and second-order approximations
+            i.e. Algorithms 3.21 and 3.22 in Sarkka's thesis
+
+    Args:
+        params: model parameters.
+        init_forecast: initial distribution to forecast with.
+        t_emissions: continuous-time specific time instants of observations: if not None, it is an array
+        hyperparams: hyper-parameters of the EKF, related to the approximation order
+        inputs: optional array of inputs.
+        output_fields: list of fields to return 
+
+    Returns:
+        post: forecast object.
+
+    """
+    # Figure out timestamps, as vectors to scan over
+    # t_emissions is of shape num_timesteps \times 1
+    # t0 and t1 are num_timesteps \times 0
+    if t_emissions is not None:
+        num_timesteps = t_emissions.shape[0]
+        t0 = tree_map(lambda x: x[:,0], t_emissions)
+        t1 = tree_map(
+                lambda x: jnp.concatenate(
+                    (
+                        t_emissions[1:,0],
+                        jnp.array([t_emissions[-1,0]+hyperparams.dt_final]) # NB: t_{N+1} is simply t_{N}+dt_final
+                    )
+                ),
+                t_emissions
+            )
+    else:
+        raise ValueError("t_emissions must be provided for forecasting")
+
+    t0_idx = jnp.arange(num_timesteps)
+
+    # Only emission function
+    h = params.emissions.emission_function.f
+    # h = _process_fn(h, inputs)
+    inputs = _process_input(inputs, num_timesteps)
+
+    def _step(carry, args):
+        current_x_ens = carry
+        key, t0, t1, t0_idx = args
+
+        # split key for (1) diffeqsolve, (2) perturbed measurements
+        key_predict, key_filter = jr.split(key, 2)
+
+        # Get parameters and inputs for time t0
+        u = inputs[t0_idx]
+        R = params.emissions.emission_cov.f(None, u, t0)
+
+        # Predict the next state, based on Ensemble prediction
+        pred_x_ens = _predict(key_predict, current_x_ens, params, t0, t1, u)
+
+        # compute Gaussian statistics
+        pred_state_mean = jnp.mean(pred_x_ens, axis=0)
+        pred_state_cov = jnp.sum(_outer(pred_x_ens - pred_state_mean, pred_x_ens - pred_state_mean), axis=0) / (
+            hyperparams.N_particles - 1
+        )
+
+        # Corresponding emissions
+
+        # Propagate ensemble through emission function
+        # duplicate inputs for each particle
+        u_s = jnp.array([u] * hyperparams.N_particles)
+        # The shape of y_ensemble is n_particles x Observation Dimensions
+        y_ensemble = vmap(h, in_axes=(0, None, None))(pred_x_ens, u_s, t1)
+
+        ## These 2 computations should use deterministic observation ensemble, not perturbed
+        # compute predicted mean of measurements
+        pred_emission_mean = jnp.mean(y_ensemble, axis=0)
+
+        # compute predicted covariance of measurements as outer product of differences from mean
+        # represents "HPH^T" in Kalman gain computation
+        # y_pred_cov = jnp.cov(y_ensemble, rowvar=False)
+        pred_emission_cov = jnp.sum(
+            _outer(y_ensemble - pred_emission_mean, y_ensemble - pred_emission_mean),
+            axis=0
+        ) / (hyperparams.N_particles - 1)
+
+        # Build carry and output states
+        carry = (pred_x_ens)
+        outputs = {
+            "forecasted_state_means": pred_state_mean,
+            "forecasted_state_covariances": pred_state_cov,
+            "forecasted_emission_means": pred_emission_mean,
+            "forecasted_emission_covariances": pred_emission_cov,
+        }
+        outputs = {key: val for key, val in outputs.items() if key in output_fields}
+
+        return carry, outputs
+
+    # Build keys to be used to: (1) draw initial particles, (2) run each step of the filter
+    keys = jr.split(hyperparams.key, num_timesteps + 1)
+    key_init, key_times = keys[0], keys[1:]
+
+    # draw initial particles from the provided initial distribution
+    carry = init_forecast.sample(
+        seed=key_init,
+        sample_shape=hyperparams.N_particles
+    )
+
+    # Run the Ensemble Kalman Filter
+    _, outputs = lax_scan(_step, carry, (key_times, t0, t1, t0_idx), debug=DEBUG)
+    forecast = GSSMForecast(
+        **outputs,
+    )
+    return forecast
