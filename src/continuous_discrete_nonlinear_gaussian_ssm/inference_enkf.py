@@ -274,7 +274,8 @@ def ensemble_kalman_filter(
 def forecast_ensemble_kalman_filter(
     params: ParamsCDNLGSSM,
     init_forecast: tfd.Distribution,
-    t_emissions: Optional[Float[Array, "num_timesteps 1"]]=None,
+    t_init: Float[Array, "1 1"],
+    t_forecast: Float[Array, "num_timesteps 1"],
     hyperparams: EnKFHyperParams = EnKFHyperParams(),
     inputs: Optional[Float[Array, "ntime input_dim"]] = None,
     output_fields: Optional[List[str]]=[
@@ -292,7 +293,8 @@ def forecast_ensemble_kalman_filter(
     Args:
         params: model parameters.
         init_forecast: initial distribution to forecast with.
-        t_emissions: continuous-time specific time instants of observations: if not None, it is an array
+        t_init: time-instant of the initial condition of forecast
+        t_forecast: continuous-time specific time instants to forecast
         hyperparams: hyper-parameters of the EKF, related to the approximation order
         inputs: optional array of inputs.
         output_fields: list of fields to return 
@@ -302,34 +304,31 @@ def forecast_ensemble_kalman_filter(
 
     """
     # Figure out timestamps, as vectors to scan over
-    # t_emissions is of shape num_timesteps \times 1
+    # t_forecast is of shape num_timesteps \times 1
     # t0 and t1 are num_timesteps \times 0
-    if t_emissions is not None:
-        num_timesteps = t_emissions.shape[0]
-        t0 = tree_map(lambda x: x[:,0], t_emissions)
-        t1 = tree_map(
-                lambda x: jnp.concatenate(
-                    (
-                        t_emissions[1:,0],
-                        jnp.array([t_emissions[-1,0]+hyperparams.dt_final]) # NB: t_{N+1} is simply t_{N}+dt_final
-                    )
-                ),
-                t_emissions
-            )
+    if t_forecast is not None:
+        num_timesteps = t_forecast.shape[0]
+        t0 = tree_map(
+            lambda x: jnp.concatenate(
+                (t_init, t_forecast[:-1, 0])
+            ),
+            t_forecast,
+        )
+        t1 = tree_map(lambda x: x[:,0], t_forecast)
     else:
-        raise ValueError("t_emissions must be provided for forecasting")
+        raise ValueError("t_forecast must be provided for forecasting")
 
+    # Set-up indexing and inputs
     t0_idx = jnp.arange(num_timesteps)
-    t1_idx = jnp.arange(1,num_timesteps+1)
+    inputs = _process_input(inputs, num_timesteps+1)
 
     # Only emission function
     h = params.emissions.emission_function.f
     # h = _process_fn(h, inputs)
-    inputs = _process_input(inputs, num_timesteps)
 
     def _step(carry, args):
         current_x_ens = carry
-        key, t0, t1, t0_idx, t1_idx = args
+        key, t0, t1, t0_idx = args
 
         # split key for (1) diffeqsolve, (2) perturbed measurements
         key_predict, _ = jr.split(key, 2)
@@ -352,13 +351,17 @@ def forecast_ensemble_kalman_filter(
 
         # Corresponding emissions at t1
         # Emission covariance 
-        R = params.emissions.emission_cov.f(None,inputs[t1_idx],t1)
+        R = params.emissions.emission_cov.f(
+            None,
+            inputs[t0_idx+1],
+            t1
+        )
 
         # Propagate ensemble through emission function
 
         # duplicate inputs for each particle
         u_s = jnp.array(
-            [inputs[t1_idx]] * hyperparams.N_particles
+            [inputs[t0_idx+1]] * hyperparams.N_particles
         )
         # The shape of y_ensemble is n_particles x Observation Dimensions
         y_ensemble = vmap(
@@ -390,7 +393,7 @@ def forecast_ensemble_kalman_filter(
         return carry, outputs
 
     # Build keys to be used to: (1) draw initial particles, (2) run each step of the filter
-    keys = jr.split(hyperparams.key, num_timesteps + 1)
+    keys = jr.split(hyperparams.key, num_timesteps+1)
     key_init, key_times = keys[0], keys[1:]
 
     # draw initial particles from the provided initial distribution
@@ -403,7 +406,7 @@ def forecast_ensemble_kalman_filter(
     _, outputs = lax_scan(
         _step,
         carry,
-        (key_times, t0, t1, t0_idx, t1_idx),
+        (key_times, t0, t1, t0_idx),
         debug=DEBUG
     )
     

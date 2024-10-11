@@ -407,7 +407,8 @@ def unscented_kalman_smoother(
 def forecast_unscented_kalman_filter(
     params: ParamsCDNLGSSM,
     init_forecast: tfd.Distribution,
-    t_emissions: Optional[Float[Array, "num_timesteps 1"]]=None,
+    t_init: Float[Array, "1 1"],
+    t_forecast: Float[Array, "num_timesteps 1"],
     hyperparams: UKFHyperParams = UKFHyperParams(),
     inputs: Optional[Float[Array, "ntime input_dim"]] = None,
     output_fields: Optional[List[str]]=[
@@ -422,7 +423,8 @@ def forecast_unscented_kalman_filter(
     Args:
         params: model parameters.
         init_forecast: initial distribution to forecast with.
-        t_emissions: continuous-time specific time instants of observations: if not None, it is an array
+        t_init: time-instant of the initial condition of forecast
+        t_forecast: continuous-time specific time instants to forecast
         hyperparams: hyper-parameters of the EKF, related to the approximation order
         inputs: optional array of inputs.
         output_fields: list of fields to return 
@@ -432,19 +434,24 @@ def forecast_unscented_kalman_filter(
 
     """
     # Figure out timestamps, as vectors to scan over
-    # t_emissions is of shape num_timesteps \times 1
+    # t_forecast is of shape num_timesteps \times 1
     # t0 and t1 are num_timesteps \times 0
-    if t_emissions is not None:
-        num_timesteps = t_emissions.shape[0]
-        t0 = tree_map(lambda x: x[0:-1,0], t_emissions)
-        t1 = tree_map(lambda x: x[1:,0], t_emissions)
+    if t_forecast is not None:
+        num_timesteps = t_forecast.shape[0]
+        t0 = tree_map(
+            lambda x: jnp.concatenate(
+                (t_init, t_forecast[:-1, 0])
+            ),
+            t_forecast,
+        )
+        t1 = tree_map(lambda x: x[:,0], t_forecast)
     else:
-        raise ValueError("t_emissions must be provided for forecasting")
+        raise ValueError("t_forecast must be provided for forecasting")
 
     # Set-up indexing and inputs
-    t0_idx = jnp.arange(num_timesteps-1)
-    t1_idx = jnp.arange(1,num_timesteps)
-
+    t0_idx = jnp.arange(num_timesteps)
+    inputs = _process_input(inputs, num_timesteps+1)
+    
     # Preliminaries
     state_dim = params.dynamics.diffusion_cov.params.shape[0]
 
@@ -455,11 +462,10 @@ def forecast_unscented_kalman_filter(
 
     # Only emission function
     h = params.emissions.emission_function.f
-    inputs = _process_input(inputs, num_timesteps)
     
     def _step(carry, args):
         current_state_mean, current_state_cov = carry
-        t0, t1, t0_idx, t1_idx = args
+        t0, t1, t0_idx = args
         
         # Predict the next state based on EKF approximations
         pred_state_mean, pred_state_cov = _predict(
@@ -483,14 +489,18 @@ def forecast_unscented_kalman_filter(
         )
         # Propagate with inputs
         u_s = jnp.array(
-            [inputs[t1_idx]] * len(sigmas_cond)
+            [inputs[t0_idx+1]] * len(sigmas_cond)
         )
         sigmas_cond_prop = vmap(
             h, in_axes=(0, None, None)
         )(sigmas_cond, u_s, t1)
 
         # Emission covariance
-        R = params.emissions.emission_cov.f(None,inputs[t1_idx],t1)
+        R = params.emissions.emission_cov.f(
+            None,
+            inputs[t0_idx+1],
+            t1
+        )
         # Compute sufficient statistics of sigmas
         pred_emission_mean = jnp.tensordot(
             w_mean,
@@ -519,11 +529,12 @@ def forecast_unscented_kalman_filter(
 
     # Initialize the state, based on provided initial distribution's mean and covariance
     carry = (init_forecast.mean(), init_forecast.covariance())
-    # Run the extended Kalman filter
+    
+    # Run the Unscented Kalman filter
     _, outputs = lax_scan(
         _step,
         carry,
-        (t0, t1, t0_idx, t1_idx),
+        (t0, t1, t0_idx),
         debug=DEBUG
     )
     
