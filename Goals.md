@@ -171,28 +171,13 @@ Things to go after next:
     - Lorenz 63:
         - [regular sampling times](./src/notebooks/non_linear/cd_ekf_ukf_enkf_Lorenz63.ipynb),
         - [irregular sampling times](./src/notebooks/non_linear/cd_ekf_ukf_enkf_Lorenz63_irregular_times.ipynb)
-    
+
 ### For v0.1
 
-- Process inputs in dynamic functions
-
-- Allow for input times to be different from measurement times?
-
-- How to modify learnable parameters, to have a parameter set
-    - Build it for linear function with weights and biases
-
-- How to be able to initialize params across many NL functions
-    - Maybe within function wrapper?
-
-- Modify the pushforward to incorporate physics + NN
-    - How to incorporate DL within Jax?
-
-### For v0.2
-
-- tutorial on 
+- Tutorials 
     - State estimation
         - how to learn partially observed dynamics, given a model (1 notebook)
-        -   we filter a time series for T_1 time units, then make a forecast over a horizon of length T_2
+        - filter a time series for T_filter time units, then make a forecast over a horizon of length T_forecast
     
     - System identification
         - Parameter estimation for mechanistic models:
@@ -213,6 +198,21 @@ Things to go after next:
     - Fully observed, noisy Lorenz (easy)
     - Partially observed, noisy Lorenz (difficult)
         - then replicate
+            
+### For v0.1
+
+- Process inputs in dynamic functions
+
+- Allow for input times to be different from measurement times?
+
+- How to modify learnable parameters, to have a parameter set
+    - Build it for linear function with weights and biases
+
+- How to be able to initialize params across many NL functions
+    - Maybe within function wrapper?
+
+- Modify the pushforward to incorporate physics + NN
+    - How to incorporate DL within Jax?
 
 ## Longer term ideas
 

@@ -676,7 +676,8 @@ def extended_kalman_posterior_sample(
 def forecast_extended_kalman_filter(
     params: ParamsCDNLGSSM,
     init_forecast: tfd.Distribution,
-    t_emissions: Optional[Float[Array, "num_timesteps 1"]]=None,
+    t_init: Float[Array, "1 1"],
+    t_forecast: Float[Array, "num_timesteps 1"],
     hyperparams: EKFHyperParams = EKFHyperParams(),
     inputs: Optional[Float[Array, "ntime input_dim"]] = None,
     output_fields: Optional[List[str]]=[
@@ -694,7 +695,8 @@ def forecast_extended_kalman_filter(
     Args:
         params: model parameters.
         init_forecast: initial distribution to forecast with.
-        t_emissions: continuous-time specific time instants of observations: if not None, it is an array
+        t_init: time-instant of the initial condition of forecast
+        t_forecast: continuous-time specific time instants to forecast
         hyperparams: hyper-parameters of the EKF, related to the approximation order
         inputs: optional array of inputs.
         output_fields: list of fields to return 
@@ -704,18 +706,23 @@ def forecast_extended_kalman_filter(
 
     """
     # Figure out timestamps, as vectors to scan over
-    # t_emissions is of shape num_timesteps \times 1
+    # t_forecast is of shape num_timesteps \times 1
     # t0 and t1 are num_timesteps \times 0
-    if t_emissions is not None:
-        num_timesteps = t_emissions.shape[0]
-        t0 = tree_map(lambda x: x[0:-1,0], t_emissions)
-        t1 = tree_map(lambda x: x[1:,0], t_emissions)
+    if t_forecast is not None:
+        num_timesteps = t_forecast.shape[0]
+        t0 = tree_map(
+            lambda x: jnp.concatenate(
+                (t_init, t_forecast[:-1, 0])
+            ),
+            t_forecast,
+        )
+        t1 = tree_map(lambda x: x[:,0], t_forecast)
     else:
-        raise ValueError("t_emissions must be provided for forecasting")
+        raise ValueError("t_forecast must be provided for forecasting")
 
     # Set-up indexing and inputs
-    t0_idx = jnp.arange(num_timesteps-1)
-    t1_idx = jnp.arange(1,num_timesteps)
+    t0_idx = jnp.arange(num_timesteps)
+    inputs = _process_input(inputs, num_timesteps+1)
 
     # Only emission function
     h = params.emissions.emission_function.f
@@ -723,11 +730,10 @@ def forecast_extended_kalman_filter(
     # TODO: consider second-order EKF updates
     H = jacfwd(h)
     # h, H = (_process_fn(fn, inputs) for fn in (h, H))
-    inputs = _process_input(inputs, num_timesteps)
     
     def _step(carry, args):
         current_state_mean, current_state_cov = carry
-        t0, t1, t0_idx, t1_idx = args
+        t0, t1, t0_idx = args
         
         # Predict the next state based on EKF
         pred_state_mean, pred_state_cov = _predict(
@@ -741,12 +747,24 @@ def forecast_extended_kalman_filter(
 
         # Corresponding emissions at t1
         # Emission covariance
-        R = params.emissions.emission_cov.f(None,inputs[t1_idx],t1)
+        R = params.emissions.emission_cov.f(
+            None,
+            inputs[t0_idx+1],
+            t1
+        )
         
         # According to first order EKF update
         # TODO: incorporate second order EKF updates!
-        H_x = H(pred_state_mean, inputs[t1_idx], t1)
-        pred_emission_mean = h(pred_state_mean, inputs[t1_idx], t1)
+        H_x = H(
+            pred_state_mean,
+            inputs[t0_idx+1],
+            t1
+        )
+        pred_emission_mean = h(
+            pred_state_mean,
+            inputs[t0_idx+1],
+            t1
+        )
         pred_emission_cov = H_x @ pred_state_cov @ H_x.T + R
         
         # Build carry and output states
@@ -767,7 +785,7 @@ def forecast_extended_kalman_filter(
     _, outputs = lax_scan(
         _step,
         carry,
-        (t0, t1, t0_idx, t1_idx),
+        (t0, t1, t0_idx),
         debug=DEBUG
     )
 

@@ -451,7 +451,8 @@ def cdnlgssm_smoother(
 def cdnlgssm_forecast(
     params: ParamsCDNLGSSM,
     init_forecast: Union[tfd.Distribution, Float[Array, "state_dim 1"]],
-    t_emissions: Optional[Float[Array, "num_timesteps 1"]]=None,
+    t_init: Float[Array, "1 1"],
+    t_forecast: Optional[Float[Array, "num_timesteps 1"]]=None,
     hyperparams: Optional[Union[EKFHyperParams, EnKFHyperParams, UKFHyperParams]]=EKFHyperParams(),
     inputs: Optional[Float[Array, "ntime input_dim"]] = None,
     output_fields: Optional[List[str]]=[
@@ -471,9 +472,11 @@ def cdnlgssm_forecast(
         init_forecast: initial condition to start forecasting with:
             - if init_forecast is a distribution, then we forecast such distribution based on different filtering methods
             - if init_forecast is a point estimate of state, then we forecast a forward path starting at that state
-        t_emissions: continuous-time specific time instants of observations: if not None, it is an array 
+        t_init: time-instant of the initial condition of forecast
+        t_forecast: continuous-time specific time instants of observations: if not None, it is an array 
         hyperparams: hyper-parameters of the filter
-        inputs: optional array of inputs.
+        inputs: optional array of inputs, of shape (1 + num_timesteps) \times input_dim
+            - The extra input is needed for the initial emission, i.e., it should be at time t_init
         output_fields: list of fields to return in posterior object.
             These can take the values
                 If we forecast Gaussian distributions, based on filtering methods
@@ -496,7 +499,8 @@ def cdnlgssm_forecast(
             forecast=forecast_extended_kalman_filter(
                 params = params,
                 init_forecast = init_forecast,
-                t_emissions = t_emissions,
+                t_init = t_init,
+                t_forecast = t_forecast,
                 hyperparams = hyperparams,
                 inputs = inputs,
                 output_fields=output_fields
@@ -505,7 +509,8 @@ def cdnlgssm_forecast(
             forecast=forecast_ensemble_kalman_filter(
                 params = params,
                 init_forecast = init_forecast,
-                t_emissions = t_emissions,
+                t_init = t_init,
+                t_forecast = t_forecast,
                 hyperparams = hyperparams,
                 inputs = inputs,
                 output_fields=output_fields
@@ -514,43 +519,60 @@ def cdnlgssm_forecast(
             forecast=forecast_unscented_kalman_filter(
                 params = params,
                 init_forecast = init_forecast,
-                t_emissions = t_emissions,
+                t_init = t_init,
+                t_forecast = t_forecast,
                 hyperparams = hyperparams,
                 inputs = inputs,
                 output_fields=output_fields
             )
     else:
-        # Forecasting a point estimate, based on solving the model
+        # Forecasting point estimates, based on pushing forward the model
         
         # Figure out timestamps, as vectors to scan over
-        # t_emissions is of shape num_timesteps \times 1
+        # t_forecast is of shape num_timesteps \times 1
         # t0 and t1 are num_timesteps \times 0
-        if t_emissions is not None:
-            num_timesteps = t_emissions.shape[0]
-            t0 = tree_map(lambda x: x[0:-1,0], t_emissions)
-            t1 = tree_map(lambda x: x[1:,0], t_emissions)
+        if t_forecast is not None:
+            num_timesteps = t_forecast.shape[0]
+            t0 = tree_map(
+                lambda x: jnp.concatenate(
+                    (t_init, t_forecast[:-1, 0])
+                ),
+                t_forecast,
+            )
+            t1 = tree_map(lambda x: x[:,0], t_forecast)
         else:
-            raise ValueError("t_emissions must be provided for forecasting")
+            raise ValueError("t_forecast must be provided for forecasting")
 
         # Set-up indexing and inputs
-        t0_idx = jnp.arange(num_timesteps-1)
-        t1_idx = jnp.arange(1,num_timesteps)
-        inputs = _process_input(inputs, num_timesteps)
+        t0_idx = jnp.arange(num_timesteps)
+        inputs = _process_input(inputs, num_timesteps+1)
 
         # Define the function to scan over
         def _step(prev_state, args):
-            key, t0, t1, t0_idx, t1_idx = args
+            key, t0, t1, t0_idx = args
 
             # Split the key
             key1, key2 = jr.split(key, 2)
 
             # Define the drift and diffusion functions
             def drift(t, y, args):
-                return params.dynamics.drift.f(y, inputs[t0_idx], t)
+                return params.dynamics.drift.f(
+                    y,
+                    inputs[t0_idx],
+                    t
+                )
             def diffusion(t, y, args):
-                Qc_t = params.dynamics.diffusion_cov.f(None, inputs[t0_idx], t)
-                L_t = params.dynamics.diffusion_coefficient.f(None, inputs[t0_idx], t)
+                Qc_t = params.dynamics.diffusion_cov.f(
+                    None,
+                    inputs[t0_idx],
+                    t
+                )
                 Q_sqrt = jnp.linalg.cholesky(Qc_t)
+                L_t = params.dynamics.diffusion_coefficient.f(
+                    None,
+                    inputs[t0_idx],
+                    t
+                )
                 combined_diffusion = L_t @ Q_sqrt
                 return combined_diffusion
             
@@ -567,12 +589,12 @@ def cdnlgssm_forecast(
             emission = MVN(
                 params.emissions.emission_function.f(
                     state,
-                    inputs[t1_idx],
+                    inputs[t0_idx+1],
                     t=t1
                 ),
                 params.emissions.emission_cov.f(
                     state,
-                    inputs[t1_idx],
+                    inputs[t0_idx+1],
                     t=t1
                 )
             ).sample(seed=key1)
@@ -581,52 +603,20 @@ def cdnlgssm_forecast(
             return state, (state, emission)
 
         # Split the key
-        key1, key = jr.split(key)
+        next_keys = jr.split(key, num_timesteps)
 
-        # The initial state to forecast is given, sample the initial emission
-        initial_input = inputs[0]
-        initial_emission = MVN(
-            params.emissions.emission_function.f(
-                init_forecast,
-                initial_input,
-                t=t0[0]
-            ),
-            params.emissions.emission_cov.f(
-                init_forecast,
-                initial_input,
-                t=t0[0]
-            )
-        ).sample(seed=key1)
-
-        # Forecast states and emissions, over time
-        next_keys = jr.split(key, num_timesteps-1)
-
-        # Run the scan
+        # Forecast states and emissions, over time, via scan       
         _, (next_states, next_emissions) = lax_scan(
             _step,
             init_forecast,
-            (next_keys, t0, t1, t0_idx, t1_idx),
+            (next_keys, t0, t1, t0_idx),
             debug=DEBUG
-        )
-
-        # Lambda to concatenate the initial state and emission with the following ones
-        expand_and_cat = lambda x0, x1T: jnp.concatenate((jnp.expand_dims(x0, 0), x1T))
-
-        forecasted_states = tree_map(
-            expand_and_cat,
-            init_forecast,
-            next_states
-        )
-        forecasted_emissions = tree_map(
-            expand_and_cat,
-            initial_emission,
-            next_emissions
-        )
+        ) # type: ignore
         
         # Build the forecast object
         forecast = GSSMForecast(
-            forecasted_state_path=forecasted_states,
-            forecasted_emission_path=forecasted_emissions
+            forecasted_state_path=next_states,
+            forecasted_emission_path=next_emissions
         )
     
     return forecast
