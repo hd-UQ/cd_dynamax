@@ -414,11 +414,9 @@ def forecast_unscented_kalman_filter(
     output_fields: Optional[List[str]]=[
         "forecasted_state_means",
         "forecasted_state_covariances",
-        "forecasted_emission_means",
-        "forecasted_emission_covariances",
     ],
 ) -> GSSMForecast:
-    r"""Run an Unscented Kalman filter to forecast state and emissions.        
+    r"""Run an Unscented Kalman filter to forecast states.
 
     Args:
         params: model parameters.
@@ -459,9 +457,6 @@ def forecast_unscented_kalman_filter(
     alpha, beta, kappa = hyperparams.alpha, hyperparams.beta, hyperparams.kappa
     lamb = _compute_lambda(alpha, kappa, state_dim)
     w_mean, w_cov, W_matrix = _compute_weights(state_dim, alpha, beta, lamb)
-
-    # Only emission function
-    h = params.emissions.emission_function.f
     
     def _step(carry, args):
         current_state_mean, current_state_cov = carry
@@ -479,49 +474,11 @@ def forecast_unscented_kalman_filter(
             inputs[t0_idx],
         )
 
-        # Corresponding emissions at t1
-        # Form sigma points
-        sigmas_cond = _compute_sigmas(
-            pred_state_mean,
-            pred_state_cov,
-            len(pred_state_mean),
-            lamb
-        )
-        # Propagate with inputs
-        u_s = jnp.array(
-            [inputs[t0_idx+1]] * len(sigmas_cond)
-        )
-        sigmas_cond_prop = vmap(
-            h, in_axes=(0, None, None)
-        )(sigmas_cond, u_s, t1)
-
-        # Emission covariance
-        R = params.emissions.emission_cov.f(
-            None,
-            inputs[t0_idx+1],
-            t1
-        )
-        # Compute sufficient statistics of sigmas
-        pred_emission_mean = jnp.tensordot(
-            w_mean,
-            sigmas_cond_prop,
-            axes=1
-        )
-        pred_emission_cov = jnp.tensordot(
-            w_cov,
-            _outer(sigmas_cond_prop - pred_emission_mean,
-                   sigmas_cond_prop - pred_emission_mean
-            ),
-            axes=1
-        ) + R
-        
         # Build carry and output states
         carry = (pred_state_mean, pred_state_cov)
         outputs = {
             "forecasted_state_means": pred_state_mean,
             "forecasted_state_covariances": pred_state_cov,
-            "forecasted_emission_means": pred_emission_mean,
-            "forecasted_emission_covariances": pred_emission_cov,
         }
         outputs = {key: val for key, val in outputs.items() if key in output_fields}
 
@@ -543,3 +500,110 @@ def forecast_unscented_kalman_filter(
         **outputs,
     )
     return forecast
+
+def emissions_unscented_kalman_filter(
+    params: ParamsCDNLGSSM,
+    t_states: Float[Array, "num_timesteps 1"],
+    state_means: Float[Array, "num_timesteps state_dim"],
+    state_covs: Optional[Float[Array, "num_timesteps state_dim state_dim"]]=None,
+    inputs: Optional[Float[Array, "num_timesteps input_dim"]] = None,
+    hyperparams: UKFHyperParams = UKFHyperParams(),
+) -> Tuple[
+        Float[Array, "num_timesteps emission_dim"], Optional[Float[Array, "num_timesteps emission_dim emission_dim"]]
+    ]:
+    r"""Compute the emissions corresponding to the UKF linearization of the model.
+    
+    Args:
+        params: model parameters.
+        t_states: continuous-time specific time instants of states
+        state_means: state means at time instants t_states, always required
+        state_covs: state covariances at time instants t_states, optional
+            - if None, then we assume that the states are point estimates, and simply push through emission function
+        inputs: optional array of inputs, of shape (1 + num_timesteps) \times input_dim
+            - The extra input is needed for the initial emission, i.e., it should be at time t_init
+        hyperparams: hyper-parameters of the filter
+
+    Returns:
+        emissions_mean: mean of emissions
+        emissions_covariance: covariance of emissions, if available
+    """
+    
+    # Figure out timestamps, as vectors to scan over
+    # t_states is of shape num_timesteps \times 1
+    # t0 and t1 are num_timesteps \times 0
+    if t_states is not None:
+        num_timesteps = t_states.shape[0]
+        t0 = tree_map(lambda x: x[:,0], t_states)
+    else:
+        raise ValueError("t_states must be provided for forecasting")
+
+    # Set-up indexing and inputs
+    t0_idx = jnp.arange(num_timesteps)
+    inputs = _process_input(inputs, num_timesteps)
+
+    # Preliminaries
+    state_dim = params.dynamics.diffusion_cov.params.shape[0]
+
+    # Compute lambda and weights from from hyperparameters
+    alpha, beta, kappa = hyperparams.alpha, hyperparams.beta, hyperparams.kappa
+    lamb = _compute_lambda(alpha, kappa, state_dim)
+    w_mean, w_cov, W_matrix = _compute_weights(state_dim, alpha, beta, lamb)
+
+    # Emission function
+    h = params.emissions.emission_function.f
+    
+    def _step(carry, args):
+        state_mean, state_cov, t0, t0_idx = args
+        
+        # Form sigma points
+        sigmas_cond = _compute_sigmas(
+            state_mean,
+            state_cov,
+            state_dim,
+            lamb
+        )
+        
+        # Propagate with inputs
+        u_s = jnp.array(
+            [inputs[t0_idx]] * len(sigmas_cond)
+        )
+        sigmas_cond_prop = vmap(
+            h, in_axes=(0, None, None)
+        )(sigmas_cond, u_s, t0)
+
+        # Emission mean, by computing sufficient statistics of sigmas
+        emission_mean = jnp.tensordot(
+            w_mean,
+            sigmas_cond_prop,
+            axes=1
+        )
+        # Emission covariance
+        R = params.emissions.emission_cov.f(
+            None,
+            inputs[t0_idx],
+            t0
+        )
+        emission_cov = jnp.tensordot(
+            w_cov,
+            _outer(sigmas_cond_prop - emission_mean,
+                   sigmas_cond_prop - emission_mean
+            ),
+            axes=1
+        ) + R
+        
+        # Return carry and output states
+        return (state_mean, state_cov), (emission_mean, emission_cov)
+
+    # Initialize the state, based on provided initial distribution's mean and covariance
+    carry = (
+        state_means[0], state_covs[0]
+    )
+    # Run the extended Kalman filter
+    _, (emissions_mean, emissions_covariance) = lax_scan(
+        _step,
+        carry,
+        (state_means, state_covs, t0, t0_idx),
+        debug=DEBUG
+    ) # type: ignore
+
+    return emissions_mean, emissions_covariance
