@@ -683,11 +683,9 @@ def forecast_extended_kalman_filter(
     output_fields: Optional[List[str]]=[
         "forecasted_state_means",
         "forecasted_state_covariances",
-        "forecasted_emission_means",
-        "forecasted_emission_covariances",
     ],
 ) -> GSSMForecast:
-    r"""Run an extended Kalman filter to forecast state and emissions.
+    r"""Run an extended Kalman filter to forecast states
         Two implementations are available,
         based on first- and second-order approximations
             i.e. Algorithms 3.21 and 3.22 in Sarkka's thesis
@@ -722,15 +720,8 @@ def forecast_extended_kalman_filter(
 
     # Set-up indexing and inputs
     t0_idx = jnp.arange(num_timesteps)
-    inputs = _process_input(inputs, num_timesteps+1)
+    inputs = _process_input(inputs, num_timesteps)
 
-    # Only emission function
-    h = params.emissions.emission_function.f
-    # First order EKF update implemented for now
-    # TODO: consider second-order EKF updates
-    H = jacfwd(h)
-    # h, H = (_process_fn(fn, inputs) for fn in (h, H))
-    
     def _step(carry, args):
         current_state_mean, current_state_cov = carry
         t0, t1, t0_idx = args
@@ -745,35 +736,11 @@ def forecast_extended_kalman_filter(
             hyperparams
         )
 
-        # Corresponding emissions at t1
-        # Emission covariance
-        R = params.emissions.emission_cov.f(
-            None,
-            inputs[t0_idx+1],
-            t1
-        )
-        
-        # According to first order EKF update
-        # TODO: incorporate second order EKF updates!
-        H_x = H(
-            pred_state_mean,
-            inputs[t0_idx+1],
-            t1
-        )
-        pred_emission_mean = h(
-            pred_state_mean,
-            inputs[t0_idx+1],
-            t1
-        )
-        pred_emission_cov = H_x @ pred_state_cov @ H_x.T + R
-        
         # Build carry and output states
         carry = (pred_state_mean, pred_state_cov)
         outputs = {
             "forecasted_state_means": pred_state_mean,
             "forecasted_state_covariances": pred_state_cov,
-            "forecasted_emission_means": pred_emission_mean,
-            "forecasted_emission_covariances": pred_emission_cov,
         }
         outputs = {key: val for key, val in outputs.items() if key in output_fields}
 
@@ -794,3 +761,92 @@ def forecast_extended_kalman_filter(
         **outputs,
     )
     return forecast
+
+def emissions_extended_kalman_filter(
+    params: ParamsCDNLGSSM,
+    t_states: Float[Array, "num_timesteps 1"],
+    state_means: Float[Array, "num_timesteps state_dim"],
+    state_covs: Optional[Float[Array, "num_timesteps state_dim state_dim"]]=None,
+    inputs: Optional[Float[Array, "num_timesteps input_dim"]] = None,
+    hyperparams: EKFHyperParams = EKFHyperParams(),
+) -> Tuple[
+        Float[Array, "num_timesteps emission_dim"], Optional[Float[Array, "num_timesteps emission_dim emission_dim"]]
+    ]:
+    r"""Compute the emissions corresponding to the EKF linearization of the model.
+    
+    Args:
+        params: model parameters.
+        t_states: continuous-time specific time instants of states
+        state_means: state means at time instants t_states, always required
+        state_covs: state covariances at time instants t_states, optional
+            - if None, then we assume that the states are point estimates, and simply push through emission function
+        inputs: optional array of inputs, of shape (1 + num_timesteps) \times input_dim
+            - The extra input is needed for the initial emission, i.e., it should be at time t_init
+        hyperparams: hyper-parameters of the filter
+
+    Returns:
+        emissions_mean: mean of emissions
+        emissions_covariance: covariance of emissions, if available
+    """
+    
+    # Figure out timestamps, as vectors to scan over
+    # t_states is of shape num_timesteps \times 1
+    # t0 and t1 are num_timesteps \times 0
+    if t_states is not None:
+        num_timesteps = t_states.shape[0]
+        t0 = tree_map(lambda x: x[:,0], t_states)
+    else:
+        raise ValueError("t_states must be provided for forecasting")
+
+    # Set-up indexing and inputs
+    t0_idx = jnp.arange(num_timesteps)
+    inputs = _process_input(inputs, num_timesteps)
+
+    # Emission function
+    h = params.emissions.emission_function.f
+    # First order EKF update implemented for now
+    # TODO: consider second-order EKF updates
+    H = jacfwd(h)
+    # h, H = (_process_fn(fn, inputs) for fn in (h, H))
+    
+    def _step(carry, args):
+        state_mean, state_cov, t0, t0_idx = args
+        
+        # Emission covariance
+        R = params.emissions.emission_cov.f(
+            None,
+            inputs[t0_idx],
+            t0
+        )
+        # Push the state through the emission function
+        emission_mean = h(
+            state_mean,
+            inputs[t0_idx],
+            t0
+        )
+
+        # Emission covariance, according to first order EKF update
+        # TODO: incorporate second order EKF updates!
+        H_x = H(
+            state_mean,
+            inputs[t0_idx],
+            t0
+        )
+        emission_cov = H_x @ state_cov @ H_x.T + R
+        
+        # Return carry and output states
+        return (state_mean, state_cov), (emission_mean, emission_cov)
+
+    # Initialize the state, based on provided initial distribution's mean and covariance
+    carry = (
+        state_means[0], state_covs[0]
+    )
+    # Run the extended Kalman filter
+    _, (emissions_mean, emissions_covariance) = lax_scan(
+        _step,
+        carry,
+        (state_means, state_covs, t0, t0_idx),
+        debug=DEBUG
+    ) # type: ignore
+
+    return emissions_mean, emissions_covariance

@@ -28,9 +28,9 @@ tfb = tfp.bijectors
 from ssm_temissions import SSM
 # CDNLGSSM param and function definition
 from continuous_discrete_nonlinear_gaussian_ssm.cdnlgssm_utils import *
-from continuous_discrete_nonlinear_gaussian_ssm.inference_ekf import EKFHyperParams, iterated_extended_kalman_filter, iterated_extended_kalman_smoother, forecast_extended_kalman_filter
-from continuous_discrete_nonlinear_gaussian_ssm.inference_enkf import EnKFHyperParams, ensemble_kalman_filter, forecast_ensemble_kalman_filter
-from continuous_discrete_nonlinear_gaussian_ssm.inference_ukf import UKFHyperParams, unscented_kalman_filter, forecast_unscented_kalman_filter
+from continuous_discrete_nonlinear_gaussian_ssm.inference_ekf import EKFHyperParams, iterated_extended_kalman_filter, iterated_extended_kalman_smoother, forecast_extended_kalman_filter, emissions_extended_kalman_filter
+from continuous_discrete_nonlinear_gaussian_ssm.inference_enkf import EnKFHyperParams, ensemble_kalman_filter, forecast_ensemble_kalman_filter, emissions_ensemble_kalman_filter
+from continuous_discrete_nonlinear_gaussian_ssm.inference_ukf import UKFHyperParams, unscented_kalman_filter, forecast_unscented_kalman_filter, emissions_unscented_kalman_filter
 # Diffrax based diff-eq solver
 from utils.diffrax_utils import diffeqsolve
 from utils.debug_utils import lax_scan
@@ -458,12 +458,10 @@ def cdnlgssm_forecast(
     output_fields: Optional[List[str]]=[
         "forecasted_state_means",
         "forecasted_state_covariances",
-        "forecasted_emission_means",
-        "forecasted_emission_covariances",
     ],
     key: Optional[Float[Array, "key"]] = jr.PRNGKey(0),
 ) -> GSSMForecast:
-    r"""Run an continuous-discrete nonlinear model to produce the forecasted state and emisison estimates
+    r"""Run an continuous-discrete nonlinear model to produce the forecasted state estimates.
         
         Depending on the hyperparameter class provided, it can execute EKF, UKF or EnKF
     
@@ -482,8 +480,6 @@ def cdnlgssm_forecast(
                 If we forecast Gaussian distributions, based on filtering methods
                     "forecasted_state_means",
                     "forecasted_state_covariances",
-                    "forecasted_emission_means",
-                    "forecasted_emission_covariances".
                 If we forecast paths, based on solving the SDE
                     "forecasted_state_path",
                     "forecasted_emission_path".
@@ -620,3 +616,114 @@ def cdnlgssm_forecast(
         )
     
     return forecast
+
+# TODO: replicate this for linear models 
+def cdnlgssm_emissions(
+    params: ParamsCDNLGSSM,
+    t_states: Float[Array, "num_timesteps 1"],
+    state_means: Float[Array, "num_timesteps state_dim"],
+    state_covs: Optional[Float[Array, "num_timesteps state_dim state_dim"]]=None,
+    inputs: Optional[Float[Array, "num_timesteps input_dim"]] = None,
+    hyperparams: Optional[Union[EKFHyperParams, EnKFHyperParams, UKFHyperParams]]=None,
+    key: Optional[Float[Array, "key"]] = jr.PRNGKey(0),
+) -> Tuple[
+        Float[Array, "num_timesteps emission_dim"], Optional[Float[Array, "num_timesteps emission_dim emission_dim"]]
+    ]:
+    r"""Compute the emissions corresponding to
+        - a continuous-discrete nonlinear model, as specified by params
+        - a filter method for a continuous-discrete nonlinear model
+            Depending on the hyperparameter class provided, it can execute EKF, UKF or EnKF
+    
+    Args:
+        params: model parameters.
+        t_states: continuous-time specific time instants of states
+        state_means: state means at time instants t_states, always required
+        state_covs: state covariances at time instants t_states, optional
+            - if None, then we assume that the states are point estimates, and simply push through emission function
+        inputs: optional array of inputs, of shape (1 + num_timesteps) \times input_dim
+            - The extra input is needed for the initial emission, i.e., it should be at time t_init
+        hyperparams: hyper-parameters of the filter, optional
+        key: random key for sampling
+
+    Returns:
+        emissions_mean: mean of emissions
+        emissions_covariance: covariance of emissions, if available
+    """
+
+    # Check whether we are using model or a filter
+    if hyperparams is not None:
+        # Emissions, based on different filters
+        if isinstance(hyperparams, EKFHyperParams):
+            emissions_mean, emissions_covariance=emissions_extended_kalman_filter(
+                params = params,
+                t_states = t_states,
+                state_means = state_means,
+                state_covs = state_covs,
+                inputs = inputs,
+                hyperparams = hyperparams,
+            )
+        elif isinstance(hyperparams, EnKFHyperParams):
+            emissions_mean, emissions_covariance=emissions_ensemble_kalman_filter(
+                params = params,
+                t_states = t_states,
+                state_means = state_means,
+                state_covs = state_covs,
+                inputs = inputs,
+                hyperparams = hyperparams,
+                key=key,
+            )
+        elif isinstance(hyperparams, UKFHyperParams):
+            emissions_mean, emissions_covariance=emissions_unscented_kalman_filter(
+                params = params,
+                t_states = t_states,
+                state_means = state_means,
+                state_covs = state_covs,
+                inputs = inputs,
+                hyperparams = hyperparams,
+            )
+    else:
+        # Emissions of point estimates, based on pushing the state through the model emission function
+        
+        # Figure out timestamps, as vectors to scan over
+        # t_states is of shape num_timesteps \times 1
+        # t0 and t1 are num_timesteps \times 0
+        if t_states is not None:
+            num_timesteps = t_states.shape[0]
+            t0 = tree_map(lambda x: x[:,0], t_states)
+        else:
+            raise ValueError("t_states must be provided for forecasting")
+
+        # Set-up indexing and inputs
+        t0_idx = jnp.arange(num_timesteps)
+        inputs = _process_input(inputs, num_timesteps)
+
+        # Define the function to scan over
+        def _step(state, args):
+            this_state, t0, t0_idx = args
+
+            # Push the state through the emission function
+            emission_mean=params.emissions.emission_function.f(
+                    this_state,
+                    inputs[t0_idx],
+                    t=t0
+                )
+            # Emission covariance, as determined by the model
+            emission_cov=params.emissions.emission_cov.f(
+                this_state,
+                inputs[t0_idx],
+                t=t0
+            )
+            
+            # Return the state and emission
+            return this_state, (emission_mean, emission_cov)
+
+        # Compute emissions, over time, via scan       
+        _, (emissions_mean, emissions_covariance) = lax_scan(
+            _step,
+            state_means[0],
+            (state_means, t0, t0_idx),
+            debug=DEBUG
+        ) # type: ignore
+
+    # Return the emissions
+    return emissions_mean, emissions_covariance

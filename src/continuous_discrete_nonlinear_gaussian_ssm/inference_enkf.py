@@ -281,14 +281,9 @@ def forecast_ensemble_kalman_filter(
     output_fields: Optional[List[str]]=[
         "forecasted_state_means",
         "forecasted_state_covariances",
-        "forecasted_emission_means",
-        "forecasted_emission_covariances",
     ],
 ) -> GSSMForecast:
-    r"""Run an Ensemble Kalman filter to forecast state and emissions.
-        Two implementations are available,
-        based on first- and second-order approximations
-            i.e. Algorithms 3.21 and 3.22 in Sarkka's thesis
+    r"""Run an Ensemble Kalman filter to forecast states
 
     Args:
         params: model parameters.
@@ -320,11 +315,7 @@ def forecast_ensemble_kalman_filter(
 
     # Set-up indexing and inputs
     t0_idx = jnp.arange(num_timesteps)
-    inputs = _process_input(inputs, num_timesteps+1)
-
-    # Only emission function
-    h = params.emissions.emission_function.f
-    # h = _process_fn(h, inputs)
+    inputs = _process_input(inputs, num_timesteps)
 
     def _step(carry, args):
         current_x_ens = carry
@@ -349,44 +340,11 @@ def forecast_ensemble_kalman_filter(
             axis=0
             ) / (hyperparams.N_particles - 1)
 
-        # Corresponding emissions at t1
-        # Emission covariance 
-        R = params.emissions.emission_cov.f(
-            None,
-            inputs[t0_idx+1],
-            t1
-        )
-
-        # Propagate ensemble through emission function
-
-        # duplicate inputs for each particle
-        u_s = jnp.array(
-            [inputs[t0_idx+1]] * hyperparams.N_particles
-        )
-        # The shape of y_ensemble is n_particles x Observation Dimensions
-        y_ensemble = vmap(
-            h, in_axes=(0, None, None)
-        )(pred_x_ens, u_s, t1)
-
-        ## These 2 computations should use deterministic observation ensemble, not perturbed
-        # compute predicted mean of measurements
-        pred_emission_mean = jnp.mean(y_ensemble, axis=0)
-
-        # compute predicted covariance of measurements as outer product of differences from mean
-        # represents "HPH^T" in Kalman gain computation
-        # y_pred_cov = jnp.cov(y_ensemble, rowvar=False)
-        pred_emission_cov = jnp.sum(
-            _outer(y_ensemble - pred_emission_mean, y_ensemble - pred_emission_mean),
-            axis=0
-        ) / (hyperparams.N_particles - 1) + R
-
         # Build carry and output states
         carry = (pred_x_ens)
         outputs = {
             "forecasted_state_means": pred_state_mean,
             "forecasted_state_covariances": pred_state_cov,
-            "forecasted_emission_means": pred_emission_mean,
-            "forecasted_emission_covariances": pred_emission_cov,
         }
         outputs = {key: val for key, val in outputs.items() if key in output_fields}
 
@@ -415,3 +373,106 @@ def forecast_ensemble_kalman_filter(
         **outputs,
     )
     return forecast
+
+def emissions_ensemble_kalman_filter(
+    params: ParamsCDNLGSSM,
+    t_states: Float[Array, "num_timesteps 1"],
+    state_means: Float[Array, "num_timesteps state_dim"],
+    state_covs: Optional[Float[Array, "num_timesteps state_dim state_dim"]]=None,
+    inputs: Optional[Float[Array, "num_timesteps input_dim"]] = None,
+    hyperparams: EnKFHyperParams = EnKFHyperParams(),
+    key: Optional[Float[Array, "key"]] = jr.PRNGKey(0),
+) -> Tuple[
+        Float[Array, "num_timesteps emission_dim"], Optional[Float[Array, "num_timesteps emission_dim emission_dim"]]
+    ]:
+    r"""Compute the emissions corresponding to the EnKF linearization of the model.
+    
+    Args:
+        params: model parameters.
+        t_states: continuous-time specific time instants of states
+        state_means: state means at time instants t_states, always required
+        state_covs: state covariances at time instants t_states, optional
+            - if None, then we assume that the states are point estimates, and simply push through emission function
+        inputs: optional array of inputs, of shape (1 + num_timesteps) \times input_dim
+            - The extra input is needed for the initial emission, i.e., it should be at time t_init
+        hyperparams: hyper-parameters of the filter
+
+    Returns:
+        emissions_mean: mean of emissions
+        emissions_covariance: covariance of emissions, if available
+    """
+    
+    # Figure out timestamps, as vectors to scan over
+    # t_states is of shape num_timesteps \times 1
+    # t0 and t1 are num_timesteps \times 0
+    if t_states is not None:
+        num_timesteps = t_states.shape[0]
+        t0 = tree_map(lambda x: x[:,0], t_states)
+    else:
+        raise ValueError("t_states must be provided for forecasting")
+
+    # Set-up indexing and inputs
+    t0_idx = jnp.arange(num_timesteps)
+    inputs = _process_input(inputs, num_timesteps)
+
+    # Emission function
+    h = params.emissions.emission_function.f
+    
+    def _step(carry, args):
+        key, state_mean, state_cov, t0, t0_idx = args
+        
+        # Draw ensemble from the state mean and covariance
+        state_ens = MVN(
+            state_mean,
+            state_cov
+        ).sample(
+            seed=key,
+            sample_shape=hyperparams.N_particles
+        )
+        
+        # Emission covariance 
+        R = params.emissions.emission_cov.f(
+            None,
+            inputs[t0_idx],
+            t0
+        )
+
+        # Propagate ensemble through emission function
+        # duplicate inputs for each particle
+        u_s = jnp.array(
+            [inputs[t0_idx]] * hyperparams.N_particles
+        )
+        # The shape of y_ensemble is n_particles x Observation Dimensions
+        y_ensemble = vmap(
+            h, in_axes=(0, None, None)
+        )(state_ens, u_s, t0)
+
+        ## These 2 computations should use deterministic observation ensemble, not perturbed
+        # compute predicted mean of measurements
+        emission_mean = jnp.mean(y_ensemble, axis=0)
+
+        # compute predicted covariance of measurements as outer product of differences from mean
+        # represents "HPH^T" in Kalman gain computation
+        emission_cov = jnp.sum(
+            _outer(y_ensemble - emission_mean, y_ensemble - emission_mean),
+            axis=0
+        ) / (hyperparams.N_particles - 1) + R
+
+        # Return carry and output states
+        return (state_mean, state_cov), (emission_mean, emission_cov)
+
+    # Build keys to be used to draw particles at each step of the filter
+    keys = jr.split(hyperparams.key, num_timesteps)
+    # Initialize the state, based on provided initial distribution's mean and covariance
+    carry = (
+        state_means[0], state_covs[0]
+    )
+    # Run the extended Kalman filter
+    _, (emissions_mean, emissions_covariance) = lax_scan(
+        _step,
+        carry,
+        (keys, state_means, state_covs, t0, t0_idx),
+        debug=DEBUG
+    ) # type: ignore
+
+    return emissions_mean, emissions_covariance
