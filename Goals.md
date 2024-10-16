@@ -59,33 +59,64 @@ Goal is to extend dynamax to deal with irregular sampling, via continuous-discre
             - at regular time interval cd-UKS, cd-EKS vs d-UKS, d-EKS
             - at irregular time intervals cd-UKS and cd-EKS
 
-### Parameter estimation
+## For v0 
 
-- Fit SGD works for continuous-discrete linear and non-linear models
-    - We can compute MLE model parameter estimates based on different filtering algorithms
-    - Does it make sense to use smoothing to compute logmarginal used by SGD?
+- Tests for linear and nonlinear CD filtering and smoothing with regular and irregular sampling
+
+- Notebooks for linear and nonlinear CD with regular and irregular sampling
+    - Linear:
+        - [Tracking](./src/notebooks/linear/cdlgssm_tracking.ipynb)
+        - [Parameter learning (regular sampling times)](./src/notebooks/linear/cdlgssm_learnParams_oscillator_fixedSampleRate.ipynb)
+        - [Parameter learning (irregular sampling times)](./src/notebooks/linear/cdlgssm_learnParams_oscillator_irregularSampleRate.ipynb)
+    - [Pendulum](./src/notebooks/non_linear/cd_ekf_ukf_pendulum.ipynb)
+    - Lorenz 63:
+        - [regular sampling times](./src/notebooks/non_linear/cd_ekf_ukf_enkf_Lorenz63.ipynb),
+        - [irregular sampling times](./src/notebooks/non_linear/cd_ekf_ukf_enkf_Lorenz63_irregular_times.ipynb)
+
+### For v0.1
+
+- Tutorials 
+    - [State estimation and forecasting](./src/notebooks/tutorial/cdnlgssm_filtering.ipynb)
+        - how to learn partially observed dynamics, given a cd-nlgssm model
+        - We show how to use cd-dynamax to estimate the latent state of a continuous-discrete (non-linear) Gaussian dynamical system
+            - Specifically, we will showcase the following filtering alternatives:
+                - The Extended Kalman Filter (EKF)
+                - The Ensemble Kalman Filter (EnKF)
+                - The Unscented Kalman filter
     
-- Pending: 
-	- Generalize learnable function params property to deal with multiple parameters (e.g., weights and biases).
-        - TODO: Add notebook showcasing parameter estimation accuracy (port from add_validation branch)
+    - System identification or parameter estimation for a mechanistic cd-nlgssm model, given observed data:
+        - [MLE (SGD)](): MLE Parameter estimation for an irregularly-sampled, continuous-discrete (non-linear) dynamical system, where we show how to use cd-dynamax and Stochastic Gradient Descent for computing the Maximum Likelihood Estimate for the parameters of a continuous-discrete (non-linear) dynamical system
+        - MAP with MCMC
+            - [MAP with HMC]((./src/notebooks/tutorial/cdnlgssm_parameter_estimation_HMC.ipynb)): Bayesian parameter estimation for an irregularly-sampled, continuous-discrete (non-linear) dynamical system, where we use the [blackjax](https://github.com/blackjax-devs/blackjax)'s HMC implementation to sample from the parameter posterior $p(\theta|y(1:T))$ of unknown parameters of the cd-nonlinear dynamical model.
+            - [MAP with NUTS]((./src/notebooks/tutorial/cdnlgssm_parameter_estimation_NUTS.ipynb)): Bayesian parameter estimation for an irregularly-sampled, continuous-discrete (non-linear) dynamical system, where we use the [blackjax](https://github.com/blackjax-devs/blackjax)'s NUTS implementation to sample from the parameter posterior $p(\theta|y(1:T))$ of unknown parameters of the cd-nonlinear dynamical model.
         
-    - ContDiscreteLinearGaussianConjugateSSM:
-        - Can we derive Conjugate priors for continuous-discrete linear dynamic paraemeters?
-
-    - EM is not implemented
-
-### Uncertainty Quantification
-
-- Via Hamiltonian Monte Carlo (HMC)
-    - [Example notebook](to be added, based on Initial pending below)
-
-- Hierarchical uncertainty quantification
-    - via Empirical Bayes
-        - Incorporate priors over parameters
-        - Define prior hyperparameters as new dynamax "parameters"
-        - Use Monte Carlo to average over many realizations of parameters
-        - Let SGD learn hyperparameters of prior via MC-based loss
+    - Learning RHS of ODE via flexible functions (NNs)
+        - parameter estimation of neural network weights
+            - MLE and MAP
     
+    - Learning hybrid models:
+        - RHS of ODE equals mechanistic model + flexible functions (NNs)
+
+- Start with easy tutorial
+    - Fully observed, noisy Lorenz (easy)
+    - Partially observed, noisy Lorenz (difficult)
+        - then replicate
+            
+### For v0.2
+
+- Process inputs in dynamic functions
+
+- Allow for input times to be different from measurement times?
+
+- How to modify learnable parameters, to have a parameter set
+    - Build it for linear function with weights and biases
+
+- How to be able to initialize params across many NL functions
+    - Maybe within function wrapper?
+
+- Modify the pushforward to incorporate physics + NN
+    - How to incorporate DL within Jax?
+       
 # To dos
 
 - Oscillator learning
@@ -94,12 +125,25 @@ Goal is to extend dynamax to deal with irregular sampling, via continuous-discre
         - maybe simply fixing h
         - learn all or learn only weights?
 
+### Parameter estimation and Uncertainty Quantification
+- ContDiscreteLinearGaussianConjugateSSM:
+    - Can we derive Conjugate priors for continuous-discrete linear dynamic paraemeters?
+
+- EM is not implemented
+
 - Uncertainty quantification via HMC
     - How to deal with MLE vs MAP
         - Simply editing log-priors? (Iñigo)
         - Editing fit_sgd with an argument?
-   
-## From Matt's notes
+        
+- Hierarchical uncertainty quantification
+    - via Empirical Bayes
+        - Incorporate priors over parameters
+        - Define prior hyperparameters as new dynamax "parameters"
+        - Use Monte Carlo to average over many realizations of parameters
+        - Let SGD learn hyperparameters of prior via MC-based loss
+
+### From Matt's notes
 
 Things to go after next:
 
@@ -157,62 +201,6 @@ Things to go after next:
     - Add data normalizations
     
     - Start running on GPUs!
-    
-## For v0 
-
-- Tests for linear and nonlinear CD filtering and smoothing with regular and irregular sampling
-
-- Notebooks for linear and nonlinear CD with regular and irregular sampling
-    - Linear:
-        - [Tracking](./src/notebooks/linear/cdlgssm_tracking.ipynb)
-        - [Parameter learning (regular sampling times)](./src/notebooks/linear/cdlgssm_learnParams_oscillator_fixedSampleRate.ipynb)
-        - [Parameter learning (irregular sampling times)](./src/notebooks/linear/cdlgssm_learnParams_oscillator_irregularSampleRate.ipynb)
-    - [Pendulum](./src/notebooks/non_linear/cd_ekf_ukf_pendulum.ipynb)
-    - Lorenz 63:
-        - [regular sampling times](./src/notebooks/non_linear/cd_ekf_ukf_enkf_Lorenz63.ipynb),
-        - [irregular sampling times](./src/notebooks/non_linear/cd_ekf_ukf_enkf_Lorenz63_irregular_times.ipynb)
-
-### For v0.1
-
-- Tutorials 
-    - State estimation
-        - how to learn partially observed dynamics, given a model (1 notebook)
-        - filter a time series for T_filter time units, then make a forecast over a horizon of length T_forecast
-    
-    - System identification
-        - Parameter estimation for mechanistic models:
-            - how to learn the parameters of a dynamic model, given observed data (1 notebook)
-                - MLE (SGD)
-                - MAP with MCMC
-                    - BlackJax HMC
-                    - BlackJax Nuts?
-        
-        - Learning RHS of ODE via flexible functions (NNs)
-            - parameter estimation of neural network weights
-                - MLE and MAP
-        
-        - Learning hybrid models:
-            - RHS of ODE equals mechanistic model + flexible functions (NNs)
-
-- Start with easy tutorial
-    - Fully observed, noisy Lorenz (easy)
-    - Partially observed, noisy Lorenz (difficult)
-        - then replicate
-            
-### For v0.1
-
-- Process inputs in dynamic functions
-
-- Allow for input times to be different from measurement times?
-
-- How to modify learnable parameters, to have a parameter set
-    - Build it for linear function with weights and biases
-
-- How to be able to initialize params across many NL functions
-    - Maybe within function wrapper?
-
-- Modify the pushforward to incorporate physics + NN
-    - How to incorporate DL within Jax?
 
 ## Longer term ideas
 
@@ -230,21 +218,7 @@ Things to go after next:
     - Having different losses to be fit by SGD
         - i.e., redefine fit_sgd to have different losses as input
     - start with coarse/cheap/robust approximations of likelihood….then refine learning with higher-fidelity approximations of likelihood
-
-## Uncertainty Quantification
-
-- Via Monte Carlo approches
-    - using plain Monte Carlo
-    - using HMC
-    - using other MCMC?
-
-- Hierarchical uncertainty quantification
-    - via Empirical Bayes
-        - Incorporate priors over parameters
-        - Define prior hyperparameters as new dynamax "parameters"
-        - Use Monte Carlo to average over many realizations of parameters
-        - Let SGD learn hyperparameters of prior via MC-based loss
-        
+       
 ## New non-linear models
 
 - lorenz
