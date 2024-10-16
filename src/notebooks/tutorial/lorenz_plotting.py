@@ -371,9 +371,6 @@ def plot_advanced2(
     true_states=None,
     true_filtered_states=None,
     model_filtered_states=None,
-    true_filtered_covariances=None,
-    model_filtered_covariances=None,
-    model_forecast_covariances=None,
     true_forecast_states=None,
     model_forecast_states=None,
     true_emissions_noisy=None,
@@ -430,11 +427,8 @@ def plot_advanced2(
     true_states = subset_data(true_states, start_idx_all, end_idx_all)
     true_filtered_states = subset_data(true_filtered_states, start_idx_filter, end_idx_filter)
     model_filtered_states = subset_data(model_filtered_states, start_idx_filter, end_idx_filter)
-    true_filtered_covariances = subset_data(true_filtered_covariances, start_idx_filter, end_idx_filter)
-    model_filtered_covariances = subset_data(model_filtered_covariances, start_idx_filter, end_idx_filter)
     true_forecast_states = subset_data(true_forecast_states, start_idx_forecast, end_idx_forecast)
     model_forecast_states = subset_data(model_forecast_states, start_idx_forecast, end_idx_forecast)
-    model_forecast_covariances = subset_data(model_forecast_covariances, start_idx_forecast, end_idx_forecast)
     true_emissions_noisy = subset_data(true_emissions_noisy, start_idx_all, end_idx_all)
 
     # Determine the number of rows for subplots

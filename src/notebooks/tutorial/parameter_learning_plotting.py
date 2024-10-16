@@ -2,6 +2,8 @@
 import numpy as np
 from matplotlib import pyplot as plt
 import jax
+import seaborn as sns
+import pandas as pd
 
 ## Plotting Utilities
 
@@ -45,12 +47,12 @@ def plot_mll_learning_curve(
 
 # Plot the parameter distributions, given some samples
 def plot_param_distributions(
-    samples,
-    true,
-    init,
+    samples=None,
+    true=None,
+    init=None,
+    pointwise_estimate=None,
     name="",
     burn_in_frac=0.5,
-    skip_if_not_trainable=True,
     trainable=True,
     triangle_plot=True,
     box_plot=True,
@@ -72,20 +74,18 @@ def plot_param_distributions(
     Returns:
     - A matplotlib figure with N_params horizontal box plots or a triangle plot.
     """
-    if skip_if_not_trainable and not trainable:
-        return
-
     if trainable:
         name += " (trainable)"
 
     # apply burn-in
-    burn_in = int(burn_in_frac * samples.shape[1])
-    samples = samples[:, burn_in:]
+    if samples is not None:
+        burn_in = int(burn_in_frac * samples.shape[1])
+        samples = samples[:, burn_in:]
+    else:
+        box_plot = True
+        triangle_plot = False
 
     if triangle_plot:
-        import seaborn as sns
-        import pandas as pd
-        import matplotlib.pyplot as plt
 
         # Create a DataFrame from the samples
         df = pd.DataFrame(samples.T, columns=["Parameter {}".format(i + 1) for i in range(samples.shape[0])])
@@ -96,31 +96,57 @@ def plot_param_distributions(
 
         # Add Init and ground truth values to the plot
         for i, param in enumerate(df.columns):
-            g.axes[i, i].axvline(true[i], color="red", linestyle="--", label="Ground Truth")
-            g.axes[i, i].axvline(init[i], color="magenta", linestyle="--", label="Initial Estimate")
+            if true is not None:
+                g.axes[i, i].axvline(true[i], color="red", linestyle="--", label="Ground Truth")
+            if init is not None:
+                g.axes[i, i].axvline(init[i], color="magenta", linestyle="--", label="Initial Estimate")
+            if pointwise_estimate is not None:
+                g.axes[i, i].axvline(pointwise_estimate[i], color="orange", linestyle="--", label="Pointwise Estimate")
             for j in range(i):
-                g.axes[i, j].scatter(true[j], true[i], color="red", marker="x", s=100, zorder=4)
-                g.axes[i, j].scatter(init[j], init[i], color="magenta", marker="o", s=100, zorder=3)
+                if true is not None:
+                    g.axes[i, j].scatter(true[j], true[i], color="red", marker="x", s=100, zorder=4)
+                if init is not None:
+                    g.axes[i, j].scatter(init[j], init[i], color="magenta", marker="o", s=100, zorder=3)
                 g.axes[j, i].set_visible(False)  # Hide the upper right axes
         handles, labels = g.axes[0, 0].get_legend_handles_labels()
         g.fig.legend(handles, labels, loc="upper right", bbox_to_anchor=(1, 0.95))  # Add legend to the bottom-left plot
         plt.show()
     if box_plot:
-        N_params = samples.shape[0]
+        if samples is None:
+            if true is None:
+                N_params = true.shape[0]
+            else:
+                N_params = init.shape[0]
+        else:
+            N_params = samples.shape[0]
+
         fig, ax = plt.subplots(figsize=(10, N_params * 2))  # Adjust figure size based on number of parameters
 
         # Create box plots
-        ax.boxplot(samples, vert=False, patch_artist=True)
+        if samples is not None:
+            ax.boxplot(samples, vert=False, patch_artist=True)
+
+        # Plot ground truth and estimates
+        if init is not None:
+            ax.scatter(
+                init, range(1, N_params + 1), color="magenta", marker="o", s=100, label="Initial Estimate", zorder=3
+            )
+        if true is not None:
+            ax.scatter(true, range(1, N_params + 1), color="red", marker="x", s=100, label="Ground Truth", zorder=4)
+        if pointwise_estimate is not None:
+            ax.scatter(
+                pointwise_estimate,
+                range(1, N_params + 1),
+                color="orange",
+                marker="o",
+                s=100,
+                label="Pointwise Estimate",
+                zorder=3,
+            )
 
         # Set the y-axis labels to show parameter indices
         ax.set_yticks(range(1, N_params + 1))
         ax.set_yticklabels(["Parameter {}".format(i + 1) for i in range(N_params)])
-
-        # Plot ground truth and estimates
-        ax.scatter(
-            init, range(1, N_params + 1), color="magenta", marker="o", s=100, label="Initial Estimate", zorder=3
-        )
-        ax.scatter(true, range(1, N_params + 1), color="red", marker="x", s=100, label="Ground Truth", zorder=4)
 
         plt.xlabel("Value")
         plt.ylabel("Parameters")
@@ -131,10 +157,11 @@ def plot_param_distributions(
 
 # Plot the posterior distributions of all parameters within a CD-NLGSSM model
 def plot_all_cdnlgssm_param_posteriors(
-        param_samples,
-        param_properties,
-        init_params,
-        true_params,
+        param_samples=None,
+        param_properties=None,
+        init_params=None,
+        true_params=None,
+        pointwise_estimate=None,
         burn_in_frac=0.5,
         skip_if_not_trainable=True,
         triangle_plot=True,
@@ -144,97 +171,112 @@ def plot_all_cdnlgssm_param_posteriors(
     Plots the posterior distributions of all parameters.
     Burn-in is removed from the samples.
     """
-    plot_param_distributions(
-        param_samples.initial.mean.params.T,
-        true_params.initial.mean.params,
-        init_params.initial.mean.params,
-        name="Initial mean",
-        burn_in_frac=burn_in_frac,
-        skip_if_not_trainable=skip_if_not_trainable,
-        trainable=param_properties.initial.mean.params.trainable,
-        triangle_plot=triangle_plot,
-        box_plot=box_plot,
-    )
-    plot_param_distributions(
-        param_samples.initial.cov.params.reshape(param_samples.initial.cov.params.shape[0], -1).T,
-        true_params.initial.cov.params.flatten(),
-        init_params.initial.cov.params.flatten(),
-        name="Initial cov",
-        burn_in_frac=burn_in_frac,
-        skip_if_not_trainable=skip_if_not_trainable,
-        trainable=param_properties.initial.cov.params.trainable,
-        triangle_plot=triangle_plot,
-        box_plot=box_plot,
-    )
-    plot_param_distributions(
-        param_samples.dynamics.drift.params.reshape(param_samples.dynamics.drift.params.shape[0], -1).T,
-        true_params.dynamics.drift.params,
-        init_params.dynamics.drift.params,
-        name="Dynamics drift parameters",
-        burn_in_frac=burn_in_frac,
-        skip_if_not_trainable=skip_if_not_trainable,
-        trainable=param_properties.dynamics.drift.params.trainable,
-        triangle_plot=triangle_plot,
-        box_plot=box_plot,
-    )
-    plot_param_distributions(
-        param_samples.dynamics.diffusion_cov.params.reshape(param_samples.dynamics.diffusion_cov.params.shape[0], -1).T,
-        true_params.dynamics.diffusion_cov.params.flatten(),
-        init_params.dynamics.diffusion_cov.params.flatten(),
-        name="Dynamics diffusion cov",
-        burn_in_frac=burn_in_frac,
-        skip_if_not_trainable=skip_if_not_trainable,
-        trainable=param_properties.dynamics.diffusion_cov.params.trainable,
-        triangle_plot=triangle_plot,
-        box_plot=box_plot,
-    )
-    plot_param_distributions(
-        param_samples.dynamics.diffusion_coefficient.params.reshape(
-            param_samples.dynamics.diffusion_coefficient.params.shape[0], -1
-        ).T,
-        true_params.dynamics.diffusion_coefficient.params.flatten(),
-        init_params.dynamics.diffusion_coefficient.params.flatten(),
-        name="Dynamics diffusion coefficient",
-        burn_in_frac=burn_in_frac,
-        skip_if_not_trainable=skip_if_not_trainable,
-        trainable=param_properties.dynamics.diffusion_coefficient.params.trainable,
-        triangle_plot=triangle_plot,
-        box_plot=box_plot,
-    )
-    plot_param_distributions(
-        param_samples.emissions.emission_function.weights.reshape(
-            param_samples.emissions.emission_function.weights.shape[0], -1
-        ).T,
-        true_params.emissions.emission_function.weights.flatten(),
-        init_params.emissions.emission_function.weights.flatten(),
-        name="Emissions function weights",
-        burn_in_frac=burn_in_frac,
-        skip_if_not_trainable=skip_if_not_trainable,
-        trainable=param_properties.emissions.emission_function.weights.trainable,
-        triangle_plot=triangle_plot,
-        box_plot=box_plot,
-    )
-    plot_param_distributions(
-        param_samples.emissions.emission_function.bias.reshape(
-            param_samples.emissions.emission_function.bias.shape[0], -1
-        ).T,
-        true_params.emissions.emission_function.bias.flatten(),
-        init_params.emissions.emission_function.bias.flatten(),
-        name="Emissions function bias",
-        burn_in_frac=burn_in_frac,
-        skip_if_not_trainable=skip_if_not_trainable,
-        trainable=param_properties.emissions.emission_function.bias.trainable,
-        triangle_plot=triangle_plot,
-        box_plot=box_plot,
-    )
-    plot_param_distributions(
-        param_samples.emissions.emission_cov.params.reshape(param_samples.emissions.emission_cov.params.shape[0], -1).T,
-        true_params.emissions.emission_cov.params.flatten(),
-        init_params.emissions.emission_cov.params.flatten(),
-        name="Emissions cov",
-        burn_in_frac=burn_in_frac,
-        skip_if_not_trainable=skip_if_not_trainable,
-        trainable=param_properties.emissions.emission_cov.params.trainable,
-        triangle_plot=triangle_plot,
-        box_plot=box_plot,
-    )
+    if param_properties.initial.mean.params.trainable or not skip_if_not_trainable:
+        plot_param_distributions(
+            param_samples.initial.mean.params.T if param_samples is not None else None,
+            true_params.initial.mean.params if true_params is not None else None,
+            init_params.initial.mean.params if init_params is not None else None,
+            pointwise_estimate=pointwise_estimate.initial.mean.params if pointwise_estimate is not None else None,
+            name="Initial mean",
+            trainable=param_properties.initial.mean.params.trainable,
+            burn_in_frac=burn_in_frac,
+            triangle_plot=triangle_plot,
+            box_plot=box_plot,
+        )
+    
+    if param_properties.initial.cov.params.trainable or not skip_if_not_trainable:
+        plot_param_distributions(
+            param_samples.initial.cov.params.reshape(param_samples.initial.cov.params.shape[0], -1).T if param_samples is not None else None,
+            true_params.initial.cov.params.flatten() if true_params is not None else None,
+            init_params.initial.cov.params.flatten() if init_params is not None else None,
+            pointwise_estimate=pointwise_estimate.initial.cov.params.flatten() if pointwise_estimate is not None else None,
+            name="Initial cov",
+            trainable=param_properties.initial.cov.params.trainable,
+            burn_in_frac=burn_in_frac,
+            triangle_plot=triangle_plot,
+            box_plot=box_plot,
+        )
+
+    if param_properties.dynamics.drift.params.trainable or not skip_if_not_trainable:
+        plot_param_distributions(
+            param_samples.dynamics.drift.params.reshape(param_samples.dynamics.drift.params.shape[0], -1).T if param_samples is not None else None,
+            true_params.dynamics.drift.params if true_params is not None else None,
+            init_params.dynamics.drift.params if init_params is not None else None,
+            pointwise_estimate=pointwise_estimate.dynamics.drift.params if pointwise_estimate is not None else None,
+            name="Dynamics drift parameters",
+            trainable=param_properties.dynamics.drift.params.trainable,
+            burn_in_frac=burn_in_frac,
+            triangle_plot=triangle_plot,
+            box_plot=box_plot,
+        )
+
+    if param_properties.dynamics.diffusion_cov.params.trainable or not skip_if_not_trainable:
+        plot_param_distributions(
+            param_samples.dynamics.diffusion_cov.params.reshape(param_samples.dynamics.diffusion_cov.params.shape[0], -1).T if param_samples is not None else None,
+            true_params.dynamics.diffusion_cov.params.flatten() if true_params is not None else None,
+            init_params.dynamics.diffusion_cov.params.flatten() if init_params is not None else None,
+            pointwise_estimate=pointwise_estimate.dynamics.diffusion_cov.params.flatten() if pointwise_estimate is not None else None,
+            name="Dynamics diffusion cov",
+            trainable=param_properties.dynamics.diffusion_cov.params.trainable,
+            burn_in_frac=burn_in_frac,
+            triangle_plot=triangle_plot,
+            box_plot=box_plot,
+        )
+
+    if param_properties.dynamics.diffusion_coefficient.params.trainable or not skip_if_not_trainable:
+        plot_param_distributions(
+            param_samples.dynamics.diffusion_coefficient.params.reshape(
+                param_samples.dynamics.diffusion_coefficient.params.shape[0], -1
+            ).T if param_samples is not None else None,
+            true_params.dynamics.diffusion_coefficient.params.flatten() if true_params is not None else None,
+            init_params.dynamics.diffusion_coefficient.params.flatten() if init_params is not None else None,
+            pointwise_estimate=pointwise_estimate.dynamics.diffusion_coefficient.params.flatten() if pointwise_estimate is not None else None,
+            name="Dynamics diffusion coefficient",
+            trainable=param_properties.dynamics.diffusion_coefficient.params.trainable,
+            burn_in_frac=burn_in_frac,
+            triangle_plot=triangle_plot,
+            box_plot=box_plot,
+        )
+
+    if param_properties.emissions.emission_function.weights.trainable or not skip_if_not_trainable:
+        plot_param_distributions(
+            param_samples.emissions.emission_function.weights.reshape(
+                param_samples.emissions.emission_function.weights.shape[0], -1
+            ).T if param_samples is not None else None,
+            true_params.emissions.emission_function.weights.flatten() if true_params is not None else None,
+            init_params.emissions.emission_function.weights.flatten() if init_params is not None else None,
+            pointwise_estimate=pointwise_estimate.emissions.emission_function.weights.flatten() if pointwise_estimate is not None else None,
+            name="Emissions function weights",
+            trainable=param_properties.emissions.emission_function.weights.trainable,
+            burn_in_frac=burn_in_frac,
+            triangle_plot=triangle_plot,
+            box_plot=box_plot,
+        )
+
+    if param_properties.emissions.emission_function.bias.trainable or not skip_if_not_trainable:    
+        plot_param_distributions(
+            param_samples.emissions.emission_function.bias.reshape(
+                param_samples.emissions.emission_function.bias.shape[0], -1
+            ).T if param_samples is not None else None,
+            true_params.emissions.emission_function.bias.flatten() if true_params is not None else None,
+            init_params.emissions.emission_function.bias.flatten() if init_params is not None else None,
+            pointwise_estimate=pointwise_estimate.emissions.emission_function.bias.flatten() if pointwise_estimate is not None else None,
+            name="Emissions function bias",
+            trainable=param_properties.emissions.emission_function.bias.trainable,
+            burn_in_frac=burn_in_frac,
+            triangle_plot=triangle_plot,
+            box_plot=box_plot,
+        )
+
+    if param_properties.emissions.emission_cov.params.trainable or not skip_if_not_trainable:
+        plot_param_distributions(
+            param_samples.emissions.emission_cov.params.reshape(param_samples.emissions.emission_cov.params.shape[0], -1).T if param_samples is not None else None,
+            true_params.emissions.emission_cov.params.flatten() if true_params is not None else None,
+            init_params.emissions.emission_cov.params.flatten() if init_params is not None else None,
+            pointwise_estimate=pointwise_estimate.emissions.emission_cov.params.flatten() if pointwise_estimate is not None else None,
+            name="Emissions cov",
+            trainable=param_properties.emissions.emission_cov.params.trainable,
+            burn_in_frac=burn_in_frac,
+            triangle_plot=triangle_plot,
+            box_plot=box_plot,
+        )
