@@ -330,10 +330,19 @@ def plot_advanced(
 
     # Plot a vertical line to indicate the switch between filtered and forecasted states if both are provided
     if plot_divider:
-        switch_time = time_grid_filter[-1]
-        for i in range(n_rows):
-            axes[i, 0].axvline(x=switch_time, color="k", linestyle="--", linewidth=1, label="Filter/Forecast Boundary")
-            axes[i, 1].axvline(x=switch_time, color="k", linestyle="--", linewidth=1)
+        if len(time_grid_filter) > 0:
+            switch_time = time_grid_filter[-1]
+        elif len(time_grid_forecast) > 0:
+            switch_time = time_grid_forecast[0]
+        else:
+            switch_time = None
+
+        if switch_time is not None:
+            for i in range(n_rows):
+                axes[i, 0].axvline(
+                    x=switch_time, color="k", linestyle="--", linewidth=1, label="Filter/Forecast Boundary"
+                )
+                axes[i, 1].axvline(x=switch_time, color="k", linestyle="--", linewidth=1)
 
     # Set x-axis label only on the bottom subplots
     if n_rows > 0:
@@ -557,10 +566,19 @@ def plot_advanced2(
 
     # Plot a vertical line to indicate the switch between filtered and forecasted states if both are provided
     if plot_divider:
-        switch_time = time_grid_filter[-1]
-        for i in range(n_rows):
-            axes[i, 0].axvline(x=switch_time, color="k", linestyle="--", linewidth=1, label="Filter/Forecast Boundary")
-            axes[i, 1].axvline(x=switch_time, color="k", linestyle="--", linewidth=1)
+        if len(time_grid_filter) > 0:
+            switch_time = time_grid_filter[-1]
+        elif len(time_grid_forecast) > 0:
+            switch_time = time_grid_forecast[0]
+        else:
+            switch_time = None
+
+        if switch_time is not None:
+            for i in range(n_rows):
+                axes[i, 0].axvline(
+                    x=switch_time, color="k", linestyle="--", linewidth=1, label="Filter/Forecast Boundary"
+                )
+                axes[i, 1].axvline(x=switch_time, color="k", linestyle="--", linewidth=1)
 
     # Set x-axis label only on the bottom subplots
     if n_rows > 0:
