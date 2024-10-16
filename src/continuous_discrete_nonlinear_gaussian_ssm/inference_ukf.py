@@ -21,7 +21,7 @@ from utils.debug_utils import lax_scan
 DEBUG = False
 
 # We redefe UKFHyperParams, due to dt_final
-#from dynamax.nonlinear_gaussian_ssm.inference_ukf import UKFHyperParams
+# from dynamax.nonlinear_gaussian_ssm.inference_ukf import UKFHyperParams
 class UKFHyperParams(NamedTuple):
     """Lightweight container for UKF hyperparameters.
 
@@ -31,7 +31,8 @@ class UKFHyperParams(NamedTuple):
     alpha: float = jnp.sqrt(3)
     beta: int = 2
     kappa: int = 1
-    
+    diffeqsolve_settings: dict = {}
+
 
 # Helper functions
 _get_params = lambda x, dim, t: x[t] if x.ndim == dim + 1 else x
@@ -100,6 +101,7 @@ def _predict(
     w_cov,
     W_matrix,
     u,
+    hyperparams
 ):
     """Predict next mean and covariance using additive UKF
 
@@ -151,7 +153,7 @@ def _predict(
 
     # solve Saarka's ODE 3.183 in thesis
     y0 = (m, P)
-    sol = diffeqsolve(rhs_all, t0=t0, t1=t1, y0=y0)
+    sol = diffeqsolve(rhs_all, t0=t0, t1=t1, y0=y0, **hyperparams.diffeqsolve_settings)
     m_pred, P_pred = sol[0][-1], sol[1][-1]
     # According to Sarkka's algo 3.24, we only need to return m_pred and P_pred (not P_cross) in continuous-discrete
     return m_pred, P_pred
@@ -278,7 +280,7 @@ def unscented_kalman_filter(
         ll += log_likelihood
 
         # Predict the next state, based on UKF predict
-        pred_mean, pred_cov = _predict(filtered_mean, filtered_cov, params, t0, t1, lamb, w_mean, w_cov, W_matrix, u)
+        pred_mean, pred_cov = _predict(filtered_mean, filtered_cov, params, t0, t1, lamb, w_mean, w_cov, W_matrix, u, hyperparams)
 
         # Build carry and output states
         carry = (ll, pred_mean, pred_cov)
