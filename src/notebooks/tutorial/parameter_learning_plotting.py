@@ -55,7 +55,9 @@ def plot_param_distributions(
     burn_in_frac=0.5,
     trainable=True,
     triangle_plot=True,
+    triangle_traj_plot=True,
     box_plot=True,
+    sequence_plot=True,
 ):
     """
     Plots N_params horizontal box plots for the given N_params x N_samples matrix or a triangle plot of bivariate densities.
@@ -69,7 +71,9 @@ def plot_param_distributions(
     - skip_if_not_trainable: If True and trainable is True, skip plotting.
     - trainable: Indicates if the parameter is trainable.
     - triangle_plot: If True, plots a triangle plot with bivariate densities and histograms.
+    - triangle_traj_plot: If True, plots a triangle plot with parameter trajectories.
     - box_plot: If True, plots box plots for parameter distributions.
+    - sequence_plot: If True, plots the parameter values over time/iterations.
 
     Returns:
     - A matplotlib figure with N_params horizontal box plots or a triangle plot.
@@ -84,6 +88,15 @@ def plot_param_distributions(
     else:
         box_plot = True
         triangle_plot = False
+        triangle_traj_plot = False
+
+    if samples is None:
+        if true is None:
+            N_params = true.shape[0]
+        else:
+            N_params = init.shape[0]
+    else:
+        N_params = samples.shape[0]
 
     if triangle_plot:
 
@@ -111,15 +124,59 @@ def plot_param_distributions(
         handles, labels = g.axes[0, 0].get_legend_handles_labels()
         g.fig.legend(handles, labels, loc="upper right", bbox_to_anchor=(1, 0.95))  # Add legend to the bottom-left plot
         plt.show()
-    if box_plot:
-        if samples is None:
-            if true is None:
-                N_params = true.shape[0]
-            else:
-                N_params = init.shape[0]
-        else:
-            N_params = samples.shape[0]
 
+    if triangle_traj_plot:
+        # Create a DataFrame from the samples
+        df = pd.DataFrame(samples.T, columns=["Parameter {}".format(i + 1) for i in range(samples.shape[0])])
+
+        # Create PairGrid for custom plotting, excluding diagonal and upper right subplots
+        g = sns.PairGrid(df, corner=True, diag_sharey=False)
+
+        # Plot line trajectories in the lower triangle subplots
+        g.map_lower(sns.lineplot, linestyle="-", color="gray", label="Sample/Iteration Trajectory")
+
+        # Plot scatter plots in the lower triangle subplots for each pair of parameters
+        g.map_lower(sns.scatterplot, color="blue", label="Sample/Iteration Trajectory")
+
+        g.fig.suptitle("{} Trajectory Plot".format(name), y=1.02)
+
+        # Add Init and ground truth values to the plot
+        for i, param in enumerate(df.columns):
+            for j in range(i):
+                # Plot ground truth and initial estimate as points
+                if true is not None:
+                    g.axes[i, j].scatter(true[j], true[i], color="red", marker="x", s=100, zorder=4, label="Ground Truth")
+                if init is not None:
+                    g.axes[i, j].scatter(
+                        init[j], init[i], color="magenta", marker="o", s=100, zorder=3, label="Initial Estimate"
+                    )
+                if pointwise_estimate is not None:
+                    g.axes[i, j].scatter(
+                        pointwise_estimate[j],
+                        pointwise_estimate[i],
+                        color="orange",
+                        marker="*",
+                        s=100,
+                        zorder=3,
+                        label="Pointwise Estimate",
+                    )
+
+        # Remove duplicate legend labels by maintaining a set of seen labels and add legend only once
+        handles, labels = [], []
+        seen = set()
+        for ax in g.axes.flat:
+            if ax is not None:
+                h, l = ax.get_legend_handles_labels()
+                for handle, label in zip(h, l):
+                    if label not in seen and label != "":
+                        seen.add(label)
+                        handles.append(handle)
+                        labels.append(label)
+        if handles:
+            g.fig.legend(handles, labels, loc="upper right", bbox_to_anchor=(1, 0.95))  # Add legend to the figure
+
+        plt.show()
+    if box_plot:
         fig, ax = plt.subplots(figsize=(10, N_params * 2))  # Adjust figure size based on number of parameters
 
         # Create box plots
@@ -154,6 +211,27 @@ def plot_param_distributions(
         plt.grid(True)
         plt.legend()
         plt.show()
+
+    if sequence_plot:
+        # Plot the parameter values over time/iterations
+        fig, axes = plt.subplots(N_params, 1, figsize=(10, N_params * 2), sharex=True)  # Create subplots for each parameter
+        for i in range(N_params):
+            if true is not None:
+                axes[i].axhline(true[i], color="k", linestyle="--", label="Ground Truth")
+            if pointwise_estimate is not None:
+                axes[i].axhline(pointwise_estimate[i], color="C0", linestyle="--", label="Pointwise Estimate")
+            if samples is not None:
+                axes[i].plot(samples[i], color="C0", label="Parameter {}".format(i + 1))
+            if init is not None:
+                axes[i].axhline(init[i], color="magenta", linestyle="--", label="Initial Estimate")
+            axes[i].set_ylabel("Value")
+            axes[i].set_title("Parameter {}".format(i + 1))
+            axes[i].grid(True)
+            axes[i].legend()
+        axes[-1].set_xlabel("Iterations")
+        plt.suptitle("{} Parameter Values over Iterations".format(name))
+        plt.show()
+
 
 # Plot the posterior distributions of all parameters within a CD-NLGSSM model
 def plot_all_cdnlgssm_param_posteriors(
