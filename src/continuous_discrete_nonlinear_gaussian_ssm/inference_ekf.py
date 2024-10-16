@@ -41,7 +41,8 @@ class EKFHyperParams(NamedTuple):
     emission_order: str = 'first'
     smooth_order: str = 'first'
     cov_rescaling: float = 1.0
-    
+    diffeqsolve_settings: dict = {}
+
 def _predict(
     m, P, # Current mean and covariance
     params: ParamsCDNLGSSM,  # All necessary CD dynamic params
@@ -92,7 +93,7 @@ def _predict(
 
         # Evaluate the jacobian of the dynamics function at m and inputs
         F_t = jacfwd(f)(m,u,t)
-        
+
         if hyperparams.state_order=='zeroth':
             # Mean evolution
             dmdt = f(m, u, t)
@@ -127,7 +128,7 @@ def _predict(
         y0 = (m,)
 
         # Compute predicted mean
-        sol = diffeqsolve(rhs_all, t0=t0, t1=t1, y0=y0)
+        sol = diffeqsolve(rhs_all, t0=t0, t1=t1, y0=y0, **hyperparams.diffeqsolve)
         m_final = sol[0][-1]
 
         # Predicted covariance
@@ -140,7 +141,7 @@ def _predict(
         # Initialize
         y0 = (m, P)
         # Compute predicted mean and covariance
-        sol = diffeqsolve(rhs_all, t0=t0, t1=t1, y0=y0)
+        sol = diffeqsolve(rhs_all, t0=t0, t1=t1, y0=y0, **hyperparams.diffeqsolve_settings, **hyperparams.diffeqsolve_settings)
         m_final = sol[0][-1]
         P_final = sol[1][-1]
 
@@ -443,7 +444,7 @@ def _smooth(
 
     # Recall that we solve the rhs in reverse:
     # from t1 to t0, BUT y0 contains initial conditions at t1
-    sol = diffeqsolve(rhs_all, t0=t0, t1=t1, y0=y0, reverse=True, args=(m_filter, P_filter))
+    sol = diffeqsolve(rhs_all, t0=t0, t1=t1, y0=y0, reverse=True, args=(m_filter, P_filter), **hyperparams.diffeqsolve_settings)
     return sol[0][-1], sol[1][-1]
 
 def extended_kalman_smoother(

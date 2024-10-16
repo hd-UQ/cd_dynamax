@@ -47,7 +47,7 @@ def _get_params(x, dim, t):
         return x[t]
     else:
         return x
-    
+
 _process_input = lambda x, y: jnp.zeros((y,1)) if x is None else x
 
 # CDNLGSSM push-forward is model-specific
@@ -58,21 +58,22 @@ def compute_pushforward(
     t0: Float,
     t1: Float,
     inputs: Optional[Float[Array, "input_dim"]] = None,
+    diffeqsolve_settings: dict = {},
 ) -> Tuple[Float[Array, "state_dim state_dim"], Float[Array, "state_dim state_dim"]]:
 
     # Initialize
     y0 = (x0, P0)
     def rhs_all(t, y, args):
         x, P = y
-        
+
         # TODO: possibly time- and parameter-dependent functions
         f=params.dynamics.drift.f
 
         # Get time-varying parameters
         Qc_t = params.dynamics.diffusion_cov.f(None,inputs,t)
         L_t = params.dynamics.diffusion_coefficient.f(None,inputs,t)
-        #Qc_t = _get_params(params.dynamics.diffusion_cov, 2, t0)
-        #L_t = _get_params(params.dynamics.diffusion_coefficient, 2, t0)
+        # Qc_t = _get_params(params.dynamics.diffusion_cov, 2, t0)
+        # L_t = _get_params(params.dynamics.diffusion_coefficient, 2, t0)
 
         # Different SDE approximations
         if params.dynamics.approx_order==0.:
@@ -80,17 +81,17 @@ def compute_pushforward(
             dxdt = f(x, inputs, t)
             # Covariance evolution
             dPdt = L_t @ Qc_t @ L_t.T
-        
+
         # following Sarkka thesis eq. 3.153
         elif params.dynamics.approx_order==1.:
             # Evaluate the jacobian of the dynamics function at x and inputs
             F_t=jacfwd(f)(x, inputs, t)
-        
+
             # Mean evolution
             dxdt = f(x, inputs, t)
             # Covariance evolution
             dPdt = F_t @ P + P @ F_t.T + L_t @ Qc_t @ L_t.T
-        
+
         # follow Sarkka thesis eq. 3.155
         elif params.dynamics.approx_order==2.:
             # Evaluate the jacobian of the dynamics function at x and inputs
@@ -98,7 +99,7 @@ def compute_pushforward(
             # Evaluate the Hessian of the dynamics function at x and inputs
             # Based on these recommendationshttps://jax.readthedocs.io/en/latest/notebooks/autodiff_cookbook.html#jacobians-and-hessians-using-jacfwd-and-jacrev
             H_t=jacfwd(jacrev(f))(x, inputs, t)
-        
+
             # Mean evolution
             dxdt = f(x, inputs, t) + 0.5*jnp.trace(H_t @ P)
             # Covariance evolution
@@ -107,10 +108,10 @@ def compute_pushforward(
             raise ValueError('params.dynamics.approx_order = {} not implemented yet'.format(params.dynamics.approx_order))
 
         return (dxdt, dPdt)
-    
-    sol = diffeqsolve(rhs_all, t0=t0, t1=t1, y0=y0)
+
+    sol = diffeqsolve(rhs_all, t0=t0, t1=t1, y0=y0, **diffeqsolve_settings)
     x, P = sol[0][-1], sol[1][-1]
-        
+
     return x, P
 
 class ContDiscreteNonlinearGaussianSSM(SSM):
@@ -147,11 +148,13 @@ class ContDiscreteNonlinearGaussianSSM(SSM):
         self,
         state_dim: int,
         emission_dim: int,
-        input_dim: int = 0
+        input_dim: int = 0,
+        diffeqsolve_settings: dict = {},
     ):
         self.state_dim = state_dim
         self.emission_dim = emission_dim
         self.input_dim = 0
+        self.diffeqsolve_settings = diffeqsolve_settings
 
     @property
     def emission_shape(self):
@@ -295,7 +298,7 @@ class ContDiscreteNonlinearGaussianSSM(SSM):
         state: Float[Array, "state_dim"],
         t0: Optional[Float] = None,
         t1: Optional[Float] = None,
-        inputs: Optional[Float[Array, "input_dim"]] = None
+        inputs: Optional[Float[Array, "input_dim"]] = None,
     ) -> tfd.Distribution:
         # Push-forward with assumed CDNLGSSM
         mean, covariance = compute_pushforward(
@@ -304,6 +307,7 @@ class ContDiscreteNonlinearGaussianSSM(SSM):
             params=params,
             t0=t0, t1=t1,
             inputs=inputs,
+            diffeqsolve_settings=self.diffeqsolve_settings
         )
         # TODO: for CDNLSSM we can not return a specific distribution,
         # unless we solve the Fokker-Planck equation for the model SDE
@@ -447,7 +451,7 @@ def cdnlgssm_smoother(
     
     return smoothed_posterior
 
-# TODO: replicate this for linear models 
+# TODO: replicate this for linear models
 def cdnlgssm_forecast(
     params: ParamsCDNLGSSM,
     init_forecast: Union[tfd.Distribution, Float[Array, "state_dim 1"]],
@@ -460,6 +464,7 @@ def cdnlgssm_forecast(
         "forecasted_state_covariances",
     ],
     key: Optional[Float[Array, "key"]] = jr.PRNGKey(0),
+    diffeqsolve_settings: dict = {},
 ) -> GSSMForecast:
     r"""Run an continuous-discrete nonlinear model to produce the forecasted state estimates.
         
@@ -578,7 +583,8 @@ def cdnlgssm_forecast(
                 drift=drift,
                 diffusion=diffusion,
                 t0=t0, t1=t1,
-                y0=prev_state
+                y0=prev_state,
+                **diffeqsolve_settings
             )[0]
             
             # Sample the emission, at t1
@@ -617,7 +623,7 @@ def cdnlgssm_forecast(
     
     return forecast
 
-# TODO: replicate this for linear models 
+# TODO: replicate this for linear models
 def cdnlgssm_emissions(
     params: ParamsCDNLGSSM,
     t_states: Float[Array, "num_timesteps 1"],

@@ -34,6 +34,7 @@ class EnKFHyperParams(NamedTuple):
     N_particles: float = 2000
     perturb_measurements: bool = True
     key: float = jr.PRNGKey(0)
+    diffeqsolve_settings: dict = {}
 
 
 # Helper functions
@@ -50,6 +51,7 @@ def _predict(
     t0: Float,
     t1: Float,
     u,
+    hyperparams
 ):
     """Predict evolution of ensemble of particles through the nonlinear stochastic dynamics.
 
@@ -77,7 +79,9 @@ def _predict(
 
         return combined_diffusion
 
-    my_solve = lambda y0, key0: diffeqsolve(key=key0, drift=drift, diffusion=diffusion, t0=t0, t1=t1, y0=y0)
+    my_solve = lambda y0, key0: diffeqsolve(
+        key=key0, drift=drift, diffusion=diffusion, t0=t0, t1=t1, y0=y0, **hyperparams.diffeqsolve_settings
+    )
     key_array = jr.split(key, x.shape[0])
     sol = vmap(my_solve, in_axes=0)(x, key_array) # N_particles x 1 time x D_hid
     x_pred = sol[:, 0, :] # N_particles x D_hid
@@ -225,7 +229,7 @@ def ensemble_kalman_filter(
         # filtered_cov = jnp.cov(filtered_x_ens, rowvar=False)
 
         # Predict the next state, based on Ensemble prediction
-        pred_x_ens = _predict(key_predict, filtered_x_ens, params, t0, t1, u)
+        pred_x_ens = _predict(key_predict, filtered_x_ens, params, t0, t1, u, hyperparams)
 
         # compute Gaussian statistics
         pred_mean = jnp.mean(pred_x_ens, axis=0)
@@ -331,6 +335,7 @@ def forecast_ensemble_kalman_filter(
             params,
             t0, t1,
             inputs[t0_idx], # Inputs impact state at t0
+            hyperparams
         )
 
         # compute Gaussian statistics
