@@ -741,3 +741,181 @@ class SSM(ABC):
         )
 
         return param_samples, log_prob_array
+
+    def fit_mcmc(
+            self,
+            initial_params: ParameterSet,
+            props: PropertySet,
+            emissions: Union[Float[Array, "num_timesteps emission_dim"],
+                            Float[Array, "num_batches num_timesteps emission_dim"]],
+            t_emissions: Optional[Union[Float[Array, "num_timesteps 1"],
+                            Float[Array, "num_batches num_timesteps 1"]]]=None,
+            filter_hyperparams: Optional[Any]=None,
+            inputs: Optional[Union[Float[Array, "num_timesteps input_dim"],
+                                Float[Array, "num_batches num_timesteps input_dim"]]]=None,
+            n_mcmc_samples: int=500,
+            mcmc_algorithm={
+                "type": "nuts",
+                "parameters": {
+                    "num_steps": 4 # Number of warmup steps
+                }
+            },
+            verbose=True,
+            key: PRNGKey=jr.PRNGKey(0)
+        ) -> Tuple[ParameterSet, ParameterSet, Float[Array, "num_steps"], Float[Array, "n_mcmc_samples"]]:
+            r"""Generate samples from the posterior using Hamiltonian Monte Carlo (HMC).
+
+            Args:
+                initial_params: initial parameters $\theta$
+                props: properties specifying which parameters should be learned
+                emissions: one or more sequences of emissions
+                t_emissions: continuous-time specific time instants: if not None, it is an array
+                filter_hyperparams: if needed, hyperparameters of the filtering algorithm
+                inputs: one or more sequences of corresponding inputs
+                num_samples: number of samples to draw
+                warmup_steps: number of warmup steps
+                num_integration_steps: number of integration steps in the HMC sampler
+                verbose: whether or not to show a progress bar
+                key: a random number generator
+
+            Returns:
+                tuple of samples and log probabilities of the samples
+            """
+
+            ## cd-dynamax specific code
+            # Make sure the emissions and inputs have batch dimensions
+            batch_emissions = ensure_array_has_batch_dim(emissions, self.emission_shape)
+            batch_t_emissions = ensure_array_has_batch_dim(t_emissions, (1,))
+            batch_inputs = ensure_array_has_batch_dim(inputs, self.inputs_shape)
+
+            initial_unc_params = to_unconstrained(initial_params, props)
+
+            # build initial_unc_params_trainable from initial_unc_params and props
+            # by setting trainable parameters to None
+            initial_unc_params_trainable = tree_map(
+                lambda param, prop: param if prop.trainable else None, initial_unc_params, props
+            )
+
+            # The log likelihood that the HMC samples from
+            def _logprob(unc_params_trainable):
+                # Combine the trainable and non-trainable parameters, then convert them to constrained space
+                unc_params = tree_map(
+                    lambda initial, trained, prop: trained if prop.trainable else initial,
+                    initial_unc_params,
+                    unc_params_trainable,
+                    props,
+                )
+                params = from_unconstrained(unc_params, props)
+                batch_lls = vmap(
+                    partial(
+                        self.marginal_log_prob,
+                        params,
+                        filter_hyperparams=filter_hyperparams
+                        ) # partial with fixed params arg and filter_hyperparams kwarg
+                    )(
+                    # arguments to vmap over
+                    emissions=batch_emissions,
+                    t_emissions=batch_t_emissions,
+                    inputs=batch_inputs
+                )
+                lp = self.log_prior(params) + batch_lls.sum()
+                lp += log_det_jac_constrain(params, props)
+                return lp
+
+            ## Blackjax - MCMC specific code
+            # Instantiate blackjax MCMC algorithm
+            mcmc_algo = eval(
+                'blackjax.{}'.format(
+                    mcmc_algorithm['type']
+                )
+            )
+            
+            # Initialize MCMC using window_adaptation
+            # https://blackjax-devs.github.io/blackjax/examples/quickstart.html#use-stan-s-window-adaptation
+            warmup = blackjax.window_adaptation(
+                algorithm=mcmc_algo,
+                logprob_fn=_logprob,
+                progress_bar=verbose,
+                **mcmc_algorithm['parameters'],
+            )
+
+            # Set-up warmup
+            warmup_key, key = jr.split(key)
+            # Run warmup
+            warmup_state, warmup_kernel, \
+                 (warmup_states, warmup_info, warmup_window_adaptation_state) \
+                    = warmup.run(
+                warmup_key,
+                initial_unc_params_trainable,
+            )
+
+            # Set-up MCMC
+            # MCMC sampling kernel, based on warmup kernel
+            mcmc_kernel = warmup_kernel
+
+            # MCMC sampling step
+            @jit
+            def _mcmc_step(state, step_key):
+                state, _ = mcmc_kernel(step_key, state)
+                return state, state
+
+            # Set-up random keys for MCMC sampler
+            mcmc_keys = jr.split(key, n_mcmc_samples)
+            # Run MCMC inference loop
+            print('Running MCMC inference loop...')
+            _, states = lax_scan(
+                _mcmc_step,
+                warmup_state,
+                mcmc_keys,
+                debug=DEBUG
+            )
+
+            '''
+            print('Trying blackjax scanbar MCMC inference loop...')
+            from blackjax.progress_bar import gen_scan_fn
+            scan_fn = gen_scan_fn(
+                n_mcmc_samples,
+                progress_bar=True
+            )
+
+            _, states = scan_fn(
+                _mcmc_step,
+                warmup_state,
+                mcmc_keys,
+            )
+            '''
+            
+            # Convert MCMC samples to constrained space
+            warmup_param_samples = from_unconstrained(warmup_states.position, props)
+            mcmc_param_samples = from_unconstrained(states.position, props)
+
+            # Compute log probabilities of the samples
+            warmup_log_probs = jnp.array(-warmup_states.potential_energy)
+            mcmc_log_probs = jnp.array(-states.potential_energy)
+            
+            # Un-trained parameters will appear as None in param_samples
+            # We will fill in these none values with the initial parameters,
+            # and broadcast them to the correct shape.
+            # It will appear as though the sampler has not updated these parameters (in fact,
+            # it is ignoring them altogether, and we add them here for easy downstream usage).
+            warmup_param_samples = tree_map(
+                lambda initial, sampled: (
+                    jnp.broadcast_to(
+                        jnp.array(initial),
+                        (mcmc_algorithm["parameters"]["num_steps"],) + jnp.array(initial).shape) if sampled is None else sampled
+                ),
+                initial_params,
+                warmup_param_samples,
+            )
+            
+            mcmc_param_samples = tree_map(
+                lambda initial, sampled: (
+                    jnp.broadcast_to(
+                        jnp.array(initial),
+                        (n_mcmc_samples,) + jnp.array(initial).shape) if sampled is None else sampled
+                ),
+                initial_params,
+                mcmc_param_samples,
+            )
+
+            return warmup_param_samples, mcmc_param_samples, warmup_log_probs, mcmc_log_probs
