@@ -474,6 +474,7 @@ def forecast_unscented_kalman_filter(
             lamb,
             w_mean, w_cov, W_matrix,
             inputs[t0_idx],
+            hyperparams
         )
 
         # Build carry and output states
