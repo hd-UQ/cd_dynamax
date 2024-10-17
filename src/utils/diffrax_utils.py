@@ -45,15 +45,35 @@ def diffeqsolve(
     args = None,
     solver: dfx.AbstractSolver = None,
     stepsize_controller: dfx.AbstractStepSizeController = dfx.ConstantStepSize(),
-    adjoint: dfx.AbstractAdjoint = dfx.DirectAdjoint(),
+    adjoint: dfx.AbstractAdjoint = dfx.RecursiveCheckpointAdjoint(),
     dt0: float = 0.01,
     tol_vbt: float = 1e-1, # tolerance for virtual brownian tree
-    max_steps: int = 1e5,
+    max_steps: int = 1e2,
     diffusion = None,
     key = None,
     debug = DEBUG,
     **kwargs
 ) -> jnp.ndarray:
+
+    """
+    Choosing solvers and adjoints based on diffrax website's recommendation for training neural ODEs.
+        See: https://docs.kidger.site/diffrax/usage/how-to-choose-a-solver/
+        See: https://docs.kidger.site/diffrax/api/adjoints/
+
+        Note that choosing RecursionCheckpointAdjoint requires usage of reverse-mode auto-differentiation.
+        Can use DirectAdjoint for flexible forward-mode + reverse-mode auto-differentiation.
+
+        Defaults are chosen to be decent low-cost options for forward solves and backpropagated gradients.
+
+        If you want high-fidelity solutions (and their gradients), it is recommended 
+        - for ODEs: choose a higher-order solver (Tsit5) and an adaptive stepsize controller (PIDController).
+        - for SDEs: follow diffrax website advice (definitely can choose dt0 very small with constant stepsize controller).
+
+        Things to pay attention to (that we have incomplete understanding of):
+        - checkpoints in RecursiveCheckpointAdjoint: this is used to save memory during backpropagation.
+        - max_steps: reducing this can speed things up. But it is also used to set default number of checkpoints.
+        ... unclear the optimal way to set these parameters.
+    """
 
     max_steps = int(max_steps)
 
@@ -98,10 +118,10 @@ def diffeqsolve(
 
     # set solver to default if not provided
     if solver is None:
-        if diffusion is None:
-            solver = dfx.Dopri5()
-        else:
-            solver = dfx.Heun()
+        solver = dfx.Heun()
+        # choosing Heun because it is a cheap/accurate second-order method
+        # sometimes called the improved Euler method
+        # If you want a better ODE solver, you can use Tsit5, and possibly PIDController
 
     # allow for reverse-time integration
     # if t1 < t0, we assume that initial condition y0 is at t1

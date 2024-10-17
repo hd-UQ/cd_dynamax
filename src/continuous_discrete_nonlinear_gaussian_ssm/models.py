@@ -154,7 +154,7 @@ class ContDiscreteNonlinearGaussianSSM(SSM):
         self.state_dim = state_dim
         self.emission_dim = emission_dim
         self.input_dim = 0
-        self.diffeqsolve_settings = diffeqsolve_settings
+        self._diffeqsolve_settings = diffeqsolve_settings
 
     @property
     def emission_shape(self):
@@ -163,6 +163,10 @@ class ContDiscreteNonlinearGaussianSSM(SSM):
     @property
     def inputs_shape(self):
         return (self.input_dim,) if self.input_dim > 0 else None
+
+    @property
+    def diffeqsolve_settings(self):
+        return self._diffeqsolve_settings
 
     # This is a revised initialize, consistent across cd-dynamax, based on dicts
     def initialize(

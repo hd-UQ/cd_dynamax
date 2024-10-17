@@ -177,6 +177,13 @@ class SSM(ABC):
         """
         return None
 
+    @property
+    def diffeqsolve_settings(self) -> dict:
+        r"""Return a dictionary of settings for the differential equation solver.
+
+        """
+        return {}
+
     def sample_batch(
         self,
         params: ParameterSet,
@@ -263,7 +270,7 @@ class SSM(ABC):
                     combined_diffusion = L_t @ Q_sqrt
                     return combined_diffusion
 
-                state = diffeqsolve(key=key2, drift=drift, diffusion=diffusion, t0=t0, t1=t1, y0=prev_state)[0]
+                state = diffeqsolve(key=key2, drift=drift, diffusion=diffusion, t0=t0, t1=t1, y0=prev_state, **self.diffeqsolve_settings)[0]
             else:
                 raise ValueError("transition_type must be either 'distribution' or 'path'")
 
