@@ -84,3 +84,19 @@ $ pip install -r hduq_pip_nodynamax_requirements.txt
 $ pip install --upgrade "jax[cuda12_pip]" -f https://storage.googleapis.com/jax-releases/jax_cuda_releases.html
 $ pip install jax==0.4.13 jaxlib==0.4.13+cuda12.cudnn89 -f https://storage.googleapis.com/jax-releases/jax_cuda_releases.html
 ```
+
+### In Ubuntu 22.04, with Nvidia and CUDA 12.6
+
+Issues when running with GPU environment as above
+```bash
+Jax plugin configuration error: Exception when calling jax_plugins.xla_cuda12.initialize()
+Traceback (most recent call last):
+  File "/home/iurteaga/miniconda3/envs/hduq_nodynamax_GPU/lib/python3.11/site-packages/jax/_src/xla_bridge.py", line 430, in discover_pjrt_plugins
+    plugin_module.initialize()
+  File "/home/iurteaga/miniconda3/envs/hduq_nodynamax_GPU/lib/python3.11/site-packages/jax_plugins/xla_cuda12/__init__.py", line 85, in initialize
+    options = xla_client.generate_pjrt_gpu_plugin_options()
+              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AttributeError: module 'jaxlib.xla_client' has no attribute 'generate_pjrt_gpu_plugin_options'
+2024-10-17 12:25:22.684476: E external/xla/xla/stream_executor/cuda/cuda_dnn.cc:439] Could not create cudnn handle: CUDNN_STATUS_INTERNAL_ERROR
+2024-10-17 12:25:22.684508: E external/xla/xla/stream_executor/cuda/cuda_dnn.cc:443] Memory usage: 1897005056 bytes free, 8219262976 bytes total.
+```
