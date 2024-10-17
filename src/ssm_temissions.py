@@ -833,7 +833,7 @@ class SSM(ABC):
             # Instantiate blackjax MCMC algorithm
             mcmc_algo = eval(
                 'blackjax.{}'.format(
-                    mcmc_algorithm['type']
+                    mcmc_algorithm['type'].lower()
                 )
             )
             
@@ -891,7 +891,7 @@ class SSM(ABC):
                 mcmc_keys,
             )
             '''
-            
+
             # Convert MCMC samples to constrained space
             warmup_param_samples = from_unconstrained(warmup_states.position, props)
             mcmc_param_samples = from_unconstrained(states.position, props)
