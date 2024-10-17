@@ -20,6 +20,19 @@ from continuous_discrete_linear_gaussian_ssm import ContDiscreteLinearGaussianSS
 from continuous_discrete_nonlinear_gaussian_ssm import ContDiscreteNonlinearGaussianSSM
 from utils.test_utils import compare, compare_structs
 
+# JAX device check
+print("************* Checking JAX device *************")
+import jax
+print('Running on jax device:{}'.format(
+        jax.devices()
+    )
+)
+print('Running on jax device platform:{}'.format(
+        jax.devices()[0].platform
+    )
+)
+print("***********************************************")
+
 # The idea of this test is as following (uses regular time intervals ONLY):
 # First, establish equivalent linear systems in discrete and continuous time
 # Show that samples from each are similar
