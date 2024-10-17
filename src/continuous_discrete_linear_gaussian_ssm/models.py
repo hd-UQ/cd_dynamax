@@ -82,13 +82,15 @@ class ContDiscreteLinearGaussianSSM(SSM):
         emission_dim: int,
         input_dim: int=0,
         has_dynamics_bias: bool=True,
-        has_emissions_bias: bool=True
+        has_emissions_bias: bool=True,
+        diffeqsolve_settings: dict={},
     ):
         self.state_dim = state_dim
         self.emission_dim = emission_dim
         self.input_dim = input_dim
         self.has_dynamics_bias = has_dynamics_bias
         self.has_emissions_bias = has_emissions_bias
+        self._diffeqsolve_settings = diffeqsolve_settings
 
     @property
     def emission_shape(self):
@@ -97,6 +99,10 @@ class ContDiscreteLinearGaussianSSM(SSM):
     @property
     def inputs_shape(self):
         return (self.input_dim,) if self.input_dim > 0 else None
+
+    @property
+    def diffeqsolve_settings(self):
+        return self._diffeqsolve_settings
 
     # This is a revised initialize, consistent across cd-dynamax, based on dicts
     def initialize(
@@ -256,7 +262,7 @@ class ContDiscreteLinearGaussianSSM(SSM):
         # Compute pushforward map:
         # A maps the state from t0 to t1
         # Q is the covariance at t1
-        A, Q = compute_pushforward(params, t0, t1)
+        A, Q = compute_pushforward(params, t0, t1, diffeqsolve_settings=self.diffeqsolve_settings)
         # Pushforward the state from t0 to t1, then add controls at t1 
         mean = A @ state + params.dynamics.input_weights @ inputs
         if self.has_dynamics_bias:

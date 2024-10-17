@@ -164,12 +164,12 @@ for dynamics_approx_order in [1., 2.]:
     cdnl_params, cdnl_param_props = cdnl_model.initialize(
         key1,
         initial_mean = {
-            "params": jnp.zeros(cdnl_model.state_dim),
-            "props": ParameterProperties()
+            "params": LearnableVector(params=jnp.zeros(cdnl_model.state_dim)),
+            "props": LearnableVector(params=ParameterProperties())
         },
         initial_cov = {
-            "params": jnp.eye(cdnl_model.state_dim),
-            "props": ParameterProperties(constrainer=RealToPSDBijector())
+            "params": LearnableMatrix(params=jnp.eye(cdnl_model.state_dim)),
+            "props": LearnableMatrix(params=ParameterProperties(constrainer=RealToPSDBijector()))
         },
         dynamics_drift={
             "params": LearnableLinear(
@@ -255,9 +255,9 @@ for dynamics_approx_order in [1., 2.]:
 
         print("\tCheck that post-SGD fit parameters are similar...")
         print("\t\tInitial mean...")
-        compare(cd_sgd_fitted_params.initial.mean, cdnl_sgd_fitted_params.initial.mean, accept_failure=True)
+        compare(cd_sgd_fitted_params.initial.mean, cdnl_sgd_fitted_params.initial.mean.params, accept_failure=True)
         print("\t\tInitial cov...")
-        compare(cd_sgd_fitted_params.initial.cov, cdnl_sgd_fitted_params.initial.cov, accept_failure=True)
+        compare(cd_sgd_fitted_params.initial.cov, cdnl_sgd_fitted_params.initial.cov.params, accept_failure=True)
         print("\t\tDynamics weights...")
         compare(
             cd_sgd_fitted_params.dynamics.weights, cdnl_sgd_fitted_params.dynamics.drift.weights, accept_failure=True

@@ -130,12 +130,12 @@ for dynamics_approx_order in [1., 2.]:
     cdnl_params, cdnl_param_props = cdnl_model.initialize(
         key1,
         initial_mean = {
-            "params": jnp.zeros(cdnl_model.state_dim),
-            "props": ParameterProperties()
+            "params": LearnableVector(params=jnp.zeros(cdnl_model.state_dim)),
+            "props": LearnableVector(params=ParameterProperties())
         },
         initial_cov = {
-            "params": jnp.eye(cdnl_model.state_dim),
-            "props": ParameterProperties(constrainer=RealToPSDBijector())
+            "params": LearnableMatrix(params=jnp.eye(cdnl_model.state_dim)),
+            "props": LearnableMatrix(params=ParameterProperties(constrainer=RealToPSDBijector()))
         },
         dynamics_drift={
             "params": LearnableLinear(

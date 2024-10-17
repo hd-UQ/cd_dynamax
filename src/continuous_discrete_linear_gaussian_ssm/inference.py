@@ -31,6 +31,7 @@ class KFHyperParams(NamedTuple):
     """Lightweight container for filtering hyperparameters.
     """
     dt_final: float = 1e-10 # Small dt_final for predicted mean and covariance at the end of sequence 
+    diffeqsolve_settings: dict={}
 
 # Helper functions
 # _get_params = lambda x, dim, t: x[t] if x.ndim == dim + 1 else x
@@ -84,6 +85,7 @@ def compute_pushforward(
     params: ParamsCDLGSSM,
     t0: Float,
     t1: Float,
+    diffeqsolve_settings: dict = {}
 ) -> Tuple[Float[Array, "state_dim state_dim"], Float[Array, "state_dim state_dim"]]:
 
     # A and Q are computed based on Sarkka's thesis eq (3.135)
@@ -107,7 +109,7 @@ def compute_pushforward(
 
         return (dAdt, dQdt)
     
-    sol = diffeqsolve(rhs_all, t0=t0, t1=t1, y0=y0)
+    sol = diffeqsolve(rhs_all, t0=t0, t1=t1, y0=y0, **diffeqsolve_settings)
     A, Q = sol[0][-1], sol[1][-1]
     
     # Original trick to pass discrete vs continuous tests, simply uncomment the below 2 lines.
@@ -445,7 +447,7 @@ def cdlgssm_filter(
         filtered_mean, filtered_cov = _condition_on(pred_mean, pred_cov, H, D, d, R, u, y)
 
         # Predict the next state
-        F, Q = compute_pushforward(params, t0, t1)
+        F, Q = compute_pushforward(params, t0, t1, diffeqsolve_settings=filter_hyperparams.diffeqsolve_settings)
         pred_mean, pred_cov = _predict(filtered_mean, filtered_cov, F, B, b, Q, u)
 
         return (ll, pred_mean, pred_cov), (filtered_mean, filtered_cov, pred_mean, pred_cov)
@@ -556,7 +558,7 @@ def cdlgssm_smoother(
         num_timesteps = len(emissions)
         t0 = jnp.arange(num_timesteps-1)
         t1 = jnp.arange(1,num_timesteps)
-    
+
     t0_idx = jnp.arange(num_timesteps-1)
     inputs = jnp.zeros((num_timesteps, 0)) if inputs is None else inputs
 
@@ -573,7 +575,7 @@ def cdlgssm_smoother(
 
         print('Running KF smoother type 1')
         # Get the discretization matrices
-        F, Q = compute_pushforward(params, t0, t1)
+        F, Q = compute_pushforward(params, t0, t1, diffeqsolve_settings=filter_hyperparams.diffeqsolve_settings)
         # TODO: when smoothing, shall we use t0 or t1 for inputs?
         B = _get_params(params.dynamics.input_weights, 2, t0)
         b = _get_params(params.dynamics.bias, 1, t0)
@@ -590,11 +592,11 @@ def cdlgssm_smoother(
         smoothed_cov = filtered_cov + C @ (smoothed_cov_next - F @ filtered_cov @ F.T - Q) @ C.T
 
         # Compute the smoothed expectation of z_t z_{t+1}^T
-        # TODO: revise smoothed CD cross-covariance across time 
+        # TODO: revise smoothed CD cross-covariance across time
         smoothed_cross = C @ smoothed_cov_next + jnp.outer(smoothed_mean, smoothed_mean_next)
 
         return (smoothed_mean, smoothed_cov), (smoothed_mean, smoothed_cov, smoothed_cross)
-        
+
     # Run the smoother type 2 (Sarkka's Algorithm 3.18) backward in time
     def _step_2(carry, args):
         # Unpack the inputs
@@ -618,7 +620,7 @@ def cdlgssm_smoother(
 
     # Run the Kalman smoother
     init_carry = (filtered_means[-1], filtered_covs[-1])
-    
+
     args = (
         t0[::-1], t1[::-1],
         t0_idx[::-1],
@@ -631,7 +633,7 @@ def cdlgssm_smoother(
         _step=_step_2
     else:
         raise ValueError('CD Kalman Smoother type = {} not implemented yet'.format(smoother_type))
-        
+
     # Run the smoother steps via lax
     _, (smoothed_means, smoothed_covs, smoothed_cross) = lax.scan(_step, init_carry, args)
 
@@ -682,7 +684,7 @@ def cdlgssm_posterior_sample(
         num_timesteps = len(emissions)
         t0 = jnp.arange(num_timesteps-1)
         t1 = jnp.arange(1,num_timesteps)
-    
+
     t0_idx = jnp.arange(num_timesteps-1)
     inputs = jnp.zeros((num_timesteps, 0)) if inputs is None else inputs
 
@@ -696,12 +698,12 @@ def cdlgssm_posterior_sample(
         key, t0, t1, t0_idx, filtered_mean, filtered_cov = args
 
         # Shorthand: get parameters and inputs for time index t
-        F, Q = compute_pushforward(params, t0, t1)
+        F, Q = compute_pushforward(params, t0, t1, diffeqsolve_settings=filter_hyperparams.diffeqsolve_settings)
         # TODO: when smoothing, shall we use t0 or t1 for inputs?
         B = _get_params(params.dynamics.input_weights, 2, t0)
         b = _get_params(params.dynamics.bias, 1, t0)
         u = inputs[t0_idx]
-        
+
         # Condition on next state
         smoothed_mean, smoothed_cov = _condition_on(filtered_mean, filtered_cov, F, B, b, Q, u, next_state)
         smoothed_cov = smoothed_cov + jnp.eye(smoothed_cov.shape[-1]) * jitter
@@ -711,7 +713,7 @@ def cdlgssm_posterior_sample(
     # Initialize the last state
     key, this_key = jr.split(key, 2)
     last_state = MVN(filtered_means[-1], filtered_covs[-1]).sample(seed=this_key)
-    
+
     args = (
         jr.split(key, num_timesteps - 1),
         t0[::-1], t1[::-1], # jnp.arange(num_timesteps - 2, -1, -1),
