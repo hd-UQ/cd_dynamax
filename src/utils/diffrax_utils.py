@@ -118,7 +118,7 @@ def diffeqsolve(
 
     # set solver to default if not provided
     if solver is None:
-        if diffusion is not None:
+        if diffusion is None:
             solver = dfx.Dopri5()
             # Tsit5 may be another slightly better default method.
         else:
