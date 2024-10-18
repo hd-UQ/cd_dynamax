@@ -1,6 +1,7 @@
 # Imports
 import numpy as np
 from matplotlib import pyplot as plt
+import seaborn as sns
 import jax
 
 
@@ -585,4 +586,80 @@ def plot_advanced2(
     # Adjust layout to prevent overlap and show the plot
     plt.tight_layout()
     plt.subplots_adjust(top=0.95)  # Adjust space for the title
+    plt.show()
+
+    ## Next, make plots of invariant measures for the true and learned models
+    # in the forecatsed states.
+
+    # First make a plot of the emission variables. Each subplot row will correspond to a different emission variable.
+    # Use black for the true model and blue for the learned model.
+    # We will only use the forecasted states for this plot.
+    # There will only be 1 column of subplots, since we are plotting emissions.
+
+    # Create a canvas with subplots for emissions
+    fig, axes = plt.subplots(nrows=n_emissions, ncols=1, figsize=(10, 2 * n_emissions), sharex=True)
+    if n_emissions == 1:
+        axes = [axes]
+
+    # Plot the emissions in the second column
+    if true_emissions_noisy is not None or (emission_function is not None and model_filtered_states is not None):
+        if emission_function is None:
+            raise ValueError("emission_function must be provided to plot emissions from the learned model.")
+        else:
+            if model_filtered_states is not None:
+                model_filtered_emissions = states_by_emission_fs(emission_function, model_filtered_states)
+            else:
+                model_filtered_emissions = None
+
+            if model_forecast_states is not None:
+                model_forecast_emissions = states_by_emission_fs(emission_function, model_forecast_states)
+            else:
+                model_forecast_emissions = None
+
+        for i in range(n_emissions):
+            # plot kde for true_emissions_noisy[..., i] and label it as the i-th true emission
+            sns.kdeplot(true_emissions_noisy[..., i], ax=axes[i], color="black", label="True Emission")
+
+            # plot kde for model_forecast_emissions[..., i] and label it as the i-th learned emission
+            if model_forecast_emissions is not None:
+                sns.kdeplot(model_forecast_emissions[..., i], ax=axes[i], color="blue", label="Learned Emission")
+            axes[i].set_ylabel(f"Emission {i}")
+            axes[i].legend(loc="upper right")
+
+    # Adjust layout to prevent overlap and show the plot
+    plt.tight_layout()
+    plt.subplots_adjust(top=0.95)  # Adjust space for the title
+
+    # Make a title for the figure
+    plt.suptitle("True vs Learned Invariant Measures: Emissions")
+    plt.show()
+
+    # Now do the same for the states. Each subplot row will correspond to a different state variable.
+    # Create a canvas with subplots for emissions
+    if true_forecast_states is not None or model_forecast_states is not None or true_states is not None:
+        fig, axes = plt.subplots(nrows=n_states, ncols=1, figsize=(10, 2 * n_states), sharex=True)
+        if n_states == 1:
+            axes = [axes]
+        # true_forecast_states[..., i] and model_forecast_states[..., i]
+
+        for i in range(n_states):
+            # plot kde for true_emissions_noisy[..., i] and label it as the i-th true emission
+
+            if true_forecast_states is not None:
+                sns.kdeplot(true_forecast_states[..., i], ax=axes[i], color="black", label="True State")
+            elif true_states is not None:
+                sns.kdeplot(true_states[..., i], ax=axes[i], color="black", label="True State")
+
+            if model_forecast_states is not None:
+                sns.kdeplot(model_forecast_states[..., i], ax=axes[i], color="blue", label="Learned State")
+            axes[i].set_ylabel(f"State {i}")
+            axes[i].legend(loc="upper right")
+
+    # Adjust layout to prevent overlap and show the plot
+    plt.tight_layout()
+    plt.subplots_adjust(top=0.95)  # Adjust space for the title
+
+    # Make a title for the figure
+    plt.suptitle("True vs Learned Invariant Measures: States")
+
     plt.show()
