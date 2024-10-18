@@ -128,7 +128,7 @@ def _predict(
         y0 = (m,)
 
         # Compute predicted mean
-        sol = diffeqsolve(rhs_all, t0=t0, t1=t1, y0=y0, **hyperparams.diffeqsolve)
+        sol = diffeqsolve(rhs_all, t0=t0, t1=t1, y0=y0, **hyperparams.diffeqsolve_settings)
         m_final = sol[0][-1]
 
         # Predicted covariance
