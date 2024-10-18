@@ -15,6 +15,8 @@ def plot_mll_learning_curve(
     t_emissions,
     marginal_lls,
 ):
+    """Note that the true logjoint is computed using default filter hyperparameters in marginal_log_prob."""
+
     plt.figure()
     plt.xlabel("Iterations")
     true_logjoint = true_model.log_prior(true_params) + true_model.marginal_log_prob(
@@ -132,11 +134,13 @@ def plot_param_distributions(
         # Create PairGrid for custom plotting, excluding diagonal and upper right subplots
         g = sns.PairGrid(df, corner=True, diag_sharey=False)
 
-        # Plot line trajectories in the lower triangle subplots
-        g.map_lower(sns.lineplot, linestyle="-", color="gray", label="Sample/Iteration Trajectory")
+        # Plot scatter plots in the lower triangle subplots with color gradient from magenta to blue
+        def scatter_with_gradient(x, y, **kwargs):
+            colors = np.linspace(0, 1, len(x))
+            cmap = sns.color_palette("cool", as_cmap=True)
+            plt.scatter(x, y, c=colors, cmap=cmap, **{k: v for k, v in kwargs.items() if k != "color"})
 
-        # Plot scatter plots in the lower triangle subplots for each pair of parameters
-        g.map_lower(sns.scatterplot, color="blue", label="Sample/Iteration Trajectory")
+        g.map_lower(scatter_with_gradient, s=10, zorder=2)
 
         g.fig.suptitle("{} Trajectory Plot".format(name), y=1.02)
 
