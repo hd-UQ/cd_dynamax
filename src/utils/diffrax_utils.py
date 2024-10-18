@@ -118,10 +118,12 @@ def diffeqsolve(
 
     # set solver to default if not provided
     if solver is None:
-        solver = dfx.Heun()
-        # choosing Heun because it is a cheap/accurate second-order method
-        # sometimes called the improved Euler method
-        # If you want a better ODE solver, you can use Tsit5, and possibly PIDController
+        if diffusion is not None:
+            solver = dfx.Dopri5()
+            # Tsit5 may be another slightly better default method.
+        else:
+            solver = dfx.Heun()
+            # sometimes called the improved Euler method
 
     # allow for reverse-time integration
     # if t1 < t0, we assume that initial condition y0 is at t1
