@@ -122,6 +122,16 @@ cd_states, cd_emissions = cd_model.sample(
     inputs=inputs
 )
 
+print(f"Sampling CDLGSSM path in continuous-discrete time")
+cd_states_path, cd_emissions_path = cd_model.sample(
+    cd_params,
+    key2,
+    num_timesteps=NUM_TIMESTEPS,
+    t_emissions=t_emissions,
+    inputs=inputs,
+    transition_type = 'path'
+)
+
 print("\tChecking states...")
 compare(cd_num_timesteps_states, cd_states)
 
@@ -170,6 +180,68 @@ from continuous_discrete_nonlinear_gaussian_ssm import EKFHyperParams
 # Model def
 inputs = None  # Not interested in inputs for now
 cdnl_model = ContDiscreteNonlinearGaussianSSM(state_dim=STATE_DIM, emission_dim=EMISSION_DIM)
+
+# Initialize model with linear learnable functions, for path-based generation
+cdnl_params, cdnl_param_props = cdnl_model.initialize(
+    key1,
+    initial_mean = {
+        "params": LearnableVector(params=jnp.zeros(cdnl_model.state_dim)),
+        "props": LearnableVector(params=ParameterProperties())
+    },
+    initial_cov = {
+        "params": LearnableMatrix(params=jnp.eye(cdnl_model.state_dim)),
+        "props": LearnableMatrix(params=ParameterProperties(constrainer=RealToPSDBijector()))
+    },
+    dynamics_drift={
+        "params": LearnableLinear(
+            weights=cd_params.dynamics.weights,
+            bias=cd_params.dynamics.bias
+        ),
+        "props": LearnableLinear(
+            weights=ParameterProperties(),
+            bias=ParameterProperties(trainable=False) # We do not learn bias term!
+        ),
+    },
+    dynamics_diffusion_coefficient={
+        "params": LearnableMatrix(params=cd_params.dynamics.diffusion_coefficient),
+        "props": LearnableMatrix(params=ParameterProperties()),
+    },
+    dynamics_diffusion_cov={
+        "params": LearnableMatrix(params=cd_params.dynamics.diffusion_cov),
+        "props": LearnableMatrix(params=ParameterProperties(constrainer=RealToPSDBijector())),
+    },
+    dynamics_approx_order=1.0,
+    emission_function={
+        "params": LearnableLinear(
+            weights=cd_params.emissions.weights,
+            bias=cd_params.emissions.bias
+        ),
+        "props": LearnableLinear(
+            weights=ParameterProperties(),
+            bias=ParameterProperties(trainable=False) # We do not learn bias term!
+        ),
+    },
+    emission_cov = {
+        "params": LearnableMatrix(params=0.1*jnp.eye(cdnl_model.emission_dim)),
+        "props": LearnableMatrix(params=ParameterProperties(constrainer=RealToPSDBijector()))
+    }
+)
+print(f"Sampling CDNLGSSM path in continuous-discrete time")
+cdnl_states_path, cdnl_emissions_path = cdnl_model.sample(
+    cdnl_params,
+    key2,
+    t_emissions=t_emissions,
+    num_timesteps=NUM_TIMESTEPS,
+    inputs=inputs,
+    transition_type = 'path'
+)
+
+# check that these are similar to the path from the cd-linear model
+print("\tChecking states...")
+compare(cdnl_states_path, cd_states_path)
+
+print("\tChecking emissions...")
+compare(cdnl_emissions_path, cd_emissions_path)
 
 # Test models with first and second order SDE approximation (both should be correct for linear models)
 for dynamics_approx_order in [1., 2.]:

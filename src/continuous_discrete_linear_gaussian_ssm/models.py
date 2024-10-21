@@ -30,7 +30,9 @@ from dynamax.linear_gaussian_ssm.inference import ParamsLGSSMInitial, ParamsLGSS
 # Param definition
 from continuous_discrete_linear_gaussian_ssm.inference import ParamsCDLGSSMDynamics, ParamsCDLGSSM
 from continuous_discrete_linear_gaussian_ssm.inference import KFHyperParams
-from continuous_discrete_linear_gaussian_ssm.inference import cdlgssm_filter, cdlgssm_smoother, cdlgssm_posterior_sample
+from continuous_discrete_linear_gaussian_ssm.inference import cdlgssm_filter, cdlgssm_smoother
+# Unclear why we define this here, but not in models
+from continuous_discrete_linear_gaussian_ssm.inference import cdlgssm_joint_sample, cdlgssm_path_sample, cdlgssm_posterior_sample
 from continuous_discrete_linear_gaussian_ssm.inference import compute_pushforward
 
 class SuffStatsCDLGSSM(Protocol):
@@ -282,6 +284,55 @@ class ContDiscreteLinearGaussianSSM(SSM):
             mean += params.emissions.bias
         return MVN(mean, params.emissions.cov)
 
+    
+    def sample_dist(
+        self,
+        params: ParamsCDLGSSM,
+        key: PRNGKey,
+        num_timesteps: int,
+        t_emissions: Optional[Float[Array, "ntime 1"]]=None,
+        inputs: Optional[Float[Array, "ntime input_dim"]]=None
+    ) -> Tuple[Float[Array, "num_timesteps state_dim"], Float[Array, "num_timesteps emission_dim"]]:
+        print('Sampling from continuous-discrete linear Gaussian SSM distributions')
+        return cdlgssm_joint_sample(
+            params,
+            key,
+            num_timesteps,
+            t_emissions,
+            inputs,
+            diffeqsolve_settings=self.diffeqsolve_settings
+        )
+    
+    def sample_path(
+        self,
+        params: ParamsCDLGSSM,
+        key: PRNGKey,
+        num_timesteps: int,
+        t_emissions: Optional[Float[Array, "num_timesteps 1"]]=None,
+        inputs: Optional[Float[Array, "num_timesteps input_dim"]]=None
+    ) -> Tuple[Float[Array, "num_timesteps state_dim"],
+                Float[Array, "num_timesteps emission_dim"]]:
+        r"""Sample from a forward path to produce state and emission trajectories.
+
+        Args:
+            params: model parameters
+            t_emissions: continuous-time specific time instants of observations: if not None, it is an array 
+            inputs: optional array of inputs.
+
+        Returns:
+            latent states and emissions
+
+        """
+        print('Sampling from continuous-discrete linear Gaussian SSM path')
+        return cdlgssm_path_sample(
+            params=params,
+            key=key,
+            num_timesteps=num_timesteps,
+            t_emissions=t_emissions,
+            inputs=inputs,
+            diffeqsolve_settings=self.diffeqsolve_settings
+        )
+    
     def marginal_log_prob(
         self,
         params: ParamsCDLGSSM,

@@ -1,9 +1,13 @@
 import jax.numpy as jnp
 import jax.random as jr
 from jax import lax
-from tensorflow_probability.substrates.jax.distributions import MultivariateNormalFullCovariance as MVN
 from functools import wraps
 import inspect
+import warnings
+
+from tensorflow_probability.substrates.jax.distributions import (
+    MultivariateNormalDiagPlusLowRankCovariance as MVNLowRank,
+    MultivariateNormalFullCovariance as MVN)
 
 from jax.tree_util import tree_map
 from jaxtyping import Array, Float
@@ -45,7 +49,9 @@ def _get_params(x, dim, t):
         return x[t]
     else:
         return x
+
 _zeros_if_none = lambda x, shape: x if x is not None else jnp.zeros(shape)
+_process_input = lambda x, y: jnp.zeros((y,1)) if x is None else x
 
 # Continuous dynamic distributions are different than discrete ones, we define them here
 class ParamsCDLGSSMDynamics(NamedTuple):
@@ -61,11 +67,26 @@ class ParamsCDLGSSMDynamics(NamedTuple):
     :param cov: dynamics covariance $Q$
 
     """
-    weights: Union[Float[Array, "state_dim state_dim"], Float[Array, "ntime state_dim state_dim"], ParameterProperties]
-    bias: Union[Float[Array, "state_dim"], Float[Array, "ntime state_dim"], ParameterProperties]
-    input_weights: Union[Float[Array, "state_dim input_dim"], Float[Array, "ntime state_dim input_dim"], ParameterProperties]
-    diffusion_coefficient: Union[Float[Array, "state_dim state_dim"], Float[Array, "ntime state_dim state_dim"], ParameterProperties]
-    diffusion_cov: Union[Float[Array, "state_dim state_dim"], Float[Array, "ntime state_dim state_dim"], Float[Array, "state_dim_triu"], ParameterProperties]
+    weights: Union[ParameterProperties,
+        Float[Array, "state_dim state_dim"],
+        Float[Array, "ntime state_dim state_dim"]]
+    
+    bias: Union[ParameterProperties,
+        Float[Array, "state_dim"],
+        Float[Array, "ntime state_dim"]]
+    
+    input_weights: Union[ParameterProperties,
+        Float[Array, "state_dim input_dim"],
+        Float[Array, "ntime state_dim input_dim"]]
+    
+    diffusion_coefficient: Union[ParameterProperties,
+        Float[Array, "state_dim state_dim"],
+        Float[Array, "ntime state_dim state_dim"]
+    ]
+    diffusion_cov: Union[ParameterProperties,
+        Float[Array, "state_dim state_dim"],
+        Float[Array, "ntime state_dim state_dim"],
+        Float[Array, "state_dim_triu"]]
 
 # CDLGSSM parameters are different to LGSSM due to different dynamics
 class ParamsCDLGSSM(NamedTuple):
@@ -197,7 +218,6 @@ def _condition_on(m, P, H, D, d, R, u, y):
          S = (R + H * P * H')
          K = P * H' * S^{-1}
          PP = P - K S K' = Sigma_cond
-     **Note! This can be done more efficiently when R is diagonal.**
 
     Args:
          m (D_hid,): prior mean.
@@ -214,8 +234,26 @@ def _condition_on(m, P, H, D, d, R, u, y):
          Sigma_pred (D_hid,D_hid): predicted covariance.
     """
     # Compute the Kalman gain
-    S = R + H @ P @ H.T
-    K = psd_solve(S, H @ P).T
+    if R.ndim == 2:
+        S = R + H @ P @ H.T
+        K = psd_solve(S, H @ P).T
+    else:
+        # Optimization using Woodbury identity with A=R, U=H@chol(P), V=U.T, C=I
+        # (see https://en.wikipedia.org/wiki/Woodbury_matrix_identity)
+        I = jnp.eye(P.shape[0])
+        U = H @ jnp.linalg.cholesky(P)
+        X = U / R[:, None]
+        S_inv = jnp.diag(1.0 / R) - X @ psd_solve(I + U.T @ X, X.T)
+        """
+        # Could alternatively use U=H and C=P
+        R_inv = jnp.diag(1.0 / R)
+        P_inv = psd_solve(P, jnp.eye(P.shape[0]))
+        S_inv = R_inv - R_inv @ H @ psd_solve(P_inv + H.T @ R_inv @ H, H.T @ R_inv)
+        """
+        K = P @ H.T @ S_inv
+        S = jnp.diag(R) + H @ P @ H.T
+
+    # Compute the conditional mean and covariance
     Sigma_cond = P - K @ S @ K.T
     mu_cond = m + K @ (y - D @ u - d - H @ m)
     return mu_cond, symmetrize(Sigma_cond)
@@ -291,7 +329,8 @@ def cdlgssm_joint_sample(
     key: PRNGKey,
     num_timesteps: int,
     t_emissions: Optional[Float[Array, "num_timesteps 1"]]=None,
-    inputs: Optional[Float[Array, "num_timesteps input_dim"]]=None
+    inputs: Optional[Float[Array, "num_timesteps input_dim"]]=None,
+    diffeqsolve_settings={}
 )-> Tuple[Float[Array, "num_timesteps state_dim"],
           Float[Array, "num_timesteps emission_dim"]]:
     r"""Sample from the joint distribution to produce state and emission trajectories.
@@ -305,8 +344,6 @@ def cdlgssm_joint_sample(
         latent states and emissions
 
     """
-    raise ValueError("Not implemented yet")
-
     params, inputs = preprocess_params_and_inputs(params, num_timesteps, inputs)
 
     def _sample_transition(key, F, B, b, Q, x_tm1, u):
@@ -315,6 +352,7 @@ def cdlgssm_joint_sample(
 
     def _sample_emission(key, H, D, d, R, x, u):
         mean = H @ x + D @ u + d
+        R = jnp.diag(R) if R.ndim==1 else R
         return MVN(mean, R).sample(seed=key)
     
     def _sample_initial(key, params, inputs):
@@ -336,13 +374,13 @@ def cdlgssm_joint_sample(
         key1, key2 = jr.split(key, 2)
 
         # Shorthand: get parameters and inputs for time index t
-        B = _get_params(params.dynamics.input_weights, 2, t)
-        b = _get_params(params.dynamics.bias, 1, t)
-        F, Q = compute_pushforward(params, t0, t1)
-        H = _get_params(params.emissions.weights, 2, t)
-        D = _get_params(params.emissions.input_weights, 2, t)
-        d = _get_params(params.emissions.bias, 1, t)
-        R = _get_params(params.emissions.cov, 2, t)
+        B = _get_params(params.dynamics.input_weights, 2, t0)
+        b = _get_params(params.dynamics.bias, 1, t0)
+        F, Q = compute_pushforward(params, t0, t1, diffeqsolve_settings)
+        H = _get_params(params.emissions.weights, 2, t1)
+        D = _get_params(params.emissions.input_weights, 2, t1)
+        d = _get_params(params.emissions.bias, 1, t1)
+        R = _get_params(params.emissions.cov, 2, t1)
 
         # Sample from transition and emission distributions
         state = _sample_transition(key1, F, B, b, Q, prev_state, inpt)
@@ -369,12 +407,143 @@ def cdlgssm_joint_sample(
         t0 = jnp.arange(num_timesteps-1)
         t1 = jnp.arange(1,num_timesteps)
     
-    t0_idx = jnp.arange(num_timesteps-1)
+    next_inputs = tree_map(lambda x: x[1:], inputs)
+    # Sample the remaining emissions and states via scan
+    _, (next_states, next_emissions) = lax.scan(
+        _step,
+        initial_state,
+        (next_keys, t0, t1, next_inputs)
+    )
 
-    # next_times = jnp.arange(1, num_timesteps)
+    # Concatenate the initial state and emission with the following ones
+    expand_and_cat = lambda x0, x1T: jnp.concatenate((jnp.expand_dims(x0, 0), x1T))
+    states = tree_map(expand_and_cat, initial_state, next_states)
+    emissions = tree_map(expand_and_cat, initial_emission, next_emissions)
+
+    return states, emissions
+
+def cdlgssm_path_sample(
+        params: ParamsCDLGSSM,
+        key: PRNGKey,
+        num_timesteps: int,
+        t_emissions: Optional[Float[Array, "num_timesteps 1"]]=None,
+        inputs: Optional[Float[Array, "num_timesteps input_dim"]]=None,
+        diffeqsolve_settings={}
+    ) -> Tuple[Float[Array, "num_timesteps state_dim"],
+                Float[Array, "num_timesteps emission_dim"]]:
+    r"""Sample from a forward path of the CD-NLGSSM to produce state and emission trajectories.
+    
+    Args:
+        params: model parameters
+        t_emissions: continuous-time specific time instants of observations: if not None, it is an array 
+        inputs: optional array of inputs.
+
+    Returns:
+        latent states and emissions
+
+    """
+    params, inputs = preprocess_params_and_inputs(params, num_timesteps, inputs)
+
+    def _sample_emission(key, H, D, d, R, x, u):
+        mean = H @ x + D @ u + d
+        R = jnp.diag(R) if R.ndim==1 else R
+        return MVN(
+                mean,
+                R
+            ).sample(seed=key)
+    
+    def _sample_initial(key, params, inputs):
+        key1, key2 = jr.split(key)
+
+        initial_state = MVN(
+            params.initial.mean,
+            params.initial.cov
+        ).sample(seed=key1)
+
+        H0 = _get_params(params.emissions.weights, 2, 0)
+        D0 = _get_params(params.emissions.input_weights, 2, 0)
+        d0 = _get_params(params.emissions.bias, 1, 0)
+        R0 = _get_params(params.emissions.cov, 2, 0)
+        u0 = tree_map(lambda x: x[0], inputs)
+
+        initial_emission = _sample_emission(
+            key2,
+            H0, D0, d0, R0,
+            initial_state, u0
+        )
+
+        return initial_state, initial_emission
+    
+    def _step(prev_state, args):
+        key, t0, t1, inpt = args
+        key1, key2 = jr.split(key, 2)
+
+        # Shorthand: get parameters and inputs for time index t
+        F_t = _get_params(params.dynamics.weights, 2, t0)
+        B = _get_params(params.dynamics.input_weights, 2, t0)
+        b = _get_params(params.dynamics.bias, 1, t0)
+        Q_t = _get_params(params.dynamics.diffusion_cov, 2, t0)
+        L_t = _get_params(params.dynamics.diffusion_coefficient, 2, t0)
+
+        # SDE definition as per the CD-NLGSSM
+        def drift(t, y, args):
+            return F_t @ y + B @ inpt + b
+
+        def diffusion(t, y, args):
+            Q_sqrt = jnp.linalg.cholesky(Q_t)
+            combined_diffusion = L_t @ Q_sqrt
+            return combined_diffusion
+
+        # solve the SDE
+        state = diffeqsolve(
+            key=key1,
+            drift=drift,
+            diffusion=diffusion,
+            t0=t0,
+            t1=t1,
+            y0=prev_state,
+            **diffeqsolve_settings
+        )[0]
+        
+        # Sample from emission
+        H = _get_params(params.emissions.weights, 2, t1)
+        D = _get_params(params.emissions.input_weights, 2, t1)
+        d = _get_params(params.emissions.bias, 1, t1)
+        R = _get_params(params.emissions.cov, 2, t1)
+        emission = _sample_emission(
+            key2,
+            H, D, d, R,
+            state, inpt
+        )
+
+        return state, (state, emission)
+
+    # Sample the initial state
+    key1, key2 = jr.split(key)
+    
+    initial_state, initial_emission = _sample_initial(key1, params, inputs)
+
+    # Sample the remaining emissions and states
+    next_keys = jr.split(key2, num_timesteps - 1)
+
+    # Figure out timestamps, as vectors to scan over
+    # t_emissions is of shape num_timesteps \times 1
+    # t0 and t1 are num_timesteps \times 0
+    if t_emissions is not None:
+        num_timesteps = t_emissions.shape[0]
+        t0 = tree_map(lambda x: x[0:-1,0], t_emissions)
+        t1 = tree_map(lambda x: x[1:,0], t_emissions)
+    else:
+        t0 = jnp.arange(num_timesteps-1)
+        t1 = jnp.arange(1,num_timesteps)
     
     next_inputs = tree_map(lambda x: x[1:], inputs)
-    _, (next_states, next_emissions) = lax.scan(_step, initial_state, (next_keys, t0, t1, t0_idx, next_inputs))
+    # Sample the remaining emissions and states via scan
+    _, (next_states, next_emissions) = lax.scan(
+        _step,
+        initial_state,
+        (next_keys, t0, t1, next_inputs)
+    )
 
     # Concatenate the initial state and emission with the following ones
     expand_and_cat = lambda x0, x1T: jnp.concatenate((jnp.expand_dims(x0, 0), x1T))
@@ -563,7 +732,13 @@ def cdlgssm_smoother(
     inputs = jnp.zeros((num_timesteps, 0)) if inputs is None else inputs
 
     # Run the Kalman filter
-    filtered_posterior = cdlgssm_filter(params, emissions, t_emissions, filter_hyperparams, inputs)
+    filtered_posterior = cdlgssm_filter(
+        params,
+        emissions,
+        t_emissions,
+        filter_hyperparams,
+        inputs
+    )
     ll, filtered_means, filtered_covs, *_ = filtered_posterior
 
     print('Running KF smoother type = {}'.format(smoother_type))
@@ -618,14 +793,6 @@ def cdlgssm_smoother(
 
         return (smoothed_mean, smoothed_cov), (smoothed_mean, smoothed_cov, smoothed_cross)
 
-    # Run the Kalman smoother
-    init_carry = (filtered_means[-1], filtered_covs[-1])
-
-    args = (
-        t0[::-1], t1[::-1],
-        t0_idx[::-1],
-        filtered_means[:-1][::-1], filtered_covs[:-1][::-1]
-    )
     # Which Continuous-smoother type do we want?
     if smoother_type == 'cd_smoother_1':
         _step=_step_1
@@ -634,13 +801,18 @@ def cdlgssm_smoother(
     else:
         raise ValueError('CD Kalman Smoother type = {} not implemented yet'.format(smoother_type))
 
-    # Run the smoother steps via lax
-    _, (smoothed_means, smoothed_covs, smoothed_cross) = lax.scan(_step, init_carry, args)
+    # Run the smoother steps via lax scan, using reverse mode
+    _, (smoothed_means, smoothed_covs, smoothed_cross) = lax.scan(
+        _step,
+        (filtered_means[-1], filtered_covs[-1]),
+        (t0, t1,t0_idx, filtered_means[:-1], filtered_covs[:-1]),
+        reverse=True
+    )
 
-    # Reverse the arrays and return
-    smoothed_means = jnp.row_stack((smoothed_means[::-1], filtered_means[-1][None, ...]))
-    smoothed_covs = jnp.row_stack((smoothed_covs[::-1], filtered_covs[-1][None, ...]))
-    smoothed_cross = smoothed_cross[::-1]
+    # Concatenate the arrays and return
+    smoothed_means = jnp.vstack((smoothed_means, filtered_means[-1][None, ...]))
+    smoothed_covs = jnp.vstack((smoothed_covs, filtered_covs[-1][None, ...]))
+
     return PosteriorGSSMSmoothed(
         marginal_loglik=ll,
         filtered_means=filtered_means,
@@ -689,7 +861,13 @@ def cdlgssm_posterior_sample(
     inputs = jnp.zeros((num_timesteps, 0)) if inputs is None else inputs
 
     # Run the Kalman filter
-    filtered_posterior = cdlgssm_filter(params, emissions, t_emissions, filter_hyperparams, inputs)
+    filtered_posterior = cdlgssm_filter(
+        params,
+        emissions,
+        t_emissions,
+        filter_hyperparams,
+        inputs
+    )
     ll, filtered_means, filtered_covs, *_ = filtered_posterior
 
     # Sample backward in time
@@ -705,7 +883,12 @@ def cdlgssm_posterior_sample(
         u = inputs[t0_idx]
 
         # Condition on next state
-        smoothed_mean, smoothed_cov = _condition_on(filtered_mean, filtered_cov, F, B, b, Q, u, next_state)
+        smoothed_mean, smoothed_cov = _condition_on(
+            filtered_mean,
+            filtered_cov,
+            F, B, b, Q, u,
+            next_state
+        )
         smoothed_cov = smoothed_cov + jnp.eye(smoothed_cov.shape[-1]) * jitter
         state = MVN(smoothed_mean, smoothed_cov).sample(seed=key)
         return state, state
@@ -714,12 +897,17 @@ def cdlgssm_posterior_sample(
     key, this_key = jr.split(key, 2)
     last_state = MVN(filtered_means[-1], filtered_covs[-1]).sample(seed=this_key)
 
-    args = (
-        jr.split(key, num_timesteps - 1),
-        t0[::-1], t1[::-1], # jnp.arange(num_timesteps - 2, -1, -1),
-        t0_idx[::-1],
-        filtered_means[:-1][::-1], filtered_covs[:-1][::-1],
+
+    # Sample the remaining states via scan, in reverse
+    _, states = lax.scan(
+        _step,
+        last_state,
+        (
+            jr.split(key, num_timesteps - 1),
+            t0, t1, t0_idx,
+            filtered_means[:-1], filtered_covs[:-1],
+        ),
+        reverse=True,
     )
-    _, reversed_states = lax.scan(_step, last_state, args)
-    states = jnp.row_stack([reversed_states[::-1], last_state])
-    return states
+
+    return jnp.vstack([states, last_state])
