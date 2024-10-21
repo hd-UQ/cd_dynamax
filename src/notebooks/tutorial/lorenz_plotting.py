@@ -616,13 +616,46 @@ def plot_advanced2(
             else:
                 model_forecast_emissions = None
 
+        def plot_kde_with_ci(ax, batched_data, color, label, n_grid_points=100):
+            # Compute the KDE estimate for each batch of emissions separately via vmap,
+            # then plot the mean/CI of the KDE estimates across batches.
+            if not has_batch_dimension(batched_data, N_samples):
+                if len(batched_data) > 0:
+                    sns.kdeplot(batched_data, ax=ax, color=color, label=label)
+                    return
+                else:
+                    return
+            else:
+                if len(batched_data[0]) == 0:
+                    return
+                else:
+                    pass
+
+            emission_kde = jax.vmap(
+                lambda x: jax.scipy.stats.gaussian_kde(x, bw_method="scott"), in_axes=0
+            )(batched_data)
+
+            # choose a grid of 1000 x values for the plot
+            x = jnp.linspace(jnp.min(batched_data), jnp.max(batched_data), n_grid_points)
+            # compute the KDE estimate for each batch at the x values
+            kde_estimates = jax.vmap(lambda kde: kde(x))(emission_kde)
+            # compute the mean and std of the KDE estimates across batches
+            kde_mean = jnp.mean(kde_estimates, axis=0)
+            kde_std = jnp.std(kde_estimates, axis=0)
+            # plot the mean KDE estimate with 95% CI
+            ax.plot(x, kde_mean, color=color, label=label)
+            ax.fill_between(x, kde_mean - 1.96 * kde_std, kde_mean + 1.96 * kde_std, color=color, alpha=0.3)
+
+            return
+
         for i in range(n_emissions):
             # plot kde for true_emissions_noisy[..., i] and label it as the i-th true emission
-            sns.kdeplot(true_emissions_noisy[..., i], ax=axes[i], color="black", label="True Emission")
+            if true_emissions_noisy is not None and len(true_emissions_noisy) > 0:
+                plot_kde_with_ci(axes[i], true_emissions_noisy[..., i], color="black", label="True Emission")
 
             # plot kde for model_forecast_emissions[..., i] and label it as the i-th learned emission
-            if model_forecast_emissions is not None:
-                sns.kdeplot(model_forecast_emissions[..., i], ax=axes[i], color="blue", label="Learned Emission")
+            if model_forecast_emissions is not None and len(model_forecast_emissions) > 0:
+                plot_kde_with_ci(axes[i], model_forecast_emissions[..., i], color="blue", label="Learned Emission")
             axes[i].set_ylabel(f"Emission {i}")
             axes[i].legend(loc="upper right")
 
@@ -645,13 +678,13 @@ def plot_advanced2(
         for i in range(n_states):
             # plot kde for true_emissions_noisy[..., i] and label it as the i-th true emission
 
-            if true_forecast_states is not None:
-                sns.kdeplot(true_forecast_states[..., i], ax=axes[i], color="black", label="True State")
-            elif true_states is not None:
-                sns.kdeplot(true_states[..., i], ax=axes[i], color="black", label="True State")
+            if true_forecast_states is not None and len(true_forecast_states) > 0:
+                plot_kde_with_ci(axes[i], true_forecast_states[..., i], color="black", label="True State")
+            elif true_states is not None and len(true_states) > 0:
+                plot_kde_with_ci(axes[i], true_states[..., i], color="black", label="True State")
 
-            if model_forecast_states is not None:
-                sns.kdeplot(model_forecast_states[..., i], ax=axes[i], color="blue", label="Learned State")
+            if model_forecast_states is not None and len(model_forecast_states) > 0:
+                plot_kde_with_ci(axes[i], model_forecast_states[..., i], color="blue", label="Learned State")
             axes[i].set_ylabel(f"State {i}")
             axes[i].legend(loc="upper right")
 
