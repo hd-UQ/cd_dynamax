@@ -4,6 +4,7 @@ import jax.numpy as jnp
 import jax.debug as jdb
 from jax import random as jr
 from jax import vmap, lax
+from jax import jit
 from pdb import set_trace as bp
 import jax.debug as jdb
 
@@ -162,3 +163,22 @@ def diffeqsolve(
     ).ys
 
     return sol
+
+
+@jit
+def adjust_rhs(x, rhs, lower_bound=-100, upper_bound=100, epsilon=1e-10):
+    """
+    Adjust the right-hand side of the ODE to ensure that the state
+    remains within the bounds [-100, 100]
+    """
+
+    # Use a small epsilon to ensure numerical stability
+    # Smoothly adjust the bounds to avoid gradient discontinuities
+    safe_lower_bound = jnp.where(x <= lower_bound, lower_bound + epsilon, x)
+    safe_upper_bound = jnp.where(x >= upper_bound, upper_bound - epsilon, x)
+
+    # Conditionally adjust rhs using the safe bounds
+    rhs = jnp.where(safe_lower_bound <= lower_bound, jnp.maximum(rhs, 0), rhs)
+    rhs = jnp.where(safe_upper_bound >= upper_bound, jnp.minimum(rhs, 0), rhs)
+
+    return rhs
