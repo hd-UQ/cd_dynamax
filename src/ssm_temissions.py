@@ -252,57 +252,27 @@ class SSM(ABC):
             latent states and emissions
 
         """
-        def _step(prev_state, args):
-            key, t0, t1, inpt = args
-            key1, key2 = jr.split(key, 2)
-            if transition_type == "distribution":
-                print("Sampling from transition distribution (this may be a poor approximation if you're simulating from a non-linear SDE). It is a highly appropriate choice for linear SDEs.")
-                state = self.transition_distribution(params, prev_state, t0, t1, inpt).sample(seed=key2)
-            elif transition_type == "path":
-                print("Sampling from SDE solver path (this may be an unnecessarily poor approximation if you're simulating from a linear SDE). It is an appropriate choice for non-linear SDEs.")
-                def drift(t, y, args):
-                    return params.dynamics.drift.f(y, inpt, t)
-
-                def diffusion(t, y, args):
-                    Qc_t = params.dynamics.diffusion_cov.f(None, inpt, t)
-                    L_t = params.dynamics.diffusion_coefficient.f(None, inpt, t)
-                    Q_sqrt = jnp.linalg.cholesky(Qc_t)
-                    combined_diffusion = L_t @ Q_sqrt
-                    return combined_diffusion
-
-                state = diffeqsolve(key=key2, drift=drift, diffusion=diffusion, t0=t0, t1=t1, y0=prev_state, **self.diffeqsolve_settings)[0]
-            else:
-                raise ValueError("transition_type must be either 'distribution' or 'path'")
-
-            emission = self.emission_distribution(params, state, inpt).sample(seed=key1)
-            return state, (state, emission)
-
-        # Sample the initial state
-        key1, key2, key = jr.split(key, 3)
-        initial_input = tree_map(lambda x: x[0], inputs)
-        initial_state = self.initial_distribution(params, initial_input).sample(seed=key1)
-        initial_emission = self.emission_distribution(params, initial_state, initial_input).sample(seed=key2)
-
-        # Figure out timestamps, as vectors to scan over
-        # t_emissions is of shape num_timesteps \times 1
-        # t0 and t1 are num_timesteps-1 \times 0
-        if t_emissions is not None:
-            num_timesteps = t_emissions.shape[0]
-            t0 = tree_map(lambda x: x[0:-1,0], t_emissions)
-            t1 = tree_map(lambda x: x[1:,0], t_emissions)
+        if transition_type == "distribution":
+            print("Sampling from CD distributions: this may be a poor approximation if you're simulating from a non-linear SDE. It is a highly appropriate choice for linear SDEs.")
+            states, emissions = self.sample_dist(
+                params,
+                key,
+                num_timesteps,
+                t_emissions,
+                inputs
+            )
+        elif transition_type == "path":
+            print("Sampling from SDE solver path: this may be an unnecessarily poor approximation if you're simulating from a linear SDE. It is an appropriate choice for non-linear SDEs.")
+            states, emissions = self.sample_path(
+                params,
+                key,
+                num_timesteps,
+                t_emissions,
+                inputs
+            )
         else:
-            t0 = jnp.arange(num_timesteps-1)
-            t1 = jnp.arange(1,num_timesteps)
-
-        # Sample the remaining emissions and states
-        next_keys = jr.split(key, num_timesteps - 1)
-        next_inputs = tree_map(lambda x: x[1:], inputs)
-        _, (next_states, next_emissions) = lax_scan(_step, initial_state, (next_keys, t0, t1, next_inputs), debug=DEBUG)
-
-        # Concatenate the initial state and emission with the following ones
-        expand_and_cat = lambda x0, x1T: jnp.concatenate((jnp.expand_dims(x0, 0), x1T))
-        states = tree_map(expand_and_cat, initial_state, next_states)
-        emissions = tree_map(expand_and_cat, initial_emission, next_emissions)
+            raise ValueError(f"Invalid transition_type: {transition_type}")
+        
         return states, emissions
 
     def log_prob(

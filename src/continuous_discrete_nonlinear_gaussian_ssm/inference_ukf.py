@@ -329,7 +329,7 @@ def unscented_kalman_smoother(
 
     """
 
-    raise NotImplementedError("Unscented Kalman Smoother not yet implemented in continuous-discrete case.")
+    raise NotImplementedError("Unscented Kalman Smoother not yet implemented in continuous-discrete case, have a look at dynamax for inspiration!")
     # Figure out timestamps, as vectors to scan over
     # t_emissions is of shape num_timesteps \times 1
     # t0 and t1 are num_timesteps \times 0

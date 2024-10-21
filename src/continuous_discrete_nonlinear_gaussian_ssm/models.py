@@ -1,7 +1,7 @@
 import pdb
 from fastprogress.fastprogress import progress_bar
 from functools import partial
-from jax import jit
+from jax import lax
 from jax import jacfwd, jacrev
 import jax.numpy as jnp
 import jax.random as jr
@@ -16,7 +16,7 @@ from tensorflow_probability.substrates.jax.distributions import MultivariateNorm
 import tensorflow_probability.substrates.jax.distributions as tfd
 
 # Dynamax shared code
-from dynamax.types import Scalar
+from dynamax.types import PRNGKey, Scalar
 from dynamax.parameters import ParameterProperties, ParameterSet
 from dynamax.utils.bijectors import RealToPSDBijector
 from dynamax.linear_gaussian_ssm.inference import PosteriorGSSMFiltered, PosteriorGSSMSmoothed
@@ -171,7 +171,7 @@ class ContDiscreteNonlinearGaussianSSM(SSM):
     # This is a revised initialize, consistent across cd-dynamax, based on dicts
     def initialize(
         self,
-        rnd_key: Float[Array, "key"],
+        key: Optional[Float[Array, "key"]] = jr.PRNGKey(0),
         initial_mean: dict = None,
         initial_cov: dict = None,
         dynamics_drift: dict = None,
@@ -233,7 +233,7 @@ class ContDiscreteNonlinearGaussianSSM(SSM):
         ## Emission
         _emission_function = {
             "params": LearnableLinear(
-                weights=jr.normal(rnd_key, (self.emission_dim, self.state_dim)),
+                weights=jr.normal(key, (self.emission_dim, self.state_dim)),
                 bias=jnp.zeros(self.emission_dim)
             ),
             "props": LearnableLinear(
@@ -329,6 +329,66 @@ class ContDiscreteNonlinearGaussianSSM(SSM):
         mean = params.emissions.emission_function.f(state, inputs, t=None)
         R = params.emissions.emission_cov.f(state, inputs, t=None)
         return MVN(mean, R)
+    
+    def sample_dist(
+        self,
+        params: ParamsCDNLGSSM,
+        key: PRNGKey,
+        num_timesteps: int,
+        t_emissions: Optional[Float[Array, "num_timesteps 1"]]=None,
+        inputs: Optional[Float[Array, "num_timesteps input_dim"]]=None
+    ) -> Tuple[Float[Array, "num_timesteps state_dim"],
+                Float[Array, "num_timesteps emission_dim"]]:
+        r"""Sample from the joint distribution to produce state and emission trajectories.
+        
+        Args:
+            params: model parameters
+            t_emissions: continuous-time specific time instants of observations: if not None, it is an array 
+            inputs: optional array of inputs.
+        
+        Returns:
+            latent states and emissions
+        
+        """
+        print('Sampling from continuous-discrete non-linear Gaussian SSM distributions')
+        return cdnlgssm_joint_sample(
+            params=params,
+            key=key,
+            num_timesteps=num_timesteps,
+            t_emissions=t_emissions,
+            inputs=inputs,
+            diffeqsolve_settings=self.diffeqsolve_settings
+        )
+    
+    def sample_path(
+        self,
+        params: ParamsCDNLGSSM,
+        key: PRNGKey,
+        num_timesteps: int,
+        t_emissions: Optional[Float[Array, "num_timesteps 1"]]=None,
+        inputs: Optional[Float[Array, "num_timesteps input_dim"]]=None
+    ) -> Tuple[Float[Array, "num_timesteps state_dim"],
+                Float[Array, "num_timesteps emission_dim"]]:
+        r"""Sample from a forward path to produce state and emission trajectories.
+
+        Args:
+            params: model parameters
+            t_emissions: continuous-time specific time instants of observations: if not None, it is an array 
+            inputs: optional array of inputs.
+
+        Returns:
+            latent states and emissions
+
+        """
+        print('Sampling from continuous-discrete non-linear Gaussian SSM path')
+        return cdnlgssm_path_sample(
+            params=params,
+            key=key,
+            num_timesteps=num_timesteps,
+            t_emissions=t_emissions,
+            inputs=inputs,
+            diffeqsolve_settings=self.diffeqsolve_settings
+        )
 
     def marginal_log_prob(
         self,
@@ -346,6 +406,254 @@ class ContDiscreteNonlinearGaussianSSM(SSM):
             inputs=inputs
         )
         return filtered_posterior.marginal_loglik
+
+def cdnlgssm_joint_sample(
+    params: ParamsCDNLGSSM,
+    key: PRNGKey,
+    num_timesteps: int,
+    t_emissions: Optional[Float[Array, "num_timesteps 1"]]=None,
+    inputs: Optional[Float[Array, "num_timesteps input_dim"]]=None,
+    diffeqsolve_settings={}
+)-> Tuple[Float[Array, "num_timesteps state_dim"],
+          Float[Array, "num_timesteps emission_dim"]]:
+    r"""Sample from the joint distribution of a CD-NLGSSM to produce state and emission trajectories.
+    
+    Args:
+        params: model parameters
+        t_emissions: continuous-time specific time instants of observations: if not None, it is an array 
+        inputs: optional array of inputs.
+
+    Returns:
+        latent states and emissions
+
+    """
+    def _sample_initial(key, params, inputs):
+        key1, key2 = jr.split(key)
+
+        initial_state = MVN(
+            params.initial.mean.f(),
+            params.initial.cov.f()
+        ).sample(seed=key1)
+
+        # Sample from emission
+        u0 = tree_map(lambda x: x[0], inputs)
+        emission_mean = params.emissions.emission_function.f(
+            initial_state,
+            u0,
+            t=0
+        )
+        emission_cov = params.emissions.emission_cov.f(
+            initial_state,
+            u0,
+            t=0
+        )
+        initial_emission = MVN(
+            emission_mean,
+            emission_cov
+        ).sample(seed=key2)
+
+        return initial_state, initial_emission
+
+    def _step(prev_state, args):
+        key, t0, t1, inpt = args
+        key1, key2 = jr.split(key, 2)
+
+        # Push-forward with assumed CDNLGSSM
+        mean, covariance = compute_pushforward(
+            x0 = prev_state,
+            P0 = jnp.zeros((prev_state.shape[-1], prev_state.shape[-1])), # TODO: check that last dimension is always state-dimension, even when vectorized
+            params=params,
+            t0=t0, t1=t1,
+            inputs=inpt,
+            diffeqsolve_settings=diffeqsolve_settings
+        )
+        # Sample from transition 
+        state = MVN(mean, covariance).sample(seed=key1)
+        
+        # Sample from emission
+        emission_mean = params.emissions.emission_function.f(
+            state,
+            inpt,
+            t=t1
+        )
+        emission_cov = params.emissions.emission_cov.f(
+            state,
+            inpt,
+            t=t1
+        )
+        emission = MVN(
+            emission_mean,
+            emission_cov
+        ).sample(seed=key2)
+
+        return state, (state, emission)
+
+    # Sample the initial state
+    key1, key2 = jr.split(key)
+    
+    initial_state, initial_emission = _sample_initial(key1, params, inputs)
+
+    # Sample the remaining emissions and states
+    next_keys = jr.split(key2, num_timesteps - 1)
+
+    # Figure out timestamps, as vectors to scan over
+    # t_emissions is of shape num_timesteps \times 1
+    # t0 and t1 are num_timesteps \times 0
+    if t_emissions is not None:
+        num_timesteps = t_emissions.shape[0]
+        t0 = tree_map(lambda x: x[0:-1,0], t_emissions)
+        t1 = tree_map(lambda x: x[1:,0], t_emissions)
+    else:
+        t0 = jnp.arange(num_timesteps-1)
+        t1 = jnp.arange(1,num_timesteps)
+    
+    next_inputs = tree_map(lambda x: x[1:], inputs)
+    # Sample the remaining emissions and states via scan
+    _, (next_states, next_emissions) = lax.scan(
+        _step,
+        initial_state,
+        (next_keys, t0, t1, next_inputs)
+    )
+
+    # Concatenate the initial state and emission with the following ones
+    expand_and_cat = lambda x0, x1T: jnp.concatenate((jnp.expand_dims(x0, 0), x1T))
+    states = tree_map(expand_and_cat, initial_state, next_states)
+    emissions = tree_map(expand_and_cat, initial_emission, next_emissions)
+
+    return states, emissions
+
+def cdnlgssm_path_sample(
+        params: ParamsCDNLGSSM,
+        key: PRNGKey,
+        num_timesteps: int,
+        t_emissions: Optional[Float[Array, "num_timesteps 1"]]=None,
+        inputs: Optional[Float[Array, "num_timesteps input_dim"]]=None,
+        diffeqsolve_settings={}
+    ) -> Tuple[Float[Array, "num_timesteps state_dim"],
+                Float[Array, "num_timesteps emission_dim"]]:
+    r"""Sample from a forward path of the CD-NLGSSM to produce state and emission trajectories.
+    
+    Args:
+        params: model parameters
+        t_emissions: continuous-time specific time instants of observations: if not None, it is an array 
+        inputs: optional array of inputs.
+
+    Returns:
+        latent states and emissions
+
+    """
+    def _sample_initial(key, params, inputs):
+        key1, key2 = jr.split(key)
+
+        initial_state = MVN(
+            params.initial.mean.f(),
+            params.initial.cov.f()
+        ).sample(seed=key1)
+
+        # Sample from emission
+        u0 = tree_map(lambda x: x[0], inputs)
+        emission_mean = params.emissions.emission_function.f(
+            initial_state,
+            u0,
+            t=0
+        )
+        emission_cov = params.emissions.emission_cov.f(
+            initial_state,
+            u0,
+            t=0
+        )
+        initial_emission = MVN(
+            emission_mean,
+            emission_cov
+        ).sample(seed=key2)
+
+        return initial_state, initial_emission
+    
+    def _step(prev_state, args):
+        key, t0, t1, inpt = args
+        key1, key2 = jr.split(key, 2)
+
+        # SDE definition as per the CD-NLGSSM
+        def drift(t, y, args):
+            return params.dynamics.drift.f(y, inpt, t)
+
+        def diffusion(t, y, args):
+            Qc_t = params.dynamics.diffusion_cov.f(None, inpt, t)
+            L_t = params.dynamics.diffusion_coefficient.f(None, inpt, t)
+            Q_sqrt = jnp.linalg.cholesky(Qc_t)
+            combined_diffusion = L_t @ Q_sqrt
+            return combined_diffusion
+
+        # solve the SDE
+        state = diffeqsolve(
+            key=key1,
+            drift=drift,
+            diffusion=diffusion,
+            t0=t0,
+            t1=t1,
+            y0=prev_state,
+            **diffeqsolve_settings
+        )[0]
+        
+        # Sample from emission
+        emission_mean = params.emissions.emission_function.f(
+            state,
+            inpt,
+            t=t1
+        )
+        emission_cov = params.emissions.emission_cov.f(
+            state,
+            inpt,
+            t=t1
+        )
+        emission = MVN(
+            emission_mean,
+            emission_cov
+        ).sample(seed=key2)
+
+        return state, (state, emission)
+
+    # Sample the initial state
+    key1, key2 = jr.split(key)
+    
+    initial_state, initial_emission = _sample_initial(key1, params, inputs)
+
+    # Sample the remaining emissions and states
+    next_keys = jr.split(key2, num_timesteps - 1)
+
+    # Figure out timestamps, as vectors to scan over
+    # t_emissions is of shape num_timesteps \times 1
+    # t0 and t1 are num_timesteps \times 0
+    if t_emissions is not None:
+        num_timesteps = t_emissions.shape[0]
+        t0 = tree_map(lambda x: x[0:-1,0], t_emissions)
+        t1 = tree_map(lambda x: x[1:,0], t_emissions)
+    else:
+        t0 = jnp.arange(num_timesteps-1)
+        t1 = jnp.arange(1,num_timesteps)
+    
+    next_inputs = tree_map(lambda x: x[1:], inputs)
+    # Sample the remaining emissions and states via scan
+    _, (next_states, next_emissions) = lax.scan(
+         _step,
+         initial_state,
+         (next_keys, t0, t1, next_inputs)
+    )
+    '''
+    _, (next_states, next_emissions) = lax_scan(
+        _step,
+        initial_state,
+        (next_keys, t0, t1, next_inputs),
+        debug=True
+    )
+    '''
+
+    # Concatenate the initial state and emission with the following ones
+    expand_and_cat = lambda x0, x1T: jnp.concatenate((jnp.expand_dims(x0, 0), x1T))
+    states = tree_map(expand_and_cat, initial_state, next_states)
+    emissions = tree_map(expand_and_cat, initial_emission, next_emissions)
+
+    return states, emissions
 
 def cdnlgssm_filter(
     params: ParamsCDNLGSSM,
