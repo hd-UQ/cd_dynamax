@@ -42,17 +42,12 @@ def generate_irregular_t_emissions(
     - num_timesteps_forecast: int, number of time points for forecasting
     """
     
-    # Generate random num_timesteps time points
-    t_emissions = jnp.array(
-        sorted(
-            jr.uniform(
-                key,
-                (num_timesteps, 1),
-                minval=0,
-                maxval=T_total
-            )
-        )
-    )
+    # This procedure produces times sampled uniformly from [0, T_total].
+    u = jr.uniform(key, (num_timesteps,), minval=0, maxval=1)
+    s = jnp.cumsum(u)  # Convert them into sorted cumulative sum
+    # Normalize to [0, T_total] interval
+    t_emissions = s / s[-1] * T_total
+
     # drop duplicates, and format as column vector
     t_emissions = jnp.unique(t_emissions)[:, None]
 
