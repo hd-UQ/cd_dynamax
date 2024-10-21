@@ -379,6 +379,7 @@ def plot_advanced2(
     t_start=None,
     t_end=None,
     N_samples=None,
+    plot_ensemble=True,
 ):
     # Set default time grid if not specified
     plot_divider = True
@@ -639,6 +640,12 @@ def plot_advanced2(
             x = jnp.linspace(jnp.min(batched_data), jnp.max(batched_data), n_grid_points)
             # compute the KDE estimate for each batch at the x values
             kde_estimates = jax.vmap(lambda kde: kde(x))(emission_kde)
+            if plot_ensemble:
+                my_label = label + " Ensemble"
+                for kde in kde_estimates:
+                    ax.plot(x, kde, color=color, alpha=0.1, label=my_label)
+                    my_label = None # only label the first plot
+                return
             # compute the mean and std of the KDE estimates across batches
             kde_mean = jnp.mean(kde_estimates, axis=0)
             kde_std = jnp.std(kde_estimates, axis=0)
