@@ -9,6 +9,40 @@ from dynamax.utils.utils import pytree_len
 from dynamax.utils.optimize import run_sgd as dynamax_run_sgd
 from dynamax.utils.optimize import sample_minibatches
 
+
+def make_optimizer(
+    initial_learning_rate=1e-1,
+    decay_factor=0.5,
+    epochs_per_step=1500,
+    num_epochs=5000,
+    use_lr_scheduler=True,
+    clip_norm=1.0,
+):
+    if use_lr_scheduler:
+        # Define the boundaries where the decay should happen
+        boundaries = [epochs_per_step * i for i in range(1, num_epochs // epochs_per_step + 1)]
+
+        # Create a step decay learning rate schedule
+        scheduler = optax.piecewise_constant_schedule(
+            init_value=initial_learning_rate, boundaries_and_scales={boundary: decay_factor for boundary in boundaries}
+        )
+    else:
+        # Use a constant learning rate if scheduler is not used
+        scheduler = optax.constant_schedule(initial_learning_rate)
+
+    # Define an optimizer with optional gradient clipping and learning rate schedule
+    optimizer_steps = []
+    if clip_norm is not None:
+        optimizer_steps.append(optax.clip_by_global_norm(clip_norm))
+    optimizer_steps.append(optax.scale_by_adam())
+    optimizer_steps.append(optax.scale_by_schedule(scheduler))
+    optimizer_steps.append(optax.scale(-1.0))
+
+    my_optimizer = optax.chain(*optimizer_steps)
+
+    return my_optimizer
+
+
 # cd-dynamax wrapper,
 # to be able to return the history of parameters and gradients
 def run_sgd(loss_fn,

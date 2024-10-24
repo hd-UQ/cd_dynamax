@@ -52,7 +52,7 @@ def plot_param_distributions(
     init=None,
     pointwise_estimate=None,
     name="",
-    burn_in_frac=0.5,
+    burn_in_frac=0.0,
     trainable=True,
     triangle_plot=True,
     triangle_traj_plot=True,
@@ -121,6 +121,10 @@ def plot_param_distributions(
                 if init is not None:
                     g.axes[i, j].scatter(init[j], init[i], color="magenta", marker="o", s=100, zorder=3)
                 g.axes[j, i].set_visible(False)  # Hide the upper right axes
+                if pointwise_estimate is not None:
+                    g.axes[i, j].scatter(
+                        pointwise_estimate[j], pointwise_estimate[i], color="orange", marker="*", s=100, zorder=3
+                    )
         handles, labels = g.axes[0, 0].get_legend_handles_labels()
         g.fig.legend(handles, labels, loc="upper right", bbox_to_anchor=(1, 0.95))  # Add legend to the bottom-left plot
         plt.show()
@@ -135,7 +139,7 @@ def plot_param_distributions(
         # Plot scatter plots in the lower triangle subplots with color gradient from magenta to blue
         def scatter_with_gradient(x, y, **kwargs):
             colors = np.linspace(0, 1, len(x))
-            cmap = sns.color_palette("cool", as_cmap=True)
+            cmap = sns.color_palette("cool_r", as_cmap=True)
             plt.scatter(x, y, c=colors, cmap=cmap, **{k: v for k, v in kwargs.items() if k != "color"})
 
         g.map_lower(scatter_with_gradient, s=10, zorder=2)
