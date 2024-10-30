@@ -47,7 +47,9 @@ In the codebase, we also allow for doing filtering, smoothing, and parameter inf
     - If you are simulating data from a non-linear SDE, it is recommended to use [`model.sample(..., transition_type="path")`](./src/ssm_temissions.py#L208), which runs an SDE solver.
         - [Default behavior](./src/ssm_temissions.py#L204) is to perform Gaussian approximations to the SDE.
 
-- We provide notebooks for linear and nonlinear continuous-discrete filtering/smoothing under regular and irregular sampling
+- See our new [tutorials][./src/notebooks/tutorials] for examples of how to use the codebase. Highlights include a [notebook](./src/notebooks/tutorials/cdnlgssm_NeuralNetDrift_NUTS_initwithSGD_partialObs.ipynb) for learning neural network based drifts from partial, noisy, irregularly-spaced observations!
+
+- We also provide notebooks for linear and nonlinear continuous-discrete filtering/smoothing under regular and irregular sampling
     - Linear dynamics:
         - [Tracking](./src/notebooks/linear/cdlgssm_tracking.ipynb)
         - [Parameter estimation](./src/notebooks/non_linear/cdnlgssm_hmc.ipynb) that marginalizes out un-observed dynamics via auto-differentiable filtering (MLE via SGD; uncertainty quantification via HMC)

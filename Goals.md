@@ -101,7 +101,9 @@ Goal is to extend dynamax to deal with irregular sampling, via continuous-discre
     - Fully observed, noisy Lorenz (easy)
     - Partially observed, noisy Lorenz (difficult)
         - then replicate
-                
+
+- We studeid tolerance/solver choices for SDEs (Brownian Tree tolerance, etc.) in this [notebook](./src/notebooks/tutorial/diffeqsolve_settings_analysis.ipynb).
+
 ### For v0.2: Extend our codebase to incorporate continuous-time inputs
 
 - Process inputs in dynamic functions
@@ -154,16 +156,23 @@ Goal is to extend dynamax to deal with irregular sampling, via continuous-discre
     
 ## Code
 
-- Implement progress bars (e.g. for SGD) that are compatible with lax.scan    
-    
+- Implement new learnable models:
+    - dictionary learning w/ learnable coefficients
+    - KL expansion of GP w/ learnable coefficients
+
+- UQ 
+    - How to deal with MLE vs MAP
+        - Definition of log-priors and how to use them
+            - Pass a list of prior-dictionaries to initialize, where each prior-dictionary has keys "param_names", "param_prior", "sample2params", "params2sample".
+            - Incorporate into existing log_prior function
+            - Add a sample_prior function to sample from the prior
+
 - Optimization related
-    - Revise fit_SGD to have a validation option:
-        - train and validation data (preliminary existing in add_validation branch)   
-
-    - Start using “ReduceLR_on_Plateau” (https://optax.readthedocs.io/en/latest/_collections/examples/contrib/reduce_on_plateau.html)
-        —> note that this was added to optax ~6 months ago, and thus is not available in our conda env. We should probably update, but do this carefully in a new branch	
-
     - Optax and Jaxopt
+
+- For latest package branch and environment
+    - Why is diffeqsolve giving errors?
+    - Implement progress bars (e.g. for SGD) that are compatible with lax.scan    
 
 - Robustness        
     - Check why L63 sample path can return NaNs in the long run
@@ -172,18 +181,22 @@ Goal is to extend dynamax to deal with irregular sampling, via continuous-discre
         - We should think about how to implement all of our filters to behave better!
         - I believe many people have faced these issues, and have devised ways to deal with them.
 
-    - Look carefully at tolerance/solver choices for SDEs (Brownian Tree tolerance, etc.)
-        - Link to notebook where Matt explored this
-    
 - Flexibility
     - Implement a linear model using the nonlinear learnable function approach
-    
-    - Implement dictionary learning (as nonlinear functions to be learned)
-    
-    - Implement new non-linear models, as functions
-        - lorenz
-
+        
+    - Implement new non-linear models, as functions (by adding to [cdnlgssm_utils.py](./src/continuous_discrete_nonlinear_gaussian_ssm/cdnlgssm_utils.py))
         - glucose-insulin
+
+        - [FitzHugh-Nagumo](https://en.wikipedia.org/wiki/FitzHugh–Nagumo_model)
+
+        - [Van der Pol oscillator](https://en.wikipedia.org/wiki/Van_der_Pol_oscillator)
+
+        - Other models studied in SINDy universe:
+            - [PNAS paper](https://www.pnas.org/doi/10.1073/pnas.1517384113)
+            - Partial observation papers:
+                - [Nature Comm. Phys.](https://www.nature.com/articles/s42005-022-00987-z)
+                - [Niall](https://arxiv.org/abs/2105.10068)
+                - [Discrepancy models](https://arxiv.org/abs/1909.08574)
 
         - hormone models
             - Clark model, is based on delayed ODEs
@@ -194,12 +207,10 @@ Goal is to extend dynamax to deal with irregular sampling, via continuous-discre
             - [Reduced Graham, Elhadad + Albers model](https://www.sciencedirect.com/science/article/abs/pii/S0025556423000202?via%3Dihub)
                 - A version available [in arxiv](https://arxiv.org/abs/2006.05034)
                 - this is clearly an ODE!
-- UQ 
-    - How to deal with MLE vs MAP
-        - Definition of log-priors and how to use them
-        
-- For latest package branch and environment
-    - Why is diffeqsolve giving errors?
+
+    - Plan for data with multiple trajectories and train/validation splits.
+        - Revise fit_SGD to have a validation option:
+            - train and validation data (preliminary existing in add_validation branch)   
     
 ### Longer term ideas
 
