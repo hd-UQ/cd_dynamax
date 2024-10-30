@@ -59,7 +59,7 @@ Goal is to extend dynamax to deal with irregular sampling, via continuous-discre
             - at regular time interval cd-UKS, cd-EKS vs d-UKS, d-EKS
             - at irregular time intervals cd-UKS and cd-EKS
 
-## For v0 
+### For v0 
 
 - Tests for linear and nonlinear CD filtering and smoothing with regular and irregular sampling
 
@@ -73,7 +73,7 @@ Goal is to extend dynamax to deal with irregular sampling, via continuous-discre
         - [regular sampling times](./src/notebooks/non_linear/cd_ekf_ukf_enkf_Lorenz63.ipynb),
         - [irregular sampling times](./src/notebooks/non_linear/cd_ekf_ukf_enkf_Lorenz63_irregular_times.ipynb)
 
-### For v0.1
+### For v0.1 (revise with latest tutorial push)
 
 - Tutorials 
     - [State estimation and forecasting](./src/notebooks/tutorial/cdnlgssm_filtering.ipynb)
@@ -101,152 +101,14 @@ Goal is to extend dynamax to deal with irregular sampling, via continuous-discre
     - Fully observed, noisy Lorenz (easy)
     - Partially observed, noisy Lorenz (difficult)
         - then replicate
-            
-### For v0.2
+                
+### For v0.2: Extend our codebase to incorporate continuous-time inputs
 
 - Process inputs in dynamic functions
 
-- Allow for input times to be different from measurement times?
-
-- How to modify learnable parameters, to have a parameter set
-    - Build it for linear function with weights and biases
-
-- How to be able to initialize params across many NL functions
-    - Maybe within function wrapper?
-
-- Modify the pushforward to incorporate physics + NN
-    - How to incorporate DL within Jax?
-       
-# To dos
-
-- Oscillator learning
-    - we want to have 2 examples:
-        - identifiable Vs non-identifiable
-        - maybe simply fixing h
-        - learn all or learn only weights?
-
-### Parameter estimation and Uncertainty Quantification
-- ContDiscreteLinearGaussianConjugateSSM:
-    - Can we derive Conjugate priors for continuous-discrete linear dynamic paraemeters?
-
-- EM is not implemented
-
-- Uncertainty quantification via HMC
-    - How to deal with MLE vs MAP
-        - Simply editing log-priors? (Iñigo)
-        - Editing fit_sgd with an argument?
-        
-- Hierarchical uncertainty quantification
-    - via Empirical Bayes
-        - Incorporate priors over parameters
-        - Define prior hyperparameters as new dynamax "parameters"
-        - Use Monte Carlo to average over many realizations of parameters
-        - Let SGD learn hyperparameters of prior via MC-based loss
-
-### From Matt's notes
-
-Things to go after next:
-
-1. Scalings and normalizations.
--Currently, I “cheat” by using the mean/std of all 3 true states to normalize the RHS. 
--We should be trying to discover any necessary scalings or only use mean/std from the observables
-
-2. Automate and improve SGD
--Re-implement the validation loss options in SGD
--Start using “ReduceLR_on_Plateau” (https://optax.readthedocs.io/en/latest/_collections/examples/contrib/reduce_on_plateau.html)
-—> note that this was added to optax ~6 months ago, and thus is not available in our conda env. We should probably update, but do this carefully in a new branch
-
-3. Understand likelihoods better
--What does it mean to change the diffusion covariance from Bayesian perspective?
--Are the likelihoods for the learned model very similar to the true model? Why / why not?
-
-4. Build very targeted evaluations
--e.g., we filter a time series for T_1 time units, then make a forecast over a horizon of length T_2
-
-5. Quantify uncertainties!
--Run MCMC initialized at fitted_params, and see what chains look like!
--For each MCMC sample, perform the evaluation in (4), then plot the resulting *distribution* of forecasts. How well does this capture our uncertainty?
-
-6. Ensure all COVs are PSD
--We should think about how to implement all of our filters to behave better!
--I believe many people have faced these issues, and have devised ways to deal with them.
-     
-### Code optimization (All Pending)
-
-- Pending:
-    - Can CD-dynamax deal with noiseless state evolution?
-        - i.e, ODE mode
-        - i.e., What happens if Q=0
-    
-    - fit_SGD function with validation option, given train-validation data (preliminary existing in add_validation branch)   
-	
-	- build a lax_scan_debug function that behaves like lax.scan but actually just implements a for loop for easy debugging
-	
-	- add predicted_means/covs to lgssm_filter (in dynamax code)
-	
-	- use `output_fields` in filters to control granularity of returned posterior
-	
-	- Diffeqsolve
-		- debug feature
-    
-    - Incorporate important SGD tricks:
-        - gradient clipping, learning rate schedulers (some available in cdlgssm_learParams_oscillator_irregularSampleRate notebook)
-    
-    - Look carefully at tolerance/solver choices for SDEs (Brownian Tree tolerance, etc.)
-    
-    - Set up parameter inference notebooks to batchify long trajectories (for efficiency)
-    
-    - Implement progress bars (e.g. for SGD) that are compatible with lax.scan
-    
-    - Add data normalizations
-    
-    - Start running on GPUs!
-
-## Longer term ideas
-
-- Model error learning
-    - NNs
-        - not over the whole RHS
-        - over specific variables, with specific variable dependencies
-    - GPs
-    
-- UQ for things with ML
-    - How to do this for NNs?
-    - How does GP help/facilitate this
-
-- Improved optimizations
-    - Having different losses to be fit by SGD
-        - i.e., redefine fit_sgd to have different losses as input
-    - start with coarse/cheap/robust approximations of likelihood….then refine learning with higher-fidelity approximations of likelihood
-       
-## New non-linear models
-
-- lorenz
-
-- glucose-insulin
-
-- hormone models
-    - Clark model, is based on delayed ODEs
-        - See original equation [in Appendix A here](https://arxiv.org/abs/1712.00117)
-            - It seems that [we simulated with fixed delta (tau), by providing those delayed values via indexing](https://github.com/iurteaga/hmc/blob/master/src/clark_dde.m)
-    - [Graham + Selgrade model](https://www.sciencedirect.com/science/article/abs/pii/S0022519317300073?via%3Dihub)
-        - This is an ODE
-    - [Reduced Graham, Elhadad + Albers model](https://www.sciencedirect.com/science/article/abs/pii/S0025556423000202?via%3Dihub)
-        - A version available [in arxiv](https://arxiv.org/abs/2006.05034)
-        - this is clearly an ODE!
-
-## Others
-
-- Understand what info version of code is for, and implement if needed
-
-- Can we have EM for CD?
-    - The m-step requires MLE for continuous-time linear parameters
-    - EM will not be trivial for nonlinear ssms
-       
-### Extend our codebase to incorporate continuous-time inputs
-
 - Currently, the codebase supports inputs only at measurement times
-
+    - Allow for input times to be different from measurement times? 
+    
 - Moreover, these inputs currently couple to the dynamics and measurements discretely (creating a discontinuity in the state and measurement trajectories):
     - The dynamics are pushed-forward between measurement timepoints $[t_0,t_1]$, then the state at time $t_1$ is updated (additively) by a linear function $B$ of input at time $t_0$, $Bu(t_0)$.
         - $x(t_1) := Fx(t_0) + Bu(t_0) + noise_Q$
@@ -260,17 +122,161 @@ Things to go after next:
   - extend to continuous coupling of $u(t)$ to the state and measurement dynamics---how?
     - Do we interpolate $u(t)$ between input-measurement times?
 
-# Publication plan
+### Comments and others on codebase
 
-Hybrid modeling = dynamics defined by combination of mechastinic + ML functions 
+- Understand what info version of code is for, and implement if needed
+
+- ContDiscreteLinearGaussianConjugateSSM:
+    - Can we derive Conjugate priors for continuous-discrete linear dynamic parameters?
+
+- EM is not implemented
+    - Can we have EM for CD?
+        - The m-step requires MLE for continuous-time linear parameters
+        - EM will not be trivial for nonlinear ssms
+
+# To dos
+
+- Clean private and push to public
+    - describe tutorial notebooks
+    - write the SIAM news
+    - Ping Scott
+
+- Can CD-dynamax deal with noiseless state evolution?
+        - i.e, ODE mode
+        - i.e., What happens if Q=0
+
+- Understand likelihoods better
+    -What does it mean to change the diffusion covariance from Bayesian perspective?
+    -Are the likelihoods for the learned model very similar to the true model? Why / why not?
+
+- How to be able to initialize params across many NL functions
+    - Maybe within function wrapper?
+    
+## Code
+
+- Implement progress bars (e.g. for SGD) that are compatible with lax.scan    
+    
+- Optimization related
+    - Revise fit_SGD to have a validation option:
+        - train and validation data (preliminary existing in add_validation branch)   
+
+    - Start using “ReduceLR_on_Plateau” (https://optax.readthedocs.io/en/latest/_collections/examples/contrib/reduce_on_plateau.html)
+        —> note that this was added to optax ~6 months ago, and thus is not available in our conda env. We should probably update, but do this carefully in a new branch	
+
+    - Optax and Jaxopt
+
+- Robustness        
+    - Check why L63 sample path can return NaNs in the long run
+
+    - Ensure all COVs are PSD
+        - We should think about how to implement all of our filters to behave better!
+        - I believe many people have faced these issues, and have devised ways to deal with them.
+
+    - Look carefully at tolerance/solver choices for SDEs (Brownian Tree tolerance, etc.)
+        - Link to notebook where Matt explored this
+    
+- Flexibility
+    - Implement a linear model using the nonlinear learnable function approach
+    
+    - Implement dictionary learning (as nonlinear functions to be learned)
+    
+    - Implement new non-linear models, as functions
+        - lorenz
+
+        - glucose-insulin
+
+        - hormone models
+            - Clark model, is based on delayed ODEs
+                - See original equation [in Appendix A here](https://arxiv.org/abs/1712.00117)
+                    - It seems that [we simulated with fixed delta (tau), by providing those delayed values via indexing](https://github.com/iurteaga/hmc/blob/master/src/clark_dde.m)
+            - [Graham + Selgrade model](https://www.sciencedirect.com/science/article/abs/pii/S0022519317300073?via%3Dihub)
+                - This is an ODE
+            - [Reduced Graham, Elhadad + Albers model](https://www.sciencedirect.com/science/article/abs/pii/S0025556423000202?via%3Dihub)
+                - A version available [in arxiv](https://arxiv.org/abs/2006.05034)
+                - this is clearly an ODE!
+- UQ 
+    - How to deal with MLE vs MAP
+        - Definition of log-priors and how to use them
+        
+- For latest package branch and environment
+    - Why is diffeqsolve giving errors?
+    
+### Longer term ideas
+
+- Implement autodiff SMC?
+
+- Incoporate Optimal Transport ideas to filtering?
+
+- Model error learning
+    - NNs
+        - not over the whole RHS
+        - over specific variables, with specific variable dependencies
+    - GPs
+        - TODO
+    
+- Hierarchical uncertainty quantification
+    - via Empirical Bayes
+        - Incorporate priors over parameters
+        - Define prior hyperparameters as new dynamax "parameters"
+        - Use Monte Carlo to average over many realizations of parameters
+        - Let SGD learn hyperparameters of prior via MC-based loss
+    - working on eb_cddynamax branch
+        - Implement more priors
+            - e.g., from 2D simplex for linear models
+        - Revise prior definition and handeling
+            - now hard-coded, should be flexible
+
+# Big picture
+
+- CD-UQ
+    - References out there
+    - Solutions in the linear case? conjugate priors?
+    
+- Learn a RHS with uncertainty (via GP or NN)...either purely data-driven and/or hybrid modeling.
+    - GP-based latent drift function lerning
+
+- What priors to use for hybrid UQ
+    - Mechanistic case over parameters
+        - validity of solution (protect from explosive cases)
+
+    - Hybrid
+        - Parameter Vs function uncertainty
+        
+    - Combined
+        - Enforcing physical constraints
+        
+- Extend CD-Dynamax to
+    - Non-Gaussian Emission distributions
+    - Consider other state processes
+        - e.g., gamma process for latent states
+        
+- Unidentifiability questions
+    - Andrey work on canonical representations
+    
+    - Disentangling uncertainty
+        - emissions Vs states
+        - mechanistic Vs ML
+
+    - Learning/identifying equiprovable regions of space
+        - Learning low-d mappings for equiprovable regions of parameter space
+        
+## Publication plan
+
+- Hybrid modeling = dynamics defined by combination of mechastinic + ML functions 
  
 ## Methods contibution
 
-- Hybrid modeling with Hierarchical UQ
-    - Open Questions:
-        - What is it out there? Relevant literature
-        - How to deal-disentangle with uncertainty coming from ML Vs Mechanistic?
-        - Is it worth-novel without Hierarchy?
+- Training with multi-scale/masking approach
+    - Showcase improvements
+    - Is this sufficient for conference paper?
+    
+- Training not on Y, but on sufficient statistics of Y: e.g., time-average statistics
+    - How to do this
+    - Is this sufficient for conference paper?
+    
+- Compare marginal loglikelihood-based approach to latent state estimation/matching approaches:
+    - SINDY and follow-ups
+    - Discuss and get input from Niall
 
 ## Application papers
 
@@ -294,8 +300,9 @@ Hybrid modeling = dynamics defined by combination of mechastinic + ML functions
 2. Mechanistic + ML drift fitting to data (point estimate parameter learning)
     - Travis Gibson
 
-3. JAMIA perspective on fast and flexible tools to do UQ over mechanistic models?
-    - Due July 1st 2024
+3. Niall biological data
+    - Uncertainty on parameters
+    - ODE based model?
     
 4. Hierarchical UQ over CD dynamics
     - Hormones
@@ -313,34 +320,3 @@ Hybrid modeling = dynamics defined by combination of mechastinic + ML functions
 - CD-conjugate priors
     - Do they exist?
     - Can we derive them?
-
-
-# Big picture
-
-- CD-UQ
-    - References out there
-    - Solutions in the linear case? conjugate priors?
-    
-- Learn a RHS with uncertainty (via GP or NN)...either purely data-driven and/or hybrid modeling.
-
-- What priors to use for hybrid UQ
-    - Mechanistic case over parameters
-        - validity of solution (protect from explosive cases)
-
-    - Hybrid
-        - Parameter Vs function uncertainty
-        
-    - Combined
-        - Enforcing physical constraints
-        
-- Extend CD-Dynamax to
-    - Non-Gaussian Emission distributions
-    - Consider other state processes
-        - e.g., gamma process for latent states
-        
-- Unidentifiability questions
-    - Disentangling uncertainty
-        - emissions Vs states
-        - mechanistic Vs ML
-    - Learning/identifying equiprovable regions of space
-        - Learning low-d mappings for equiprovable regions of parameter space
