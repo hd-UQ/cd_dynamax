@@ -66,9 +66,9 @@ All of these problems are deeply interconnected.
     - If you are simulating data from a non-linear SDE, it is recommended to use [`model.sample(..., transition_type="path")`](./src/ssm_temissions.py#L208), which runs an SDE solver.
         - [Default behavior](./src/ssm_temissions.py#L204) is to perform Gaussian approximations to the SDE.
 
-- See our new [tutorials](./src/notebooks/tutorials) for examples of how to use the codebase.
-    - We provide a [tutorial REAMDE](./src/notebooks/tutorials/README.md) describing each of the tutorials
-    - Highlights include a [notebook for learning neural network based drift functions](./src/notebooks/tutorials/cdnlgssm_NeuralNetDrift_NUTS_initwithSGD_partialObs.ipynb) from partial, noisy, irregularly-spaced observations!
+- See our new [tutorials](./src/notebooks/tutorial) for examples of how to use the codebase.
+    - We provide a [tutorial REAMDE](./src/notebooks/tutorial/README.md) describing each of the tutorials
+    - Highlights include a [notebook for learning neural network based drift functions](./src/notebooks/tutorial/cdnlgssm_NeuralNetDrift_NUTS_initwithSGD_partialObs.ipynb) from partial, noisy, irregularly-spaced observations!
 
 - We also provide notebooks for linear and nonlinear continuous-discrete filtering/smoothing under regular and irregular sampling
     - Linear dynamics:
