@@ -35,7 +35,7 @@ To generate data, we numerically approximate random path solutions to this SDE u
 
 We assume the observation model is
 
-$$y(t) = H x(t) + r(t)$ with $$r(t) \sim N(0,R)$$,
+$$y(t) = H x(t) + r(t)$$ with $$r(t) \sim N(0,R)$$,
 
 where we choose $R=I$. 
 
