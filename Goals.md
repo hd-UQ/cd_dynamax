@@ -73,36 +73,11 @@ Goal is to extend dynamax to deal with irregular sampling, via continuous-discre
         - [regular sampling times](./src/notebooks/non_linear/cd_ekf_ukf_enkf_Lorenz63.ipynb),
         - [irregular sampling times](./src/notebooks/non_linear/cd_ekf_ukf_enkf_Lorenz63_irregular_times.ipynb)
 
-### For v0.1 (revise with latest tutorial push)
+### For v0.1
 
-- Tutorials 
-    - [State estimation and forecasting](./src/notebooks/tutorial/cdnlgssm_filtering.ipynb)
-        - how to learn partially observed dynamics, given a cd-nlgssm model
-        - We show how to use cd-dynamax to estimate the latent state of a continuous-discrete (non-linear) Gaussian dynamical system
-            - Specifically, we will showcase the following filtering alternatives:
-                - The Extended Kalman Filter (EKF)
-                - The Ensemble Kalman Filter (EnKF)
-                - The Unscented Kalman filter
-    
-    - System identification or parameter estimation for a mechanistic cd-nlgssm model, given observed data:
-        - [MLE (SGD)](): MLE Parameter estimation for an irregularly-sampled, continuous-discrete (non-linear) dynamical system, where we show how to use cd-dynamax and Stochastic Gradient Descent for computing the Maximum Likelihood Estimate for the parameters of a continuous-discrete (non-linear) dynamical system
-        - MAP with MCMC
-            - [MAP with HMC]((./src/notebooks/tutorial/cdnlgssm_parameter_estimation_HMC.ipynb)): Bayesian parameter estimation for an irregularly-sampled, continuous-discrete (non-linear) dynamical system, where we use the [blackjax](https://github.com/blackjax-devs/blackjax)'s HMC implementation to sample from the parameter posterior $p(\theta|y(1:T))$ of unknown parameters of the cd-nonlinear dynamical model.
-            - [MAP with NUTS]((./src/notebooks/tutorial/cdnlgssm_parameter_estimation_NUTS.ipynb)): Bayesian parameter estimation for an irregularly-sampled, continuous-discrete (non-linear) dynamical system, where we use the [blackjax](https://github.com/blackjax-devs/blackjax)'s NUTS implementation to sample from the parameter posterior $p(\theta|y(1:T))$ of unknown parameters of the cd-nonlinear dynamical model.
-        
-    - Learning RHS of ODE via flexible functions (NNs)
-        - parameter estimation of neural network weights
-            - MLE and MAP
-    
-    - Learning hybrid models:
-        - RHS of ODE equals mechanistic model + flexible functions (NNs)
-
-- Start with easy tutorial
-    - Fully observed, noisy Lorenz (easy)
-    - Partially observed, noisy Lorenz (difficult)
-        - then replicate
-
-- We studeid tolerance/solver choices for SDEs (Brownian Tree tolerance, etc.) in this [notebook](./src/notebooks/tutorial/diffeqsolve_settings_analysis.ipynb).
+- New [tutorials](./src/notebooks/tutorial) for examples of how to use the codebase.
+    - We provide a [tutorial REAMDE](./src/notebooks/tutorial/README.md) describing each of the tutorials
+    - We studied tolerance/solver choices for SDEs (Brownian Tree tolerance, etc.) in this [notebook](./src/notebooks/tutorial/diffeqsolve_settings_analysis.ipynb).
 
 ### For v0.2: Extend our codebase to incorporate continuous-time inputs
 

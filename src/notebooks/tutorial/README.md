@@ -7,6 +7,14 @@ In all cases, we assume:
 - continuous underlying dynamics governed by an SDE
 - noisy and irregulary-sampled observations of the system.
 
+When needed, we will use the following parameter estimation approaches:
+
+- Maximum likelihood estimation:
+    - we show how to use cd-dynamax and Stochastic Gradient Descent for computing the Maximum Likelihood Estimate for the parameters of a continuous-discrete (non-linear) dynamical system
+    
+- Bayesian estimation of posterior distribution:
+    - we show how to use [blackjax](https://github.com/blackjax-devs/blackjax)'s MCMC implementations (HMC or NUTS) to sample from the parameter posterior $p(\theta|y(1:T))$ of unknown parameters of a continuous-discrete (non-linear) dynamical system.
+
 ## The model: Lorenz 63
 
 We generate data from a Lorenz 63 system, from dynamics with the following stochastic differential equations:
@@ -49,18 +57,28 @@ We show how to use cd-dynamax to estimate and forecast the latent state of a cd-
 
 In all the following tutorials, we assume that **the drift function** of a latent SDE is **the only unknown object** in the dynamics + observation model.
 
-- We will use the following methods to estimate the drift:
+- We use the following methods to estimate the drift:
     - Maximum likelihood estimation (via SGD)
     - Bayesian estimation of posterior distribution (via NUTS)
 
-- We will study these problems under different observation scenarios:
+- We study these problems under different observation scenarios:
     - Full observation of system coordinates ($x_1, x_2, x_3$)
     - Partial observation system coordinates (only $x_1$)
 
-- We will also study different parametric assumptions on the drift:
+- We study different parametric assumptions on the drift:
     - Known parametric form with unknown parameters ($\sigma, \rho, \beta$)
     - Unknown form represented by a neural network (with unknown parameters)
-    - A linear combination of hand-chosen dictionary functions (with unknown coefficients) + appropriate sparsifying prior over these coefficients (TODO)
-    - A linear combination of basis functions chosen to be a truncated Karhunen-Loeve expansion of a Gaussian process (with unknown coefficients) + appropriate prior over these coefficients (TODO)
 
-- Currently, there are 8 notebooks corresponding to: ((SGD, NUTS) x (full observation, partial observation) x (mechanistic parameters, neural network parameters)).
+- Hence, there are 8 notebooks corresponding to: ((SGD, NUTS) x (full observation, partial observation) x (mechanistic parameters, neural network parameters)).    
+    - [MLE (via SGD) of fully observed Lorenz 63 system parameters](./cdnlgssm_parameter_estimation_SGD.ipynb)
+    - [MLE (via SGD) of a partially observed Lorenz 63 system parameters](./cdnlgssm_parameter_estimation_SGD_partialObs.ipynb)
+    - [Bayesian estimation (via NUTS) of fully observed Lorenz 63 system parameters](./cdnlgssm_parameter_estimation_NUTS.ipynb)
+    - [Bayesian estimation (via NUTS) of a partially observed Lorenz 63 system parameters](./cdnlgssm_parameter_estimation_NUTS_partial_initwithSGD.ipynb)
+    - [MLE (via SGD) of a neural network drift function parameters for a fully observed Lorenz 63 system](./cdnlgssm_NeuralNetDrift_SGD.ipynb)
+    - [MLE (via SGD) of a neural network drift function parameters for a partially observed Lorenz 63 system](./cdnlgssm_NeuralNetDrift_SGD_partialObs.ipynb)
+    - [Bayesian estimation (via NUTS) of a neural network drift function parameters for a fully observed Lorenz 63 system](./cdnlgssm_NeuralNetDrift_NUTS_initwithSGD.ipynb)
+    - [Bayesian estimation (via NUTS) of a neural network drift function parameters for a partially observed Lorenz 63 system](./cdnlgssm_NeuralNetDrift_NUTS_initwithSGD_partialObs.ipynb)
+
+### Additional cd-dynamax' diffeqsolve solver tweaking
+
+- We provide an [additional diffeqsolve settings analysis notebook](./src/notebooks/tutorial/diffeqsolve_settings_analysis.ipynb), in which we study the tolerance and other solver choices for SDEs 
