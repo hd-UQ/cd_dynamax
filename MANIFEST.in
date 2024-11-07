@@ -1,2 +1,0 @@
-include versioneer.py
-include dynamax/_version.py
