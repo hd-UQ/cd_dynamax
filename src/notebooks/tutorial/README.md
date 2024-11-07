@@ -1,3 +1,5 @@
+# Tutorials: cd-dynamax for filtering, parameter and drift estimation
+
 This tutorial performs filtering and parameter identification for data coming from the Lorenz 63 system.
 
 In all cases, we assume:
@@ -21,6 +23,7 @@ With parameters $a=10, b=28, c=8/3$, the system gives rise to chaotic behavior, 
 To generate data, we numerically approximate random path solutions to this SDE using Heun's method (i.e. improved Euler), as implemented in [Diffrax](https://docs.kidger.site/diffrax/api/solvers/sde_solvers/).
 
 We assume the observation model is
+
 $$
 y(t) &= H x(t) + r(t) \\
 r(t) &\sim N(0,R),
@@ -31,13 +34,13 @@ Namely, we impose partial observability with H=[1, 0, 0], with noisy observation
 
 ## Tutorials
 
-This directory contains notebooks with different cases of interest
+This directory contains notebooks with different use cases of interest for continuous-discrete, non-linear Gaussian dynamical system models (cd-nlgssm).
 
 ### Filtering partially-observed, noisy and irregularly-sampled observations
 
-In the [state estimation and forecasting notebook](./cdnlgssm_filtering.ipynb) we showcase how to learn partially observed dynamics, given a cd-nlgssm model.
+In the [state estimation and forecasting notebook](./cdnlgssm_filtering.ipynb) we showcase how to learn partially observed dynamics, for an assumed cd-nlgssm model, and a given set of observations $Y_K = [y(t_1),\\ \dots ,\\ y(t_K)]$.
 
-- We show how to use cd-dynamax to estimate the latent state of a continuous-discrete (non-linear) Gaussian dynamical system, by running the following filtering alternatives:
+We show how to use cd-dynamax to estimate and forecast the latent state of a cd-nlgssm, by running the following filtering alternatives:
     - The Extended Kalman Filter (EKF)
     - The Ensemble Kalman Filter (EnKF)
     - The Unscented Kalman filter (UKF)
