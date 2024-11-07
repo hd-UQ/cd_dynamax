@@ -21,7 +21,9 @@ We generate data from a Lorenz 63 system, from dynamics with the following stoch
 
 $$
 \frac{d x}{d t} = a(y-x) + \sigma w_x(t) \\\\
+
 \frac{d y}{d t} = x(b-z) - y + \sigma w_y(t) \\\\
+
 \frac{d z}{d t} = xy - cz + \sigma w_z(t),
 $$
 
@@ -37,7 +39,7 @@ r(t) \sim N(0,R),
 $$
 where we choose $R=I$. 
 
-Namely, we impose partial observability with H=[1, 0, 0], with noisy observations, sampled at irregular time intervals.
+Namely, we can impose partial observability with H=[1, 0, 0], with noisy observations, sampled at irregular time intervals.
 
 ## Tutorials
 
