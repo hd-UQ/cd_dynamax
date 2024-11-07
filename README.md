@@ -67,10 +67,10 @@ All of these problems are deeply interconnected.
         - [Default behavior](./src/ssm_temissions.py#L204) is to perform Gaussian approximations to the SDE.
 
 - For comparison purposes, we provide example notebooks for linear continuous-discrete filtering/smoothing under regular and irregular sampling
-        - [Tracking](./src/notebooks/linear/cdlgssm_tracking.ipynb)
-        - [Parameter estimation](./src/notebooks/non_linear/cdnlgssm_hmc.ipynb) that marginalizes out un-observed dynamics via auto-differentiable filtering (MLE via SGD; uncertainty quantification via HMC)
+    - [Tracking](./src/notebooks/linear/cdlgssm_tracking.ipynb)
+    - [Parameter estimation](./src/notebooks/non_linear/cdnlgssm_hmc.ipynb) that marginalizes out un-observed dynamics via auto-differentiable filtering (MLE via SGD; uncertainty quantification via HMC)
 
-- Fro more interesting continuous-discrete, nonlinear models, see our new [tutorials](./src/notebooks/tutorial) for examples of how to use the codebase.
+- For more interesting continuous-discrete, nonlinear models, see our new [tutorials](./src/notebooks/tutorial) for examples of how to use the codebase.
     - We provide a [tutorial REAMDE](./src/notebooks/tutorial/README.md) describing each of the tutorials
     - Highlights include a [notebook for learning neural network based drift functions](./src/notebooks/tutorial/cdnlgssm_NeuralNetDrift_NUTS_initwithSGD_partialObs.ipynb) from partial, noisy, irregularly-spaced observations!
 
