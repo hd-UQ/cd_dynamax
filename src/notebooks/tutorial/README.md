@@ -20,10 +20,12 @@ When needed, we will use the following parameter estimation approaches:
 We generate data from a Lorenz 63 system, from dynamics with the following stochastic differential equations:
 
 $$
-\frac{d x}{d t} = a(y-x) + \sigma w_x(t) \\\\
-
-\frac{d y}{d t} = x(b-z) - y + \sigma w_y(t) \\\\
-
+\frac{d x}{d t} = a(y-x) + \sigma w_x(t)
+$$
+$$
+\frac{d y}{d t} = x(b-z) - y + \sigma w_y(t)
+$$
+$$
 \frac{d z}{d t} = xy - cz + \sigma w_z(t),
 $$
 
@@ -34,8 +36,10 @@ To generate data, we numerically approximate random path solutions to this SDE u
 We assume the observation model is
 
 $$
-y(t) = H x(t) + r(t) \\
-r(t) \sim N(0,R),
+y(t) = H x(t) + r(t)
+$$
+$$
+r(t) \sim N(0,R) ,
 $$
 where we choose $R=I$. 
 
