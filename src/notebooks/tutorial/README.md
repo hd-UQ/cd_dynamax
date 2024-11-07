@@ -34,8 +34,8 @@ With parameters $a=10, b=28, c=8/3$, the system gives rise to chaotic behavior, 
 To generate data, we numerically approximate random path solutions to this SDE using Heun's method (i.e. improved Euler), as implemented in [Diffrax](https://docs.kidger.site/diffrax/api/solvers/sde_solvers/).
 
 We assume the observation model is
-$$y(t) = H x(t) + r(t)$$
-$$ r(t) \sim N(0,R) $$,
+
+$$y(t) = H x(t) + r(t)$ with $$r(t) \sim N(0,R)$$,
 
 where we choose $R=I$. 
 
