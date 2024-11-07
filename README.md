@@ -60,29 +60,19 @@ All of these problems are deeply interconnected.
 
 - We are leveraging [dynamax](https://github.com/probml/dynamax) code
     - Currently, based on a local directory with [dynamax pull at version '0.1.1+147.g3ad2ac5'](./dynamax)
-        - Synching and updates to new dynamax versions is ONGOING
+        - Synching and updates to new dynamax versions is ONGOING, just making sure it all runs smoothly both in CPU and GPUs, stay tuned!
 
 - We have implemented [continuous-discrete linear and non-linear models](./src/README.md), along with filtering and smoothing algorithms.
     - If you are simulating data from a non-linear SDE, it is recommended to use [`model.sample(..., transition_type="path")`](./src/ssm_temissions.py#L208), which runs an SDE solver.
         - [Default behavior](./src/ssm_temissions.py#L204) is to perform Gaussian approximations to the SDE.
 
-- See our new [tutorials](./src/notebooks/tutorial) for examples of how to use the codebase.
-    - We provide a [tutorial REAMDE](./src/notebooks/tutorial/README.md) describing each of the tutorials
-    - Highlights include a [notebook for learning neural network based drift functions](./src/notebooks/tutorial/cdnlgssm_NeuralNetDrift_NUTS_initwithSGD_partialObs.ipynb) from partial, noisy, irregularly-spaced observations!
-
-- We also provide notebooks for linear and nonlinear continuous-discrete filtering/smoothing under regular and irregular sampling
-    - Linear dynamics:
+- For comparison purposes, we provide example notebooks for linear continuous-discrete filtering/smoothing under regular and irregular sampling
         - [Tracking](./src/notebooks/linear/cdlgssm_tracking.ipynb)
         - [Parameter estimation](./src/notebooks/non_linear/cdnlgssm_hmc.ipynb) that marginalizes out un-observed dynamics via auto-differentiable filtering (MLE via SGD; uncertainty quantification via HMC)
-    - Nonlinear dynamics:
-        - Pendulum:
-            - [Pendulum (mimicking original dynamax notebook)](./src/notebooks/non_linear/cd_ekf_ukf_pendulum.ipynb)
-            - [Pendulum (demonstrating instability of the problem)](./src/notebooks/non_linear/cd_ekf_ukf_pendulum.ipynb)
-        - Lorenz 63:
-            - [Tracking: regular sampling times](./src/notebooks/non_linear/cd_ekf_ukf_enkf_Lorenz63.ipynb),
-            - [Tracking: irregular sampling times](./src/notebooks/non_linear/cd_ekf_ukf_enkf_Lorenz63_irregular_times.ipynb)
-            - [Parameter estimation: mechanistic](./src/notebooks/non_linear/cdnlgssm_hmc_l63_partialObs_learnSigma.ipynb)
-            - [Parameter estimation: neural network (needs tuning)](./src/notebooks/non_linear/cdnlgssm_hmc_l63_partial_learnNeuralNetDrift.ipynb)
+
+- Fro more interesting continuous-discrete, nonlinear models, see our new [tutorials](./src/notebooks/tutorial) for examples of how to use the codebase.
+    - We provide a [tutorial REAMDE](./src/notebooks/tutorial/README.md) describing each of the tutorials
+    - Highlights include a [notebook for learning neural network based drift functions](./src/notebooks/tutorial/cdnlgssm_NeuralNetDrift_NUTS_initwithSGD_partialObs.ipynb) from partial, noisy, irregularly-spaced observations!
 
 ## Conda environment
 
