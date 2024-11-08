@@ -59,8 +59,7 @@ All of these problems are deeply interconnected.
 ## Codebase status
 
 - We are leveraging [dynamax](https://github.com/probml/dynamax) code
-    - Currently, based on a local directory with [dynamax pull at version '0.1.1+147.g3ad2ac5'](./dynamax)
-        - Synching and updates to new dynamax versions is ONGOING, just making sure it all runs smoothly both in CPU and GPUs, stay tuned!
+    - Currently, based on a local directory with [Dynamax release 0.1.5](https://github.com/probml/dynamax/releases/tag/0.1.5)
 
 - We have implemented [continuous-discrete linear and non-linear models](./src/README.md), along with filtering and smoothing algorithms.
     - If you are simulating data from a non-linear SDE, it is recommended to use [`model.sample(..., transition_type="path")`](./src/ssm_temissions.py#L208), which runs an SDE solver.

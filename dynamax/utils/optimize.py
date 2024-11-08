@@ -1,7 +1,8 @@
 import jax.numpy as jnp
 import jax.random as jr
 import optax
-from jax import lax, value_and_grad, tree_map
+from jax import lax, value_and_grad
+from jax.tree_util import tree_map
 from dynamax.utils.utils import pytree_len
 
 
@@ -53,8 +54,6 @@ def run_sgd(loss_fn,
     num_batches = num_complete_batches + jnp.where(leftover == 0, 0, 1)
     loss_grad_fn = value_and_grad(loss_fn)
 
-    # implement this for ReduceLRonPlateau
-    # https://optax.readthedocs.io/en/latest/_collections/examples/contrib/reduce_on_plateau.html
     if batch_size >= num_batches:
         shuffle = False
 
@@ -81,6 +80,7 @@ def run_sgd(loss_fn,
     keys = jr.split(key, num_epochs)
     (params, _), losses = lax.scan(train_step, (params, opt_state), keys)
     return params, losses
+
 
 def run_gradient_descent(objective,
                          params,

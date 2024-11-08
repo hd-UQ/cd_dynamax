@@ -18,7 +18,6 @@ from dynamax.types import PRNGKey, Scalar
 from dynamax.utils.optimize import run_sgd
 from dynamax.utils.utils import ensure_array_has_batch_dim
 
-import jax.debug as jdb
 
 class Posterior(Protocol):
     """A :class:`NamedTuple` with parameters stored as :class:`jax.DeviceArray` in the leaf nodes."""
@@ -201,7 +200,7 @@ class SSM(ABC):
         initial_input = tree_map(lambda x: x[0], inputs)
         initial_state = self.initial_distribution(params, initial_input).sample(seed=key1)
         initial_emission = self.emission_distribution(params, initial_state, initial_input).sample(seed=key2)
-        
+
         # Sample the remaining emissions and states
         next_keys = jr.split(key, num_timesteps - 1)
         next_inputs = tree_map(lambda x: x[1:], inputs)
@@ -389,6 +388,8 @@ class SSM(ABC):
             batch_stats, lls = vmap(partial(self.e_step, params))(batch_emissions, batch_inputs)
             lp = self.log_prior(params) + lls.sum()
             params, m_step_state = self.m_step(params, props, batch_stats, m_step_state)
+            # debug.print('e_step: {x}', x=(batch_stats, lls))
+            # debug.print('m_step{y}', y=params)
             return params, m_step_state, lp
 
         log_probs = []
