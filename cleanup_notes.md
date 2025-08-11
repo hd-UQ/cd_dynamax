@@ -1,3 +1,10 @@
+- Add psd_covariance checks
+    - print warnings if non-psd (with potential solutions)
+        - add debugging option
+        
+- Check for nan loglikelihood values
+    - How to raise errors in jax
+   
 - Dynamax dependencies
     - classes
     - optimizations
