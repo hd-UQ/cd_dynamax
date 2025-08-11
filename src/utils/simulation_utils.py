@@ -108,7 +108,7 @@ def filter_and_forecast(
     )
     
     # Initialize forecast with last filtered state
-    init_time = t_emissions[stop_idx_filter]
+    init_time = t_emissions[stop_idx_filter-1]
     init_forecast = MVN(filtered.filtered_means[-1, :], filtered.filtered_covariances[-1, :])
 
     # Run forecast on forecasting time points
