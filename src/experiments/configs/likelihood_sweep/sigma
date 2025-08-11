@@ -1,0 +1,4 @@
+[sigma]
+low: 0.1
+high: 20.0
+num_samples: 100

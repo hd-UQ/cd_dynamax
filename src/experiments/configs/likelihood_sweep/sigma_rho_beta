@@ -1,0 +1,14 @@
+[sigma]
+low: 0.1
+high: 20.0
+num_samples: 10
+
+[rho]
+low: 10.0
+high: 50.0
+num_samples: 10
+
+[beta]
+low: 0.1
+high: 10.0
+num_samples: 10

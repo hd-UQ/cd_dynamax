@@ -1,0 +1,8 @@
+[diffeqsolve_settings]
+    # When solver None, defaults to Dopri5 (ODE) and Heun (SDE)
+    solver: None
+    stepsize_controller: dfx.ConstantStepSize()
+    adjoint: dfx.DirectAdjoint()
+    dt0: 0.01
+    tol_vbt: 1e-1
+    max_steps: 1e2

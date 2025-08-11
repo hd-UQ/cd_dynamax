@@ -164,12 +164,55 @@ def diffeqsolve(
 
     return sol
 
+@jit
+def adjust_rhs(x, rhs, lower_bound=-100, upper_bound=100, lower_bound_derivative=-1000, upper_bound_derivative=1000,
+               epsilon=1e-10, method="new"):
+    """
+    Adjust the right-hand side of the ODE to ensure that the state
+    remains within the bounds [-100, 100] and the derivative remains
+    within the bounds [-1000, 1000]. If any of the state variables
+    violate the constraints, set rhs = -x for all variables.
+    """
+    if method == "old":
+        return adjust_rhs_old(x, rhs, lower_bound, upper_bound, lower_bound_derivative, upper_bound_derivative, epsilon)
+    elif method == "new":
+        return adjust_rhs_new(x, rhs, lower_bound, upper_bound, lower_bound_derivative, upper_bound_derivative)
+    else:
+        raise ValueError("Invalid method. Choose either 'old' or 'new'.")
+
 
 @jit
-def adjust_rhs(x, rhs, lower_bound=-100, upper_bound=100, epsilon=1e-10):
+def adjust_rhs_new(x, rhs, lower_bound=-100, upper_bound=100, lower_bound_derivative=-1000, upper_bound_derivative=1000):
+    """
+    Adjust the right-hand side of the ODE to ensure that the state
+    remains within the bounds [-100, 100] and the derivative remains
+    within the bounds [-1000, 1000]. If any of the state variables
+    violate the constraints, set rhs = -x for all variables.
+
+    NOTE: This method was necessary to avoid NaN errors when training a SINDy model.
+    """
+
+    # Check if any state variable violates the bounds
+    state_violates_lower = jnp.any(x < lower_bound)
+    state_violates_upper = jnp.any(x > upper_bound)
+    state_violates = state_violates_lower | state_violates_upper
+
+    # Clip rhs to respect derivative bounds
+    rhs = jnp.clip(rhs, lower_bound_derivative, upper_bound_derivative)
+
+    # If any state violates the bounds, set rhs = -x for that state
+    rhs = jnp.where(state_violates, -x, rhs)
+
+    return rhs
+
+@jit
+def adjust_rhs_old(x, rhs, lower_bound=-100, upper_bound=100,
+        lower_bound_derivative=-1000, upper_bound_derivative=1000,
+        epsilon=1e-10):
     """
     Adjust the right-hand side of the ODE to ensure that the state
     remains within the bounds [-100, 100]
+    and the derivative remains within the bounds [-1000, 1000]
     """
 
     # Use a small epsilon to ensure numerical stability
@@ -180,5 +223,7 @@ def adjust_rhs(x, rhs, lower_bound=-100, upper_bound=100, epsilon=1e-10):
     # Conditionally adjust rhs using the safe bounds
     rhs = jnp.where(safe_lower_bound <= lower_bound, jnp.maximum(rhs, 0), rhs)
     rhs = jnp.where(safe_upper_bound >= upper_bound, jnp.minimum(rhs, 0), rhs)
+
+    rhs = jnp.clip(rhs, lower_bound_derivative, upper_bound_derivative)
 
     return rhs

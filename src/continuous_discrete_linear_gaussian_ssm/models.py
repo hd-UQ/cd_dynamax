@@ -1,34 +1,41 @@
-import pdb
-from fastprogress.fastprogress import progress_bar
 from functools import partial
+
+# JAX imports
 from jax import jit
 import jax.numpy as jnp
 import jax.random as jr
 from jax.tree_util import tree_map
 from jaxtyping import Array, Float, PyTree
-import tensorflow_probability.substrates.jax.distributions as tfd
-from tensorflow_probability.substrates.jax.distributions import MultivariateNormalFullCovariance as MVN
+
+# Debugging utilities
+import pdb
+import jax.debug as jdb
+
+# Type annotations
 from typing import Any, Optional, Tuple, Union
 from typing_extensions import Protocol
 
-import jax.debug as jdb
+# Distributions, compatible with JAX, from TensorFlow Probability
+import tensorflow_probability.substrates.jax as tfp
+import tensorflow_probability.substrates.jax.distributions as tfd
+from tensorflow_probability.substrates.jax.distributions import MultivariateNormalFullCovariance as MVN
+tfd = tfp.distributions
+tfb = tfp.bijectors
 
 # From dynamax
 from dynamax.parameters import ParameterProperties, ParameterSet
 from dynamax.types import PRNGKey, Scalar
 from dynamax.utils.bijectors import RealToPSDBijector
-from dynamax.utils.distributions import MatrixNormalInverseWishart as MNIW
-from dynamax.utils.distributions import NormalInverseWishart as NIW
-from dynamax.utils.distributions import mniw_posterior_update, niw_posterior_update
-from dynamax.utils.utils import pytree_stack, psd_solve
+from dynamax.utils.utils import psd_solve, symmetrize
 
 # Our codebase
-from ssm_temissions import SSM
+from ssm_temissions import SSM, Prior
 # To avoid unnecessary redefinitions of code,
 # We import parameters and posteriors that can be reused from LGSSM first
 from dynamax.linear_gaussian_ssm.inference import ParamsLGSSMInitial, ParamsLGSSMEmissions, PosteriorGSSMFiltered, PosteriorGSSMSmoothed
 # Param definition
-from continuous_discrete_linear_gaussian_ssm.inference import ParamsCDLGSSMDynamics, ParamsCDLGSSM
+from continuous_discrete_linear_gaussian_ssm.cdlgssm_utils import ParamsCDLGSSM, ParamsCDLGSSMDynamics, init_cdlgssm_params, sample_cdlgssm_params
+# Filtering functions
 from continuous_discrete_linear_gaussian_ssm.inference import KFHyperParams
 from continuous_discrete_linear_gaussian_ssm.inference import cdlgssm_filter, cdlgssm_smoother
 # Unclear why we define this here, but not in models
@@ -93,6 +100,8 @@ class ContDiscreteLinearGaussianSSM(SSM):
         self.has_dynamics_bias = has_dynamics_bias
         self.has_emissions_bias = has_emissions_bias
         self._diffeqsolve_settings = diffeqsolve_settings
+        # By default, we have no prior
+        self.prior = None
 
     @property
     def emission_shape(self):
@@ -106,45 +115,9 @@ class ContDiscreteLinearGaussianSSM(SSM):
     def diffeqsolve_settings(self):
         return self._diffeqsolve_settings
 
-    # This is a revised initialize, consistent across cd-dynamax, based on dicts
-    def initialize(
-        self,
-        key: PRNGKey =jr.PRNGKey(0),
-        initial_mean: dict = None,
-        initial_cov: dict = None,
-        dynamics_weights: dict = None,
-        dynamics_bias: dict = None,
-        dynamics_input_weights: dict = None,
-        dynamics_diffusion_coefficient: dict = None,
-        dynamics_diffusion_cov: dict = None,
-        dynamics_approx_order: Optional[float] = 2.,
-        emission_weights: dict = None,
-        emission_bias: dict = None,
-        emission_input_weights: dict = None,
-        emission_cov: dict = None,
-    ) -> Tuple[ParamsCDLGSSM, ParamsCDLGSSM]:
-        r"""Initialize model parameters that are set to None, and their corresponding properties.
-
-        Args:
-            key: Random number key. Defaults to jr.PRNGKey(0).
-            initial_mean: parameter $m$. Defaults to None.
-            initial_cov: parameter $S$. Defaults to None.
-            dynamics_weights: parameter $F$. Defaults to None.
-            dynamics_bias: parameter $b$. Defaults to None.
-            dynamics_input_weights: parameter $B$. Defaults to None.
-            dynamics_diffusion_coefficient: parameter $L$. Defaults to None.
-            dynamics_diffusion_cov: parameter $Q$. Defaults to None.
-            emission_weights: parameter $H$. Defaults to None.
-            emission_bias: parameter $d$. Defaults to None.
-            emission_input_weights: parameter $D$. Defaults to None.
-            emission_cov: parameter $R$. Defaults to None.
-
-        Returns:
-            Tuple[ParamsCDLGSSM, ParamsCDLGSSM]: parameters and their properties.
-        """
-
-        ### Arbitrary default values, for demo purposes
-        # Default is to have NOTHING learnable.
+    # SSM methods
+    # Define default set of CD-LGSSM parameters, with all learnable parameters set to False
+    def _default_cdlgssm_params(self) -> dict:
         ## Initial
         _initial_mean = {
             "params": jnp.zeros(self.state_dim),
@@ -182,6 +155,8 @@ class ContDiscreteLinearGaussianSSM(SSM):
         }
         
         ## Emission
+        # Randomly drawn weights
+        key = jr.PRNGKey(0)
         _emission_weights = {
             "params": jr.normal(key, (self.emission_dim, self.state_dim)),
             "props": ParameterProperties(trainable=False)
@@ -199,48 +174,83 @@ class ContDiscreteLinearGaussianSSM(SSM):
             "props": ParameterProperties(trainable=False, constrainer=RealToPSDBijector())
         }
 
-        # Only use the values above if the user hasn't specified their own
-        default = lambda x, x0: x if x is not None else x0
+        # Return the default parameters as a dictionary
+        return {
+            'initial_mean': _initial_mean,
+            'initial_cov': _initial_cov,
+            'dynamics_weights': _dynamics_weights,
+            'dynamics_input_weights': _dynamics_input_weights,
+            'dynamics_bias': _dynamics_bias,
+            'dynamics_diffusion_coefficient': _dynamics_diffusion_coefficient,
+            'dynamics_diffusion_cov': _dynamics_diffusion_cov,
+            'emission_weights': _emission_weights,
+            'emission_input_weights': _emission_input_weights,
+            'emission_bias': _emission_bias,
+            'emission_cov': _emission_cov,
+        }
 
-        # replace defaults as needed
-        initial_mean = default(initial_mean, _initial_mean)
-        initial_cov = default(initial_cov, _initial_cov)
+    # This is a revised initialize, consistent across cd-dynamax, based on dicts
+    def initialize(
+        self,
+        key: PRNGKey =jr.PRNGKey(0),
+        init_prior: Prior = None,
+        initial_mean: dict = None,
+        initial_cov: dict = None,
+        dynamics_weights: dict = None,
+        dynamics_bias: dict = None,
+        dynamics_input_weights: dict = None,
+        dynamics_diffusion_coefficient: dict = None,
+        dynamics_diffusion_cov: dict = None,
+        emission_weights: dict = None,
+        emission_bias: dict = None,
+        emission_input_weights: dict = None,
+        emission_cov: dict = None,
+    ) -> Tuple[ParamsCDLGSSM, ParamsCDLGSSM]:
+        r"""Initialize model parameters that are set to None, and their corresponding properties.
 
-        dynamics_weights = default(dynamics_weights, _dynamics_weights)
-        dynamics_input_weights = default(dynamics_input_weights, _dynamics_input_weights)
-        dynamics_bias = default(dynamics_bias, _dynamics_bias)
-        dynamics_diffusion_coefficient = default(dynamics_diffusion_coefficient, _dynamics_diffusion_coefficient)
-        dynamics_diffusion_cov = default(dynamics_diffusion_cov, _dynamics_diffusion_cov)
-        
-        emission_weights = default(emission_weights, _emission_weights)
-        emission_input_weights = default(emission_input_weights, _emission_input_weights)
-        emission_bias = default(emission_bias, _emission_bias)
-        emission_cov = default(emission_cov, _emission_cov)
-        
-        ## Create nested dictionary of params
-        params_dict = {"params": {}, "props": {}}
-        for key in params_dict.keys():
-            params_dict[key] = ParamsCDLGSSM(
-                initial=ParamsLGSSMInitial(
-                    mean=initial_mean[key],
-                    cov=initial_cov[key]
-                ),
-                dynamics=ParamsCDLGSSMDynamics(
-                    weights=dynamics_weights[key],
-                    input_weights=dynamics_input_weights[key],
-                    bias=dynamics_bias[key],
-                    diffusion_coefficient=dynamics_diffusion_coefficient[key],
-                    diffusion_cov=dynamics_diffusion_cov[key],
-                ),
-                emissions=ParamsLGSSMEmissions(
-                    weights=emission_weights[key],
-                    input_weights=emission_input_weights[key],
-                    bias=emission_bias[key],
-                    cov=emission_cov[key],
-                )
-            )
+        Args:
+            key: Random number key. Defaults to jr.PRNGKey(0).
+            init_prior: prior distribution for the initialization. Defaults to None.
+            initial_mean: parameter $m$. Defaults to None.
+            initial_cov: parameter $S$. Defaults to None.
+            dynamics_weights: parameter $F$. Defaults to None.
+            dynamics_bias: parameter $b$. Defaults to None.
+            dynamics_input_weights: parameter $B$. Defaults to None.
+            dynamics_diffusion_coefficient: parameter $L$. Defaults to None.
+            dynamics_diffusion_cov: parameter $Q$. Defaults to None.
+            emission_weights: parameter $H$. Defaults to None.
+            emission_bias: parameter $d$. Defaults to None.
+            emission_input_weights: parameter $D$. Defaults to None.
+            emission_cov: parameter $R$. Defaults to None.
 
-        return params_dict["params"], params_dict["props"]
+        Returns:
+            Tuple[ParamsCDLGSSM, ParamsCDLGSSM]: parameters and their properties.
+        """
+
+        # Create CD-NLGSSM parameters and properties, based on the provided samples, init_values or defaults
+        params_dict_values, params_dict_props = init_cdlgssm_params(
+            default_params = self._default_cdlgssm_params(),
+            init_params = {
+                'initial_mean': initial_mean,
+                'initial_cov': initial_cov,
+                'dynamics_weights': dynamics_weights,
+                'dynamics_input_weights': dynamics_input_weights,
+                'dynamics_bias': dynamics_bias,
+                'dynamics_diffusion_coefficient': dynamics_diffusion_coefficient,
+                'dynamics_diffusion_cov': dynamics_diffusion_cov,
+                'emission_weights': emission_weights,
+                'emission_input_weights': emission_input_weights,
+                'emission_bias': emission_bias,
+                'emission_cov': emission_cov,
+            },
+            init_prior = init_prior,
+        )
+
+        # If provided, initialize prior for future use
+        self.prior = init_prior
+
+        # Return the parameters and properties
+        return params_dict_values, params_dict_props   
 
     def initial_distribution(
         self,
@@ -284,6 +294,38 @@ class ContDiscreteLinearGaussianSSM(SSM):
             mean += params.emissions.bias
         return MVN(mean, params.emissions.cov)
 
+    # Sampling methods
+    # Sampling from the prior
+    def sample_prior(
+        self,
+        prior: Prior,
+        M: int,
+        init_params: Optional[ParamsCDLGSSM]=None,   
+        key: Optional[PRNGKey]=jr.PRNGKey(0),
+    ) -> Tuple[ParamsCDLGSSM, ParamsCDLGSSM]:
+        r"""Sample from the prior distribution over model parameters.
+
+        Args:
+            :param prior: prior distribution
+            :param M: number of samples to draw
+            :param init_params: dictionary of parameters to use as initialization
+                if not provided, default parameters are used
+            :param key: random number generator
+
+        Returns:
+            :return: Tuple with sampled CD-LGSSM parameters and properties objects
+        """
+        if init_params is None:
+            # Initialize with default parameters
+            init_params=self._default_cdlgssm_params()
+
+        # Sample from the prior
+        return sample_cdlgssm_params(
+            prior=prior,
+            M=M,
+            init_params=init_params,
+            key = key,
+        )
     
     def sample_dist(
         self,
@@ -333,13 +375,15 @@ class ContDiscreteLinearGaussianSSM(SSM):
             diffeqsolve_settings=self.diffeqsolve_settings
         )
     
+    # Inference methods
     def marginal_log_prob(
         self,
         params: ParamsCDLGSSM,
         emissions: Float[Array, "ntime emission_dim"],
         t_emissions: Optional[Float[Array, "ntime 1"]]=None,
-        filter_hyperparams: Optional[KFHyperParams]=None,
-        inputs: Optional[Float[Array, "ntime input_dim"]] = None
+        filter_hyperparams: Optional[KFHyperParams]=KFHyperParams(),
+        inputs: Optional[Float[Array, "ntime input_dim"]] = None,
+        key: PRNGKey=jr.PRNGKey(0)
     ) -> Scalar:
         filtered_posterior = cdlgssm_filter(params, emissions, t_emissions, filter_hyperparams, inputs)
         return filtered_posterior.marginal_loglik
@@ -349,7 +393,7 @@ class ContDiscreteLinearGaussianSSM(SSM):
         params: ParamsCDLGSSM,
         emissions: Float[Array, "ntime emission_dim"],
         t_emissions: Optional[Float[Array, "ntime 1"]]=None,
-        filter_hyperparams: Optional[KFHyperParams]=None,
+        filter_hyperparams: Optional[KFHyperParams]=KFHyperParams(),
         inputs: Optional[Float[Array, "ntime input_dim"]] = None
     ) -> PosteriorGSSMFiltered:
         return cdlgssm_filter(params, emissions, t_emissions, filter_hyperparams, inputs)
@@ -359,7 +403,7 @@ class ContDiscreteLinearGaussianSSM(SSM):
         params: ParamsCDLGSSM,
         emissions: Float[Array, "ntime emission_dim"],
         t_emissions: Optional[Float[Array, "ntime 1"]]=None,
-        filter_hyperparams: Optional[KFHyperParams]=None,
+        filter_hyperparams: Optional[KFHyperParams]=KFHyperParams(),
         inputs: Optional[Float[Array, "ntime input_dim"]] = None
     ) -> PosteriorGSSMSmoothed:
         return cdlgssm_smoother(params, emissions, t_emissions, filter_hyperparams, inputs)
@@ -379,7 +423,7 @@ class ContDiscreteLinearGaussianSSM(SSM):
         params: ParamsCDLGSSM,
         emissions: Float[Array, "ntime emission_dim"],
         t_emissions: Optional[Float[Array, "ntime 1"]]=None,
-        filter_hyperparams: Optional[KFHyperParams]=None,
+        filter_hyperparams: Optional[KFHyperParams]=KFHyperParams(),
         inputs: Optional[Float[Array, "ntime input_dim"]]=None
     ) -> Tuple[Float[Array, "ntime emission_dim"], Float[Array, "ntime emission_dim"]]:
         r"""Compute marginal posterior predictive smoothing distribution for each observation.
@@ -399,7 +443,7 @@ class ContDiscreteLinearGaussianSSM(SSM):
         R = params.emissions.cov
         emission_dim = R.shape[0]
         smoothed_emissions = posterior.smoothed_means @ H.T + b
-        smoothed_emissions_cov = H @ posterior.smoothed_covariances @ H.T + R
+        smoothed_emissions_cov = symmetrize(H @ posterior.smoothed_covariances @ H.T + R)
         smoothed_emissions_std = jnp.sqrt(
             jnp.array([smoothed_emissions_cov[:, i, i] for i in range(emission_dim)]))
         return smoothed_emissions, smoothed_emissions_std
@@ -467,7 +511,6 @@ class ContDiscreteLinearGaussianSSM(SSM):
             emission_stats = (sum_zzT[:-1, :-1], sum_zyT[:-1, :], sum_yyT, num_timesteps)
 
         return (init_stats, dynamics_stats, emission_stats), posterior.marginal_loglik
-
 
     def initialize_m_step_state(
             self,

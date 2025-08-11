@@ -1,0 +1,26 @@
+
+[model]
+    class_name: CDNLGSSM
+    state_dim: 3
+    emission_dim: 3
+    solver_config_file: configs/solver/dt1e-2_maxSteps1e5
+
+[initial_values]
+    # Drift function parameters
+    dynamics_drift: {"params": LearnableLorenz63_Drift(sigma=10.0, rho=28.0, beta=8.0 / 3.0),
+            "props": LearnableLorenz63_Drift(sigma=ParameterProperties(trainable=True),
+                                    rho=ParameterProperties(trainable=True),
+                                    beta=ParameterProperties(trainable=True))}
+    # Observation function: defaults to identity mapping
+    # Emission covariance: defaults to 
+    # Initial mean: defaults to zero vector
+    # Initial covariance: defaults to identity matrix
+    initial_cov: {"params": LearnableScaledMatrix(scale=100.0, matrix=jnp.eye(state_dim)),
+                    "props": LearnableScaledMatrix(scale=ParameterProperties(trainable=False),
+                                    matrix=ParameterProperties(trainable=False,
+                                    constrainer=RealToPSDBijector()))}
+
+# If you specify a prior, the samples will replace both init and default values (possibly specified above) 
+#[prior]
+#    prior_class_file: configs/prior/l63_mech_drift_hi_info.py
+#    prior_init_key: 0

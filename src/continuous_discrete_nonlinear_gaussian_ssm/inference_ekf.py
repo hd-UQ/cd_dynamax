@@ -1,24 +1,27 @@
+# JAX imports
 import jax.numpy as jnp
 import jax.random as jr
 from jax import lax
 from jax import jacfwd,jacrev
-from tensorflow_probability.substrates.jax.distributions import MultivariateNormalFullCovariance as MVN
-import tensorflow_probability.substrates.jax.distributions as tfd
-
 from jaxtyping import Array, Float
 from typing import NamedTuple, List, Optional
-
 from jax.tree_util import tree_map
-from dynamax.utils.utils import psd_solve, symmetrize
-from dynamax.types import PRNGKey
 
-import jax.debug as jdb
-from pdb import set_trace as bp
+# Distributions, compatible with JAX, from TensorFlow Probability
+import tensorflow_probability.substrates.jax as tfp
+import tensorflow_probability.substrates.jax.distributions as tfd
+from tensorflow_probability.substrates.jax.distributions import MultivariateNormalFullCovariance as MVN
+tfd = tfp.distributions
+tfb = tfp.bijectors
 
 # Dynamax shared code
+from dynamax.types import PRNGKey
+from dynamax.utils.utils import psd_solve, symmetrize
 from dynamax.linear_gaussian_ssm.inference import PosteriorGSSMFiltered, PosteriorGSSMSmoothed
 
 # Our codebase
+# CDLGSSM forecasting definition
+from continuous_discrete_linear_gaussian_ssm.cdlgssm_utils import GSSMForecast
 # CDNLGSSM param and function definition
 from continuous_discrete_nonlinear_gaussian_ssm.cdnlgssm_utils import *
 # Diffrax based diff-eq solver
@@ -26,8 +29,7 @@ from utils.diffrax_utils import diffeqsolve
 from utils.debug_utils import lax_scan
 DEBUG = False
 
-# Helper functions
-_get_params = lambda x, dim, t: x[t] if x.ndim == dim + 1 else x
+# Helper functions --- from dynamax 
 _process_fn = lambda f, u: (lambda x, y: f(x)) if u is None else f
 _process_input = lambda x, y: jnp.zeros((y,1)) if x is None else x
 
@@ -36,8 +38,8 @@ class EKFHyperParams(NamedTuple):
 
     """
 
-    dt_final: float = 1e-10 # Small dt_final for predicted mean and covariance at the end of sequence 
-    state_order: str = 'second'
+    dt_final: float = 1e-4 # Small dt_final for predicted mean and covariance at the end of sequence 
+    state_order: str = 'first'
     emission_order: str = 'first'
     smooth_order: str = 'first'
     cov_rescaling: float = 1.0
@@ -49,7 +51,7 @@ def _predict(
     t0: Float,
     t1: Float,
     u,
-    hyperparams
+    filter_hyperparams
     ):
     r"""Predict next mean and covariance using EKF equations
         p(z_{t+1}) = N(z_{t+1} | m_{t+1}, P_{t+1})
@@ -65,7 +67,7 @@ def _predict(
         t0: initial time-instant
         t1: final time-instant
         u (D_in,): inputs.
-        hyperparams: EKF hyperparameters
+        filter_hyperparams: EKF hyperparameters
 
     Returns:
         mu_pred (D_hid,): predicted mean.
@@ -74,7 +76,7 @@ def _predict(
 
     # Predicted mean and covariance evolution, by using the EKF state order approximations
     def rhs_all(t, y, args):
-        if hyperparams.state_order=='zeroth':
+        if filter_hyperparams.state_order=='zeroth':
             m, = y
         else:
             m, P = y
@@ -84,28 +86,25 @@ def _predict(
 
         # Get time-varying parameters
         Qc_t = params.dynamics.diffusion_cov.f(None,u,t)
-        L_t = params.dynamics.diffusion_coefficient.f(None,u,t)
-        # Get time-varying parameters
-        # Qc_t = _get_params(params.dynamics.diffusion_cov, 2, t)
-        # L_t = _get_params(params.dynamics.diffusion_coefficient, 2, t)
+        L_t = params.dynamics.diffusion_coefficient.f(None,u,t) * filter_hyperparams.cov_rescaling
 
         # following Sarkka thesis eq. 3.158
 
         # Evaluate the jacobian of the dynamics function at m and inputs
         F_t = jacfwd(f)(m,u,t)
 
-        if hyperparams.state_order=='zeroth':
+        if filter_hyperparams.state_order=='zeroth':
             # Mean evolution
             dmdt = f(m, u, t)
 
-        elif hyperparams.state_order=='first':
+        elif filter_hyperparams.state_order=='first':
             # Mean evolution
             dmdt = f(m, u,t)
             # Covariance evolution
             dPdt = F_t @ P + P @ F_t.T + L_t @ Qc_t @ L_t.T
 
         # follow Sarkka thesis eq. 3.159
-        elif hyperparams.state_order=='second':
+        elif filter_hyperparams.state_order=='second':
             # Evaluate the Hessian of the dynamics function at m and inputs
             # Based on these recommendationshttps://jax.readthedocs.io/en/latest/notebooks/autodiff_cookbook.html#jacobians-and-hessians-using-jacfwd-and-jacrev
             H_t=jacfwd(jacrev(f))(m,u,t)
@@ -115,42 +114,42 @@ def _predict(
             # Covariance evolution
             dPdt = F_t @ P + P @ F_t.T + L_t @ Qc_t @ L_t.T
         else:
-            raise ValueError('EKF hyperparams.state_order = {} not implemented yet'.format(hyperparams.state_order))
+            raise ValueError('EKF filter_hyperparams.state_order = {} not implemented yet'.format(filter_hyperparams.state_order))
 
-        if hyperparams.state_order=='zeroth':
+        if filter_hyperparams.state_order=='zeroth':
             return (dmdt, )
         else:
             return (dmdt, dPdt)
 
     # Zero-th approach, only mean is pushed via RHS ODE
-    if hyperparams.state_order=='zeroth':
+    if filter_hyperparams.state_order=='zeroth':
         # Initialize
         y0 = (m,)
 
         # Compute predicted mean
-        sol = diffeqsolve(rhs_all, t0=t0, t1=t1, y0=y0, **hyperparams.diffeqsolve_settings)
+        sol = diffeqsolve(rhs_all, t0=t0, t1=t1, y0=y0, **filter_hyperparams.diffeqsolve_settings)
         m_final = sol[0][-1]
 
         # Predicted covariance
         dt = t1 - t0
         Qc_t = params.dynamics.diffusion_cov.f(None,u,t0)
-        L_t = params.dynamics.diffusion_coefficient.f(None, u, t0) * hyperparams.cov_rescaling
+        L_t = params.dynamics.diffusion_coefficient.f(None, u, t0) * filter_hyperparams.cov_rescaling
         P_final = P + jnp.sqrt(dt) * L_t @ Qc_t @ L_t.T
     # Otherwise, both mean and covariance pushed via RHS ODE
     else:
         # Initialize
         y0 = (m, P)
         # Compute predicted mean and covariance
-        sol = diffeqsolve(rhs_all, t0=t0, t1=t1, y0=y0, **hyperparams.diffeqsolve_settings)
+        sol = diffeqsolve(rhs_all, t0=t0, t1=t1, y0=y0, **filter_hyperparams.diffeqsolve_settings)
         m_final = sol[0][-1]
         P_final = sol[1][-1]
 
-    return m_final, P_final
+    return m_final, symmetrize(P_final)
 
 # Condition on observations for EKF
 # Based on first order approximation, as in Equation 3.59
 # TODO: implement second order EKF, as in Equation 3.63
-def _condition_on(m, P, h, H, R, u, y, t, num_iter, hyperparams):
+def _condition_on(m, P, h, H, R, u, y, t, num_iter, filter_hyperparams):
     r"""Condition a Gaussian potential on a new observation.
 
        p(z_t | y_t, u_t, y_{1:t-1}, u_{1:t-1})
@@ -183,13 +182,13 @@ def _condition_on(m, P, h, H, R, u, y, t, num_iter, hyperparams):
     def _step(carry, _):
         prior_mean, prior_cov = carry
         H_x = H(prior_mean, u, t)
-        S = R + H_x @ prior_cov @ H_x.T
+        S = symmetrize(R + H_x @ prior_cov @ H_x.T)
         # if not jnp.all(jnp.linalg.eigvals(S) > 0):
         #     print(f"Condition number of S: {jnp.linalg.cond(S)}")
         #     print(f"Most negative eigenvalue of S: {jnp.min(jnp.linalg.eigvals(S))}")
             # bp()
         K = psd_solve(S, H_x @ prior_cov).T
-        posterior_cov = prior_cov - K @ S @ K.T
+        posterior_cov = symmetrize(prior_cov - K @ S @ K.T)
         posterior_mean = prior_mean + K @ (y - h(prior_mean, u, t))
         return (posterior_mean, posterior_cov), None
 
@@ -203,7 +202,7 @@ def extended_kalman_filter(
     params: ParamsCDNLGSSM,
     emissions: Float[Array, "ntime emission_dim"],
     t_emissions: Optional[Float[Array, "num_timesteps 1"]]=None,
-    hyperparams: EKFHyperParams = EKFHyperParams(),
+    filter_hyperparams: EKFHyperParams = EKFHyperParams(),
     inputs: Optional[Float[Array, "ntime input_dim"]] = None,
     num_iter: int = 1,
     output_fields: Optional[List[str]]=["filtered_means", "filtered_covariances", "predicted_means", "predicted_covariances"],
@@ -219,7 +218,7 @@ def extended_kalman_filter(
         emissions: observation sequence.
         t_emissions: continuous-time specific time instants of observations: if not None, it is an array
         num_iter: number of linearizations around posterior for update step (default 1).
-        hyperparams: hyper-parameters of the EKF, related to the approximation order
+        filter_hyperparams: hyper-parameters of the EKF, related to the approximation order
         inputs: optional array of inputs.
         output_fields: list of fields to return in posterior object.
             These can take the values "filtered_means", "filtered_covariances",
@@ -239,7 +238,7 @@ def extended_kalman_filter(
                 lambda x: jnp.concatenate(
                     (
                         t_emissions[1:,0],
-                        jnp.array([t_emissions[-1,0]+hyperparams.dt_final]) # NB: t_{N+1} is simply t_{N}+dt_final
+                        jnp.array([t_emissions[-1,0]+filter_hyperparams.dt_final]) # NB: t_{N+1} is simply t_{N}+dt_final
                     )
                 ),
                 t_emissions
@@ -264,16 +263,7 @@ def extended_kalman_filter(
         t0, t1, t0_idx = args
         # print(f"t0: {t0}, t1: {t1}, t0_idx: {t0_idx}")
 
-        # if pred_cov is not SPD, breakpoint
-        # evals_pred_cov = jnp.linalg.eigvals(pred_cov)
-        # if not jnp.all(evals_pred_cov > 0):
-        #     print(f"pred_cov is not SPD. Most negative eigenvalue: {jnp.min(evals_pred_cov)} at t0: {t0}")
-        #     # bp()
-
-        # TODO:
         # Get parameters and inputs for time t0
-        # Q = _get_params(params.dynamics.diffusion_cov, 2, t0)
-        # R = _get_params(params.emissions.emission_cov, 2, t0)
         u = inputs[t0_idx]
         y = emissions[t0_idx]
         Q = params.dynamics.diffusion_cov.f(None,u,t0)
@@ -286,7 +276,7 @@ def extended_kalman_filter(
         ll += MVN(h(pred_mean, u, t0), H_x @ pred_cov @ H_x.T + R).log_prob(jnp.atleast_1d(y))
 
         # Condition on this emission
-        filtered_mean, filtered_cov = _condition_on(pred_mean, pred_cov, h, H, R, u, y, t0, num_iter, hyperparams)
+        filtered_mean, filtered_cov = _condition_on(pred_mean, pred_cov, h, H, R, u, y, t0, num_iter, filter_hyperparams)
 
         # print condition number of filtered_cov
         # print(f"Condition number of filtered_cov: {jnp.linalg.cond(filtered_cov)}")
@@ -298,7 +288,7 @@ def extended_kalman_filter(
         # bp()
 
         # Predict the next state based on EKF approximations
-        pred_mean, pred_cov = _predict(filtered_mean, filtered_cov, params, t0, t1, u, hyperparams)
+        pred_mean, pred_cov = _predict(filtered_mean, filtered_cov, params, t0, t1, u, filter_hyperparams)
 
         # print condition number of pred_cov
         # print(f"Condition number of pred_cov: {jnp.linalg.cond(pred_cov)}")
@@ -329,7 +319,7 @@ def iterated_extended_kalman_filter(
     params: ParamsCDNLGSSM,
     emissions:  Float[Array, "ntime emission_dim"],
     t_emissions: Optional[Float[Array, "num_timesteps 1"]]=None,
-    hyperparams: EKFHyperParams = EKFHyperParams(),
+    filter_hyperparams: EKFHyperParams = EKFHyperParams(),
     inputs: Optional[Float[Array, "ntime input_dim"]] = None,
     num_iter: int = 2,
     output_fields: Optional[List[str]]=["filtered_means", "filtered_covariances", "predicted_means", "predicted_covariances"],
@@ -342,7 +332,7 @@ def iterated_extended_kalman_filter(
         emissions: observation sequence.
         t_emissions: continuous-time specific time instants of observations: if not None, it is an array 
         num_iter: number of linearizations around posterior for update step (default 2).
-        hyperparams: hyper-parameters of the EKF, related to the approximation order
+        filter_hyperparams: hyper-parameters of the EKF, related to the approximation order
         inputs: optional array of inputs.
 
     Returns:
@@ -353,7 +343,7 @@ def iterated_extended_kalman_filter(
         params,
         emissions,
         t_emissions,
-        hyperparams,
+        filter_hyperparams,
         inputs,
         num_iter,
         output_fields
@@ -367,7 +357,7 @@ def _smooth(
     t0: Float,
     t1: Float,
     u,
-    hyperparams
+    filter_hyperparams
     ):
     r"""smooth the next mean and covariance using EKF smoothing equations
         where the evolution of m and P are computed based on
@@ -383,7 +373,7 @@ def _smooth(
         t0: initial time-instant
         t1: final time-instant
         u (D_in,): inputs.
-        hyperparams: EKF hyperparameters
+        filter_hyperparams: EKF hyperparameters
 
     Returns:
         mu_smooth (D_hid,): smoothed mean at t0.
@@ -403,12 +393,10 @@ def _smooth(
 
         # Get time-varying parameters
         Qc_t = params.dynamics.diffusion_cov.f(None,u,t)
-        L_t = params.dynamics.diffusion_coefficient.f(None,u,t)
-        #Qc_t = _get_params(params.dynamics.diffusion_cov, 2, t)
-        #L_t = _get_params(params.dynamics.diffusion_coefficient, 2, t)
+        L_t = params.dynamics.diffusion_coefficient.f(None,u,t) * filter_hyperparams.cov_rescaling
 
         # following Sarkka thesis eq. 3.163
-        if hyperparams.smooth_order=='first':
+        if filter_hyperparams.smooth_order=='first':
             # Evaluate the jacobian of the dynamics function at m and inputs
             F_t=jacfwd(f)(m_filter,u,t)
             
@@ -438,19 +426,20 @@ def _smooth(
             dPsmoothdt = (F_t + aux_matrix) @ P_smooth + P_smooth @ (F_t + aux_matrix).T - L_t @ Qc_t @ L_t.T
             
         else:
-            raise ValueError('EKF hyperparams.smooth_order = {} not implemented yet'.format(hyperparams.smooth_order))
+            raise ValueError('EKF filter_hyperparams.smooth_order = {} not implemented yet'.format(filter_hyperparams.smooth_order))
 
         return (dmsmoothdt, dPsmoothdt)
 
     # Recall that we solve the rhs in reverse:
     # from t1 to t0, BUT y0 contains initial conditions at t1
-    sol = diffeqsolve(rhs_all, t0=t0, t1=t1, y0=y0, reverse=True, args=(m_filter, P_filter), **hyperparams.diffeqsolve_settings)
-    return sol[0][-1], sol[1][-1]
+    sol = diffeqsolve(rhs_all, t0=t0, t1=t1, y0=y0, reverse=True, args=(m_filter, P_filter), **filter_hyperparams.diffeqsolve_settings)
+    m_smooth, P_smooth = sol[0][-1], symmetrize(sol[1][-1])
+    return m_smooth, P_smooth
 
 def extended_kalman_smoother(
     params: ParamsCDNLGSSM,
     emissions:  Float[Array, "ntime emission_dim"],
-    hyperparams: EKFHyperParams = EKFHyperParams(),
+    filter_hyperparams: EKFHyperParams = EKFHyperParams(),
     t_emissions: Optional[Float[Array, "num_timesteps 1"]]=None,
     filtered_posterior: Optional[PosteriorGSSMFiltered] = None,
     inputs: Optional[Float[Array, "ntime input_dim"]] = None
@@ -463,7 +452,7 @@ def extended_kalman_smoother(
         emissions: observation sequence.
         t_emissions: continuous-time specific time instants of observations: if not None, it is an array 
         filtered_posterior: optional output from filtering step.
-        hyperparams: hyper-parameters of the EKF, related to the approximation order
+        filter_hyperparams: hyper-parameters of the EKF, related to the approximation order
         inputs: optional array of inputs.
 
     Returns:
@@ -490,7 +479,7 @@ def extended_kalman_smoother(
             params,
             emissions,
             t_emissions=t_emissions,
-            hyperparams=hyperparams,
+            filter_hyperparams=filter_hyperparams,
             inputs=inputs
         )
     ll = filtered_posterior.marginal_loglik
@@ -513,7 +502,7 @@ def extended_kalman_smoother(
             params=params,
             t0=t0,t1=t1,
             u = inputs[t0_idx],
-            hyperparams = hyperparams,
+            filter_hyperparams = filter_hyperparams,
         )
 
         return (smoothed_mean, smoothed_cov), (smoothed_mean, smoothed_cov)
@@ -541,7 +530,7 @@ def extended_kalman_smoother(
 def iterated_extended_kalman_smoother(
     params: ParamsCDNLGSSM,
     emissions:  Float[Array, "ntime emission_dim"],
-    hyperparams: EKFHyperParams = EKFHyperParams(),
+    filter_hyperparams: EKFHyperParams = EKFHyperParams(),
     t_emissions: Optional[Float[Array, "num_timesteps 1"]]=None,
     num_iter: int = 2,
     inputs: Optional[Float[Array, "ntime input_dim"]] = None
@@ -553,7 +542,7 @@ def iterated_extended_kalman_smoother(
         emissions: observation sequence.
         t_emissions: continuous-time specific time instants of observations: if not None, it is an array 
         num_iter: number of linearizations around posterior for update step (default 2).
-        hyperparams: EKFHyperParams = EKFHyperParams(),
+        filter_hyperparams: EKFHyperParams = EKFHyperParams(),
         inputs: optional array of inputs.
 
     Returns:
@@ -567,7 +556,7 @@ def iterated_extended_kalman_smoother(
         smoothed_posterior = extended_kalman_smoother(
             params,
             emissions,
-            hyperparams,
+            filter_hyperparams,
             t_emissions,
             smoothed_prior,
             inputs
@@ -579,7 +568,7 @@ def iterated_extended_kalman_smoother(
     smoothed_posterior = extended_kalman_smoother(
             params,
             emissions,
-            hyperparams,
+            filter_hyperparams,
             t_emissions,
             None,
             inputs
@@ -619,7 +608,7 @@ def extended_kalman_posterior_sample(
         t0 = tree_map(lambda x: x[:,0], t_emissions)
         t1 = tree_map(
             lambda x: jnp.concatenate(
-                (t_emissions[1:, 0], jnp.array([t_emissions[-1, 0] + hyperparams.dt_final]))  # NB: t_{N+1} is simply t_{N}+dt_final
+                (t_emissions[1:, 0], jnp.array([t_emissions[-1, 0] + filter_hyperparams.dt_final]))  # NB: t_{N+1} is simply t_{N}+dt_final
             ),
             t_emissions,
         )
@@ -648,9 +637,7 @@ def extended_kalman_posterior_sample(
         next_state = carry
         key, t0, t1, t0_idx, filtered_mean, filtered_cov = args
 
-        # TODO:
         # Get parameters and inputs for time t0
-        # Q = _get_params(params.dynamics.diffusion_cov, 2, t0)
         u = inputs[t0_idx]
         Q = params.dynamics.diffusion_cov.f(None,u,t0)
 
@@ -681,7 +668,7 @@ def forecast_extended_kalman_filter(
     init_forecast: tfd.Distribution,
     t_init: Float[Array, "1 1"],
     t_forecast: Float[Array, "num_timesteps 1"],
-    hyperparams: EKFHyperParams = EKFHyperParams(),
+    filter_hyperparams: EKFHyperParams = EKFHyperParams(),
     inputs: Optional[Float[Array, "ntime input_dim"]] = None,
     output_fields: Optional[List[str]]=[
         "forecasted_state_means",
@@ -698,7 +685,7 @@ def forecast_extended_kalman_filter(
         init_forecast: initial distribution to forecast with.
         t_init: time-instant of the initial condition of forecast
         t_forecast: continuous-time specific time instants to forecast
-        hyperparams: hyper-parameters of the EKF, related to the approximation order
+        filter_hyperparams: hyper-parameters of the EKF, related to the approximation order
         inputs: optional array of inputs.
         output_fields: list of fields to return 
 
@@ -736,7 +723,7 @@ def forecast_extended_kalman_filter(
             params,
             t0, t1,
             inputs[t0_idx], # Inputs impact state at t0
-            hyperparams
+            filter_hyperparams
         )
 
         # Build carry and output states
@@ -771,7 +758,7 @@ def emissions_extended_kalman_filter(
     state_means: Float[Array, "num_timesteps state_dim"],
     state_covs: Optional[Float[Array, "num_timesteps state_dim state_dim"]]=None,
     inputs: Optional[Float[Array, "num_timesteps input_dim"]] = None,
-    hyperparams: EKFHyperParams = EKFHyperParams(),
+    filter_hyperparams: EKFHyperParams = EKFHyperParams(),
 ) -> Tuple[
         Float[Array, "num_timesteps emission_dim"], Optional[Float[Array, "num_timesteps emission_dim emission_dim"]]
     ]:
@@ -785,7 +772,7 @@ def emissions_extended_kalman_filter(
             - if None, then we assume that the states are point estimates, and simply push through emission function
         inputs: optional array of inputs, of shape (1 + num_timesteps) \times input_dim
             - The extra input is needed for the initial emission, i.e., it should be at time t_init
-        hyperparams: hyper-parameters of the filter
+        filter_hyperparams: hyper-parameters of the filter
 
     Returns:
         emissions_mean: mean of emissions
@@ -835,7 +822,7 @@ def emissions_extended_kalman_filter(
             inputs[t0_idx],
             t0
         )
-        emission_cov = H_x @ state_cov @ H_x.T + R
+        emission_cov = symmetrize(H_x @ state_cov @ H_x.T + R)
         
         # Return carry and output states
         return (state_mean, state_cov), (emission_mean, emission_cov)

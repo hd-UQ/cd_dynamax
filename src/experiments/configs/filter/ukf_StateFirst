@@ -1,0 +1,8 @@
+[UKF]
+    dt_final: 1e-4
+    state_order: first
+    alpha: jnp.sqrt(3)
+    beta: 2
+    kappa: 1
+    cov_rescaling: 1.0
+    diffeqsolve_settings_file: configs/solver/dt1e-2_maxSteps1e2

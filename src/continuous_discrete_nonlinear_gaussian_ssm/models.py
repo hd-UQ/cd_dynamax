@@ -1,33 +1,40 @@
-import pdb
-from fastprogress.fastprogress import progress_bar
-from functools import partial
+
+# JAX imports
 from jax import lax
 from jax import jacfwd, jacrev
 import jax.numpy as jnp
 import jax.random as jr
 from jax.tree_util import tree_map
-from jaxtyping import Array, Float, PyTree
 
+# Debugging utilities
+import pdb
 import jax.debug as jdb
 
-from typing import NamedTuple, Tuple, Optional, Union, List
+# Type annotations
+from jaxtyping import Array, Float, PyTree
+from typing import Tuple, Optional, Union, List
+
+# Distributions, compatible with JAX, from TensorFlow Probability
 import tensorflow_probability.substrates.jax as tfp
 from tensorflow_probability.substrates.jax.distributions import MultivariateNormalFullCovariance as MVN
 import tensorflow_probability.substrates.jax.distributions as tfd
+tfd = tfp.distributions
+tfb = tfp.bijectors
 
 # Dynamax shared code
 from dynamax.types import PRNGKey, Scalar
 from dynamax.parameters import ParameterProperties, ParameterSet
 from dynamax.utils.bijectors import RealToPSDBijector
+from dynamax.utils.utils import symmetrize
 from dynamax.linear_gaussian_ssm.inference import PosteriorGSSMFiltered, PosteriorGSSMSmoothed
 
-tfd = tfp.distributions
-tfb = tfp.bijectors
-
 # Our codebase
-from ssm_temissions import SSM
+from ssm_temissions import SSM, Prior
+# CDLGSSM forecasting definition
+from continuous_discrete_linear_gaussian_ssm.cdlgssm_utils import GSSMForecast
 # CDNLGSSM param and function definition
 from continuous_discrete_nonlinear_gaussian_ssm.cdnlgssm_utils import *
+# CDNLGSSM filtering functions
 from continuous_discrete_nonlinear_gaussian_ssm.inference_ekf import EKFHyperParams, iterated_extended_kalman_filter, iterated_extended_kalman_smoother, forecast_extended_kalman_filter, emissions_extended_kalman_filter
 from continuous_discrete_nonlinear_gaussian_ssm.inference_enkf import EnKFHyperParams, ensemble_kalman_filter, forecast_ensemble_kalman_filter, emissions_ensemble_kalman_filter
 from continuous_discrete_nonlinear_gaussian_ssm.inference_ukf import UKFHyperParams, unscented_kalman_filter, forecast_unscented_kalman_filter, emissions_unscented_kalman_filter
@@ -36,18 +43,7 @@ from utils.diffrax_utils import diffeqsolve
 from utils.debug_utils import lax_scan
 DEBUG = False
 
-# TODO: This function is defined in many places... unclear whether we need to redefine, or move to utils
-def _get_params(x, dim, t):
-    if callable(x):
-        try:
-            return x(t)
-        except:
-            return partial(x,t=t)
-    elif x.ndim == dim + 1:
-        return x[t]
-    else:
-        return x
-
+# Auxiliary function to process inputs ---from dynamax
 _process_input = lambda x, y: jnp.zeros((y,1)) if x is None else x
 
 # CDNLGSSM push-forward is model-specific
@@ -72,18 +68,17 @@ def compute_pushforward(
         # Get time-varying parameters
         Qc_t = params.dynamics.diffusion_cov.f(None,inputs,t)
         L_t = params.dynamics.diffusion_coefficient.f(None,inputs,t)
-        # Qc_t = _get_params(params.dynamics.diffusion_cov, 2, t0)
-        # L_t = _get_params(params.dynamics.diffusion_coefficient, 2, t0)
 
-        # Different SDE approximations
-        if params.dynamics.approx_order==0.:
+        # Different SDE approximations to the dynamics
+        # TODO: double-check this JAX-style implementation
+        def dynamics_order0():
             # Mean evolution
             dxdt = f(x, inputs, t)
             # Covariance evolution
             dPdt = L_t @ Qc_t @ L_t.T
-
-        # following Sarkka thesis eq. 3.153
-        elif params.dynamics.approx_order==1.:
+            return (dxdt, dPdt)
+        
+        def dynamics_order1():
             # Evaluate the jacobian of the dynamics function at x and inputs
             F_t=jacfwd(f)(x, inputs, t)
 
@@ -91,9 +86,9 @@ def compute_pushforward(
             dxdt = f(x, inputs, t)
             # Covariance evolution
             dPdt = F_t @ P + P @ F_t.T + L_t @ Qc_t @ L_t.T
-
-        # follow Sarkka thesis eq. 3.155
-        elif params.dynamics.approx_order==2.:
+            return (dxdt, dPdt)
+        
+        def dynamics_order2():
             # Evaluate the jacobian of the dynamics function at x and inputs
             F_t=jacfwd(f)(x, inputs, t)
             # Evaluate the Hessian of the dynamics function at x and inputs
@@ -104,13 +99,16 @@ def compute_pushforward(
             dxdt = f(x, inputs, t) + 0.5*jnp.trace(H_t @ P)
             # Covariance evolution
             dPdt = F_t @ P + P @ F_t.T + L_t @ Qc_t @ L_t.T
-        else:
-            raise ValueError('params.dynamics.approx_order = {} not implemented yet'.format(params.dynamics.approx_order))
-
-        return (dxdt, dPdt)
+            return (dxdt, dPdt)
+        
+        # Use lax.switch for conditional dynamic dispatch
+        return lax.switch(
+            jnp.squeeze(params.dynamics.approx_order).astype(int),
+            [dynamics_order0, dynamics_order1, dynamics_order2]
+        )
 
     sol = diffeqsolve(rhs_all, t0=t0, t1=t1, y0=y0, **diffeqsolve_settings)
-    x, P = sol[0][-1], sol[1][-1]
+    x, P = sol[0][-1], symmetrize(sol[1][-1])
 
     return x, P
 
@@ -153,8 +151,10 @@ class ContDiscreteNonlinearGaussianSSM(SSM):
     ):
         self.state_dim = state_dim
         self.emission_dim = emission_dim
-        self.input_dim = 0
+        self.input_dim = input_dim
         self._diffeqsolve_settings = diffeqsolve_settings
+        # By default, we have no prior
+        self.prior = None
 
     @property
     def emission_shape(self):
@@ -168,37 +168,32 @@ class ContDiscreteNonlinearGaussianSSM(SSM):
     def diffeqsolve_settings(self):
         return self._diffeqsolve_settings
 
-    # This is a revised initialize, consistent across cd-dynamax, based on dicts
-    def initialize(
-        self,
-        key: Optional[Float[Array, "key"]] = jr.PRNGKey(0),
-        initial_mean: dict = None,
-        initial_cov: dict = None,
-        dynamics_drift: dict = None,
-        dynamics_diffusion_coefficient: dict = None,
-        dynamics_diffusion_cov: dict = None,
-        dynamics_approx_order: Optional[float] = 2.,
-        emission_function: dict = None,
-        emission_cov: dict = None,
-    ) -> Tuple[ParamsCDNLGSSM, PyTree]:
-
-        ### Arbitrary default values, for demo purposes
-        # Default is to have NOTHING learnable.
+    # SSM methods
+    # Define default set of CD-NLGSSM parameters, with all learnable parameters set to False
+    def _default_cdnlgssm_params(self) -> dict:
         ## Initial
         _initial_mean = {
-            "params": jnp.zeros(self.state_dim),
-            "props": ParameterProperties(trainable=False)
+            "params": LearnableVector(
+                params=jnp.zeros(self.state_dim)
+            ),
+            "props": LearnableVector(
+                params=ParameterProperties(trainable=False)
+            )
         }
-
         _initial_cov = {
-            "params": jnp.eye(self.state_dim),
-            "props": ParameterProperties(
-                        trainable=False,
-                        constrainer=RealToPSDBijector()
-                    )
+            "params": LearnableMatrix(
+                params=jnp.eye(self.state_dim)
+            ),
+            "props": LearnableMatrix(
+                params=ParameterProperties(
+                    trainable=False,
+                    constrainer=RealToPSDBijector()
+                )
+            )
         }
 
         ## Dynamics
+        # Just a matrix with -0.1 in the diagonal, for the drift
         _dynamics_drift = {
             "params": LearnableLinear(
                 weights=-0.1*jnp.eye(self.state_dim),
@@ -221,19 +216,25 @@ class ContDiscreteNonlinearGaussianSSM(SSM):
 
         _dynamics_diffusion_cov = {
             "params": LearnableMatrix(
-                    params=0.1*jnp.eye(self.state_dim)
+                    params=jnp.eye(self.state_dim)
                 ),
             "props": LearnableMatrix(
                     params=ParameterProperties(trainable=False, constrainer=RealToPSDBijector())
                 )
         }
 
-        _dynamics_approx_order =  2.
+        _dynamics_approx_order = {
+            "params": 2.,
+            "props": ParameterProperties(trainable=False), # never trainable, no constraints to apply.
+        }
 
         ## Emission
+        # Randomly drawn weights
+        key = jr.PRNGKey(0)
+        # Random matrix
         _emission_function = {
             "params": LearnableLinear(
-                weights=jr.normal(key, (self.emission_dim, self.state_dim)),
+                weights=jnp.eye(self.emission_dim, self.state_dim),
                 bias=jnp.zeros(self.emission_dim)
             ),
             "props": LearnableLinear(
@@ -244,50 +245,81 @@ class ContDiscreteNonlinearGaussianSSM(SSM):
 
         _emission_cov = {
             "params": LearnableMatrix(
-                    params=0.1*jnp.eye(self.emission_dim)
+                    params=jnp.eye(self.emission_dim)
                 ),
             "props": LearnableMatrix(
                     params=ParameterProperties(trainable=False, constrainer=RealToPSDBijector())
                 )
             }
-
-        ## Only use the values above if the user hasn't specified their own
-        default = lambda x, x0: x if x is not None else x0
-
-        # replace defaults as needed
-        initial_mean = default(initial_mean, _initial_mean)
-        initial_cov = default(initial_cov, _initial_cov)
-        dynamics_drift = default(dynamics_drift, _dynamics_drift)
-        dynamics_diffusion_coefficient = default(dynamics_diffusion_coefficient, _dynamics_diffusion_coefficient)
-        dynamics_diffusion_cov = default(dynamics_diffusion_cov, _dynamics_diffusion_cov)
-        dynamics_approx_order = {
-            "params": default(dynamics_approx_order, _dynamics_approx_order),
-            "props": ParameterProperties(trainable=False), # never trainable, no constraints to apply.
+        
+        # Return the default parameters as a dictionary
+        return {
+            'initial_mean': _initial_mean,
+            'initial_cov': _initial_cov,
+            'dynamics_drift': _dynamics_drift,
+            'dynamics_diffusion_coefficient': _dynamics_diffusion_coefficient,
+            'dynamics_diffusion_cov': _dynamics_diffusion_cov,
+            'dynamics_approx_order': _dynamics_approx_order,
+            'emission_function': _emission_function,
+            'emission_cov': _emission_cov,
         }
-        emission_function = default(emission_function, _emission_function)
-        emission_cov = default(emission_cov, _emission_cov)
 
-        ## Create nested dictionary of params
-        params_dict = {"params": {}, "props": {}}
-        for key in params_dict.keys():
-            params_dict[key] = ParamsCDNLGSSM(
-                initial=ParamsLGSSMInitial(
-                    mean=initial_mean[key],
-                    cov=initial_cov[key]
-                ),
-                dynamics=ParamsCDNLGSSMDynamics(
-                    drift=dynamics_drift[key],
-                    diffusion_coefficient=dynamics_diffusion_coefficient[key],
-                    diffusion_cov=dynamics_diffusion_cov[key],
-                    approx_order=dynamics_approx_order[key],
-                ),
-                emissions=ParamsCDNLGSSMEmissions(
-                    emission_function=emission_function[key],
-                    emission_cov=emission_cov[key],
-                )
-            )
+    # This is a revised initialize, consistent across cd-dynamax, based on dicts
+    def initialize(
+        self,
+        key: Optional[Float[Array, "key"]] = jr.PRNGKey(0),
+        init_prior: Prior = None,
+        initial_mean: dict = None,
+        initial_cov: dict = None,
+        dynamics_drift: dict = None,
+        dynamics_diffusion_coefficient: dict = None,
+        dynamics_diffusion_cov: dict = None,
+        dynamics_approx_order: Optional[float] = 2.,
+        emission_function: dict = None,
+        emission_cov: dict = None,
+    ) -> Tuple[ParamsCDNLGSSM, ParamsCDNLGSSM]:
+        r"""Initialize the model parameters.
 
-        return params_dict["params"], params_dict["props"]
+            Args:
+                key: Random number key. Defaults to jr.PRNGKey(0).
+                init_prior: prior distribution for the initialization. Defaults to None.
+                initial_mean: parameter $m$. Defaults to None.
+                initial_cov: parameter $S$. Defaults to None.
+                dynamics_drift: The drift function of the latent dynamics. Defaults to None.
+                dynamics_diffusion_coefficient: parameter $L$. Defaults to None.
+                dynamics_diffusion_cov: parameter $Q$. Defaults to None.
+                dynamics_approx_order: order of the approximation to the dynamics. Defaults to 2.
+                emission_function: The emission function. Defaults to None.
+                emission_cov: parameter $R$. Defaults to None.
+
+            Returns:
+                Tuple[ParamsCDNLGSSM, ParamsCDNLGSSM]: parameters and their properties.
+        """
+        
+        # Create CD-NLGSSM parameters and properties, based on the provided prior, init_values or defaults
+        params_dict_values, params_dict_props = init_cdnlgssm_params(
+            default_params = self._default_cdnlgssm_params(),
+            init_params = {
+                'initial_mean': initial_mean,
+                'initial_cov': initial_cov,
+                'dynamics_drift': dynamics_drift,
+                'dynamics_diffusion_coefficient': dynamics_diffusion_coefficient,
+                'dynamics_diffusion_cov': dynamics_diffusion_cov,
+                'dynamics_approx_order': {
+                    "params": dynamics_approx_order,
+                    "props": ParameterProperties(trainable=False), # never trainable, no constraints to apply.
+                },
+                'emission_function': emission_function,
+                'emission_cov': emission_cov,
+            },
+            init_prior = init_prior,
+        )
+
+        # If provided, initialize prior for future use
+        self.prior = init_prior
+
+        # Return the parameters and properties
+        return params_dict_values, params_dict_props
 
     def initial_distribution(
         self,
@@ -329,6 +361,39 @@ class ContDiscreteNonlinearGaussianSSM(SSM):
         mean = params.emissions.emission_function.f(state, inputs, t=None)
         R = params.emissions.emission_cov.f(state, inputs, t=None)
         return MVN(mean, R)
+    
+    # Sampling methods
+    # Sampling from the prior
+    def sample_prior(
+        self,
+        prior: Prior,
+        M: int,
+        init_params: Optional[ParamsCDNLGSSM]=None,
+        key: Optional[PRNGKey]=jr.PRNGKey(0),
+    ) -> Tuple[ParamsCDNLGSSM, ParamsCDNLGSSM]:
+        r"""Sample from the prior distribution over model parameters.
+
+        Args:
+            :param prior: prior distribution
+            :param M: number of samples to draw
+            :param init_params: dictionary of parameters to use as initialization
+                if not provided, default parameters are used
+            :param key: random number generator
+
+        Returns:
+            :return: Tuple with sampled CD-NLGSSM parameters and properties objects
+        """
+        if init_params is None:
+            # Initialize with default parameters
+            init_params=self._default_cdnlgssm_params()
+
+        # Sample from the prior
+        return sample_cdnlgssm_params(
+            prior=prior,
+            M=M,
+            init_params=init_params,
+            key = key,
+        )
     
     def sample_dist(
         self,
@@ -390,6 +455,7 @@ class ContDiscreteNonlinearGaussianSSM(SSM):
             diffeqsolve_settings=self.diffeqsolve_settings
         )
 
+    # Inference methods
     def marginal_log_prob(
         self,
         params: ParamsCDNLGSSM,
@@ -397,13 +463,15 @@ class ContDiscreteNonlinearGaussianSSM(SSM):
         t_emissions: Optional[Float[Array, "ntime 1"]]=None,
         filter_hyperparams: Optional[Union[EKFHyperParams, EnKFHyperParams, UKFHyperParams]]=EKFHyperParams(),
         inputs: Optional[Float[Array, "ntime input_dim"]] = None,
+        key: PRNGKey=jr.PRNGKey(0)
     ) -> Scalar:
         filtered_posterior = cdnlgssm_filter(
             params=params,
             emissions=emissions,
             t_emissions=t_emissions,
-            hyperparams=filter_hyperparams,
-            inputs=inputs
+            filter_hyperparams=filter_hyperparams,
+            inputs=inputs,
+            key=key
         )
         return filtered_posterior.marginal_loglik
 
@@ -659,10 +727,11 @@ def cdnlgssm_filter(
     params: ParamsCDNLGSSM,
     emissions: Float[Array, "ntime emission_dim"],
     t_emissions: Optional[Float[Array, "num_timesteps 1"]]=None,
-    hyperparams: Optional[Union[EKFHyperParams, EnKFHyperParams, UKFHyperParams]]=EKFHyperParams(),
+    filter_hyperparams: Optional[Union[EKFHyperParams, EnKFHyperParams, UKFHyperParams]]=EKFHyperParams(),
     inputs: Optional[Float[Array, "ntime input_dim"]] = None,
     num_iter: Optional[int] = 1,
     output_fields: Optional[List[str]]=["filtered_means", "filtered_covariances", "predicted_means", "predicted_covariances"],
+    key: PRNGKey=jr.PRNGKey(0)
 ) -> PosteriorGSSMFiltered:
     r"""Run an continuous-discrete nonlinear filter to produce the
         marginal likelihood and filtered state estimates.
@@ -673,7 +742,7 @@ def cdnlgssm_filter(
         params: model parameters.
         emissions: observation sequence.
         t_emissions: continuous-time specific time instants of observations: if not None, it is an array 
-        hyperparams: hyper-parameters of the filter
+        filter_hyperparams: hyper-parameters of the filter
         inputs: optional array of inputs.
         num_iter: number of linearizations around posterior for update step (default 1).
         output_fields: list of fields to return in posterior object.
@@ -684,46 +753,53 @@ def cdnlgssm_filter(
         post: posterior object.
 
     """
+    # Double-check filter_hyperparams is not None
+    if filter_hyperparams is None:
+        filter_hyperparams = EKFHyperParams()
+    
     # TODO: this can be condensed, by incorporating num_iter into hyperparams of EKF
-    # TODO: use and leverage output_fields to have more or less granular returned posterior object
-    if isinstance(hyperparams, EKFHyperParams):
+    if isinstance(filter_hyperparams, EKFHyperParams):
         filtered_posterior=iterated_extended_kalman_filter(
             params = params,
             emissions = emissions,
             t_emissions = t_emissions,
-            hyperparams = hyperparams,
+            filter_hyperparams = filter_hyperparams,
             inputs = inputs,
             num_iter = num_iter,
             output_fields=output_fields
         )
-    elif isinstance(hyperparams, EnKFHyperParams):
+    elif isinstance(filter_hyperparams, EnKFHyperParams):
         filtered_posterior=ensemble_kalman_filter(
             params = params,
             emissions = emissions,
             t_emissions = t_emissions,
-            hyperparams = hyperparams,
+            filter_hyperparams = filter_hyperparams,
             inputs = inputs,
-            output_fields=output_fields
+            output_fields=output_fields,
+            key = key
         )
-    elif isinstance(hyperparams, UKFHyperParams):
+    elif isinstance(filter_hyperparams, UKFHyperParams):
         filtered_posterior=unscented_kalman_filter(
             params = params,
             emissions = emissions,
             t_emissions = t_emissions,
-            hyperparams = hyperparams,
+            filter_hyperparams = filter_hyperparams,
             inputs = inputs,
             output_fields=output_fields
         )
     
+    # TODO: use and leverage output_fields to have more or less granular returned posterior object
     return filtered_posterior
 
 def cdnlgssm_smoother(
     params: ParamsCDNLGSSM,
     emissions: Float[Array, "ntime emission_dim"],
     t_emissions: Optional[Float[Array, "num_timesteps 1"]]=None,
-    hyperparams: Optional[Union[EKFHyperParams, EnKFHyperParams, UKFHyperParams]]=EKFHyperParams(),
+    filter_hyperparams: Optional[Union[EKFHyperParams, EnKFHyperParams, UKFHyperParams]]=EKFHyperParams(),
     inputs: Optional[Float[Array, "ntime input_dim"]] = None,
     num_iter: Optional[int] = 1,
+    output_fields: Optional[List[str]]=["filtered_means", "filtered_covariances", "smoothed_means", "smoothed_covariances", "marginal_loglik"],
+    key: PRNGKey=jr.PRNGKey(0)
 ) -> PosteriorGSSMFiltered:
     r"""Run an continuous-discrete nonlinear smoother to produce the
         marginal likelihood and smoothed state estimates.
@@ -734,48 +810,48 @@ def cdnlgssm_smoother(
         params: model parameters.
         emissions: observation sequence.
         t_emissions: continuous-time specific time instants of observations: if not None, it is an array 
-        hyperparams: hyper-parameters of the smoother to use
+        filter_hyperparams: hyper-parameters of the smoother to use
         inputs: optional array of inputs.
         num_iter: optinal, number of linearizations around posterior for update step (default 1).
         output_fields: list of fields to return in posterior object.
             These can take the values "filtered_means", "filtered_covariances",
             "smoothed_means", "smoothed_covariances", and "marginal_loglik".
+        key: random key (e.g., for EnKS).
 
     Returns:
         post: posterior object.
 
     """
     # TODO: this can be condensed, by incorporating num_iter into hyperparams of EKF
-    # TODO: use and leverage output_fields to have more or less granular returned posterior object
-    if isinstance(hyperparams, EKFHyperParams):
+    if isinstance(filter_hyperparams, EKFHyperParams):
         smoothed_posterior=iterated_extended_kalman_smoother(
             params = params,
             emissions = emissions,
             t_emissions = t_emissions,
-            hyperparams = hyperparams,
+            filter_hyperparams = filter_hyperparams,
             inputs = inputs,
             num_iter = num_iter,
         )
-    elif isinstance(hyperparams, EnKFHyperParams):
+    elif isinstance(filter_hyperparams, EnKFHyperParams):
         raise ValueError('EnKS not implemented yet')
-    elif isinstance(hyperparams, UKFHyperParams):
+    elif isinstance(filter_hyperparams, UKFHyperParams):
         raise ValueError('UKS not implemented yet')
     
+    # TODO: use and leverage output_fields to have more or less granular returned posterior object
     return smoothed_posterior
 
-# TODO: replicate this for linear models
 def cdnlgssm_forecast(
     params: ParamsCDNLGSSM,
     init_forecast: Union[tfd.Distribution, Float[Array, "state_dim 1"]],
     t_init: Float[Array, "1 1"],
     t_forecast: Optional[Float[Array, "num_timesteps 1"]]=None,
-    hyperparams: Optional[Union[EKFHyperParams, EnKFHyperParams, UKFHyperParams]]=EKFHyperParams(),
+    filter_hyperparams: Optional[Union[EKFHyperParams, EnKFHyperParams, UKFHyperParams]]=EKFHyperParams(),
     inputs: Optional[Float[Array, "ntime input_dim"]] = None,
     output_fields: Optional[List[str]]=[
         "forecasted_state_means",
         "forecasted_state_covariances",
     ],
-    key: Optional[Float[Array, "key"]] = jr.PRNGKey(0),
+    key: PRNGKey=jr.PRNGKey(0),
     diffeqsolve_settings: dict = {},
 ) -> GSSMForecast:
     r"""Run an continuous-discrete nonlinear model to produce the forecasted state estimates.
@@ -789,7 +865,7 @@ def cdnlgssm_forecast(
             - if init_forecast is a point estimate of state, then we forecast a forward path starting at that state
         t_init: time-instant of the initial condition of forecast
         t_forecast: continuous-time specific time instants of observations: if not None, it is an array 
-        hyperparams: hyper-parameters of the filter
+        filter_hyperparams: hyper-parameters of the filter
         inputs: optional array of inputs, of shape (1 + num_timesteps) \times input_dim
             - The extra input is needed for the initial emission, i.e., it should be at time t_init
         output_fields: list of fields to return in posterior object.
@@ -798,43 +874,48 @@ def cdnlgssm_forecast(
                     "forecasted_state_means",
                     "forecasted_state_covariances",
                 If we forecast paths, based on solving the SDE
-                    "forecasted_state_path",
-                    "forecasted_emission_path".
+                    "forecasted_state_path".
+        key: random key (e.g., for Ensemble Kalman).
+        diffeqsolve_settings: settings for the SDE solver
 
     Returns:
         post: forecasted object.
 
     """
+    # Double-check filter_hyperparams is not None
+    if filter_hyperparams is None:
+        filter_hyperparams = EKFHyperParams()
     # Check whether init_forecast is a distribution or a point estimate
     if isinstance(init_forecast, tfd.Distribution):
         # Forecasting a distribution, based on different filters
-        if isinstance(hyperparams, EKFHyperParams):
+        if isinstance(filter_hyperparams, EKFHyperParams):
             forecast=forecast_extended_kalman_filter(
                 params = params,
                 init_forecast = init_forecast,
                 t_init = t_init,
                 t_forecast = t_forecast,
-                hyperparams = hyperparams,
+                filter_hyperparams = filter_hyperparams,
                 inputs = inputs,
                 output_fields=output_fields
             )
-        elif isinstance(hyperparams, EnKFHyperParams):
+        elif isinstance(filter_hyperparams, EnKFHyperParams):
             forecast=forecast_ensemble_kalman_filter(
                 params = params,
                 init_forecast = init_forecast,
                 t_init = t_init,
                 t_forecast = t_forecast,
-                hyperparams = hyperparams,
+                filter_hyperparams = filter_hyperparams,
                 inputs = inputs,
-                output_fields=output_fields
+                output_fields=output_fields,
+                key = key
             )
-        elif isinstance(hyperparams, UKFHyperParams):
+        elif isinstance(filter_hyperparams, UKFHyperParams):
             forecast=forecast_unscented_kalman_filter(
                 params = params,
                 init_forecast = init_forecast,
                 t_init = t_init,
                 t_forecast = t_forecast,
-                hyperparams = hyperparams,
+                filter_hyperparams = filter_hyperparams,
                 inputs = inputs,
                 output_fields=output_fields
             )
@@ -864,9 +945,6 @@ def cdnlgssm_forecast(
         def _step(prev_state, args):
             key, t0, t1, t0_idx = args
 
-            # Split the key
-            key1, key2 = jr.split(key, 2)
-
             # Define the drift and diffusion functions
             def drift(t, y, args):
                 return params.dynamics.drift.f(
@@ -891,36 +969,22 @@ def cdnlgssm_forecast(
             
             # Solve the SDE to compute the next state
             state = diffeqsolve(
-                key=key2,
+                key=key,
                 drift=drift,
                 diffusion=diffusion,
                 t0=t0, t1=t1,
                 y0=prev_state,
                 **diffeqsolve_settings
             )[0]
-            
-            # Sample the emission, at t1
-            emission = MVN(
-                params.emissions.emission_function.f(
-                    state,
-                    inputs[t0_idx+1],
-                    t=t1
-                ),
-                params.emissions.emission_cov.f(
-                    state,
-                    inputs[t0_idx+1],
-                    t=t1
-                )
-            ).sample(seed=key1)
-            
+                        
             # Return the state and emission
-            return state, (state, emission)
+            return state, (state)
 
         # Split the key
         next_keys = jr.split(key, num_timesteps)
 
         # Forecast states and emissions, over time, via scan       
-        _, (next_states, next_emissions) = lax_scan(
+        _, (next_states) = lax_scan(
             _step,
             init_forecast,
             (next_keys, t0, t1, t0_idx),
@@ -929,23 +993,21 @@ def cdnlgssm_forecast(
         
         # Build the forecast object
         forecast = GSSMForecast(
-            forecasted_state_path=next_states,
-            forecasted_emission_path=next_emissions
+            forecasted_state_path=next_states
         )
     
     return forecast
 
-# TODO: replicate this for linear models
 def cdnlgssm_emissions(
     params: ParamsCDNLGSSM,
     t_states: Float[Array, "num_timesteps 1"],
     state_means: Float[Array, "num_timesteps state_dim"],
     state_covs: Optional[Float[Array, "num_timesteps state_dim state_dim"]]=None,
     inputs: Optional[Float[Array, "num_timesteps input_dim"]] = None,
-    hyperparams: Optional[Union[EKFHyperParams, EnKFHyperParams, UKFHyperParams]]=None,
-    key: Optional[Float[Array, "key"]] = jr.PRNGKey(0),
+    filter_hyperparams: Optional[Union[EKFHyperParams, EnKFHyperParams, UKFHyperParams]]=None,
+    key: PRNGKey=jr.PRNGKey(0),
 ) -> Tuple[
-        Float[Array, "num_timesteps emission_dim"], Optional[Float[Array, "num_timesteps emission_dim emission_dim"]]
+        Float[Array, "num_timesteps emission_dim"], Float[Array, "num_timesteps emission_dim emission_dim"]
     ]:
     r"""Compute the emissions corresponding to
         - a continuous-discrete nonlinear model, as specified by params
@@ -960,44 +1022,44 @@ def cdnlgssm_emissions(
             - if None, then we assume that the states are point estimates, and simply push through emission function
         inputs: optional array of inputs, of shape (1 + num_timesteps) \times input_dim
             - The extra input is needed for the initial emission, i.e., it should be at time t_init
-        hyperparams: hyper-parameters of the filter, optional
+        filter_hyperparams: hyper-parameters of the filter, optional
         key: random key for sampling
 
     Returns:
         emissions_mean: mean of emissions
-        emissions_covariance: covariance of emissions, if available
+        emissions_covariance: covariance of emissions
     """
 
     # Check whether we are using model or a filter
-    if hyperparams is not None:
+    if filter_hyperparams is not None:
         # Emissions, based on different filters
-        if isinstance(hyperparams, EKFHyperParams):
+        if isinstance(filter_hyperparams, EKFHyperParams):
             emissions_mean, emissions_covariance=emissions_extended_kalman_filter(
                 params = params,
                 t_states = t_states,
                 state_means = state_means,
                 state_covs = state_covs,
                 inputs = inputs,
-                hyperparams = hyperparams,
+                filter_hyperparams = filter_hyperparams,
             )
-        elif isinstance(hyperparams, EnKFHyperParams):
+        elif isinstance(filter_hyperparams, EnKFHyperParams):
             emissions_mean, emissions_covariance=emissions_ensemble_kalman_filter(
                 params = params,
                 t_states = t_states,
                 state_means = state_means,
                 state_covs = state_covs,
                 inputs = inputs,
-                hyperparams = hyperparams,
+                filter_hyperparams = filter_hyperparams,
                 key=key,
             )
-        elif isinstance(hyperparams, UKFHyperParams):
+        elif isinstance(filter_hyperparams, UKFHyperParams):
             emissions_mean, emissions_covariance=emissions_unscented_kalman_filter(
                 params = params,
                 t_states = t_states,
                 state_means = state_means,
                 state_covs = state_covs,
                 inputs = inputs,
-                hyperparams = hyperparams,
+                filter_hyperparams = filter_hyperparams,
             )
     else:
         # Emissions of point estimates, based on pushing the state through the model emission function

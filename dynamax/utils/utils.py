@@ -209,3 +209,68 @@ def psd_solve(A, b, diagonal_boost=1e-9):
 def symmetrize(A):
     """Symmetrize one or more matrices."""
     return 0.5 * (A + jnp.swapaxes(A, -1, -2))
+
+def fallback_hessian(f, params, verbose=True):
+    """
+    Attempt to compute the Hessian of a scalar-valued function f(params)
+    in the following priority:
+      1) jax.hessian (forward-over-reverse),
+      2) reverse-of-reverse: jacrev(jax.grad(f)),
+      3) forward-of-forward: jacfwd(jax.grad(f)).
+
+    If one fails, it tries the next. If all fail, it raises a RuntimeError.
+
+    Parameters
+    ----------
+    f : function
+        A Python callable f(params) -> scalar
+    params : array or pytree
+        The point at which we want to compute the Hessian
+    verbose : bool, optional
+        Whether to print info about each attempt
+
+    Returns
+    -------
+    hess : array or pytree
+        The Hessian of f at `params`, in the same pytree structure that
+        jax.hessian or jacrev/jacfwd produce.
+    method_used : str
+        Which method ultimately succeeded.
+    """
+    # 1) Try jax.hessian (forward-over-reverse)
+    try:
+        hess = jax.hessian(f)(params)
+        if verbose:
+            print("[fallback_hessian] Used jax.hessian() (forward-over-reverse).")
+        return hess, "jax.hessian"
+    except Exception as e1:
+        if verbose:
+            print("[fallback_hessian] jax.hessian() failed:", e1)
+
+    # 2) Try reverse-of-reverse
+    try:
+        hess = jax.jacrev(jax.grad(f))(params)
+        if verbose:
+            print("[fallback_hessian] Used reverse-of-reverse (jacrev of grad).")
+        return hess, "reverse-of-reverse"
+    except Exception as e2:
+        if verbose:
+            print("[fallback_hessian] reverse-of-reverse failed:", e2)
+
+    # 3) Try forward-of-forward
+    try:
+        hess = jax.jacfwd(jax.grad(f))(params)
+        if verbose:
+            print("[fallback_hessian] Used forward-of-forward (jacfwd of grad).")
+        return hess, "forward-of-forward"
+    except Exception as e3:
+        if verbose:
+            print("[fallback_hessian] forward-of-forward failed:", e3)
+
+    # If we get here, all methods failed
+    raise RuntimeError(
+        "All attempts to compute the Hessian failed.\n"
+        f"  - jax.hessian() error: {e1}\n"
+        f"  - reverse-of-reverse error: {e2}\n"
+        f"  - forward-of-forward error: {e3}"
+    )

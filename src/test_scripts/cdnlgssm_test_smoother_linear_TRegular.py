@@ -222,7 +222,7 @@ for dynamics_approx_order in [1., 2.]:
             cd_ekf_smoother_posterior = cdnlgssm_smoother(
                     cdnl_params,
                     cdnl_emissions,
-                    hyperparams=EKFHyperParams(dt_final = 1., state_order=state_order, emission_order="first"),
+                    filter_hyperparams=EKFHyperParams(dt_final = 1., state_order=state_order, emission_order="first"),
                     t_emissions=t_emissions,
                     inputs=inputs,
                 )

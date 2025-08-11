@@ -16,7 +16,7 @@ def make_optimizer(
     epochs_per_step=1500,
     num_epochs=5000,
     use_lr_scheduler=True,
-    clip_norm=1.0,
+    clip_norm=1.0, # if None, don't clip
 ):
     if use_lr_scheduler:
         # Define the boundaries where the decay should happen

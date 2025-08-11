@@ -1,15 +1,40 @@
+from logging import config
 from typing import NamedTuple, Tuple, Optional, Union
 from jaxtyping import Array, Float, PyTree
 import jax.numpy as jnp
+from jax import Array
+from jax.tree_util import tree_map
+import jax.random as jr
+import jax.numpy as jnp
 from dynamax.parameters import ParameterProperties, ParameterSet
 import abc
+from configparser import ConfigParser
 
-# To avoid unnecessary redefinitions of code,
-# We import parameters that can be reused from LGSSM first
-# And define the rest later
-from dynamax.linear_gaussian_ssm.inference import ParamsLGSSMInitial
+def _get_params(self):
+    ''' A function to return the parameters of the learnable function
+        This is used for parameter initialization and sampling
 
-# TODO: do we need @dataclass(frozen=True)?
+        Returns:
+            list of parameter dictionaries, each with keys
+                "param_name"
+                "param_shape" (the shape of the parameter)
+                "params" (the actual parameters)
+    '''
+
+    params = []
+    for field in self._fields:
+        value = getattr(self, field)
+        shape = getattr(value, "shape", ())  # use empty tuple if no .shape
+        params.append({
+            "param_name": field,
+            "param_shape": shape,
+            "params": value
+        })
+
+    return params
+
+### CD-NLGSSM learnable functions
+# Learnable function abstract definition
 class LearnableFunction(NamedTuple):
     ''' All Learnable functions should have
         params propertie
@@ -35,17 +60,48 @@ class LearnableFunction(NamedTuple):
             t: time
         '''
 
+    def get_params(self):
+        return _get_params(self)
+
+# Simple learnable function examples
 class LearnableVector(NamedTuple):
     params: Union[Float[Array, "dim"], ParameterProperties]
 
     def f(self, x=None, u=None, t=None):
         return self.params
+    
+    def get_params(self):
+        return _get_params(self)
 
 class LearnableMatrix(NamedTuple):
     params: Union[Float[Array, "row_dim col_dim"], ParameterProperties]
 
     def f(self, x=None, u=None, t=None):
         return self.params
+    
+    def get_params(self):
+        return _get_params(self)
+
+# Typically use this with learnable scale and a fixed (e.g. Identity) matrix
+class LearnableScaledMatrix(NamedTuple):
+    scale: Union[Float[Array, "1"], ParameterProperties]
+    matrix: Union[Float[Array, "row_dim col_dim"], ParameterProperties]
+
+    def f(self, x=None, u=None, t=None):
+        return self.scale * self.matrix
+
+    def get_params(self):
+        return _get_params(self)
+
+# Typically use this for learnable diagonal matrix
+class LearnableDiagonalMatrix(NamedTuple):
+    diag_params: Union[Float[Array, "row_dim"], ParameterProperties]
+
+    def f(self, x=None, u=None, t=None):
+        return jnp.diag(self.diag_params)
+
+    def get_params(self):
+        return _get_params(self)
 
 class LearnableLinear(NamedTuple):
     '''Linear function with learnable parameters
@@ -59,32 +115,20 @@ class LearnableLinear(NamedTuple):
 
     def f(self, x, u=None, t=None):
         return self.weights @ x + self.bias
+    
+    def get_params(self):
+        return _get_params(self)
 
-class LearnableLorenz63(NamedTuple):
-    '''Lorenz63 model with learnable parameters
-            sigma: sigma parameter
-            rho: rho parameter
-            beta: beta parameter
+# More examples, specific to data_driven or physics_driven models are provided separately
 
-            f(x) = sigma * (y - x)\n
-            f(y) = x * (rho - z) - y\n
-            f(z) = x * y - beta * z\n
-    '''
-    sigma: Union[Float, ParameterProperties]
-    rho: Union[Float, ParameterProperties]
-    beta: Union[Float, ParameterProperties]
+#### Parameter definitions
+# To avoid unnecessary redefinitions of code,
+# We import parameters that can be reused from LGSSM first
+# And define the rest later
+from dynamax.linear_gaussian_ssm.inference import ParamsLGSSMInitial
 
-    def f(self, x, u=None, t=None):
-
-        return jnp.array([
-            self.sigma * (x[1] - x[0]),
-            x[0] * (self.rho - x[2]) - x[1],
-            x[0] * x[1] - self.beta * x[2]
-        ])
-
-
+## CDNLGSSM parameter class definitions
 # Continuous non-linear Gaussian dynamics
-# TODO: function definitions within parameter classes breaks fit_sgd: where should they be placed?
 class ParamsCDNLGSSMDynamics(NamedTuple):
     r"""Parameters of the state dynamics of a CDNLGSSM model.
 
@@ -104,7 +148,6 @@ class ParamsCDNLGSSMDynamics(NamedTuple):
     The tuple doubles as a container for the ParameterProperties.
 
     :param drift_function: $f$
-    :param drift_parameters: parameters $\theta$ of the drift_function
     :param diffusion_coefficient: $L$
     :param diffusion_cov: $Q$
     :param dynamics_approx: 'zeroth', 'first' or 'second'
@@ -113,8 +156,6 @@ class ParamsCDNLGSSMDynamics(NamedTuple):
     '''
     # the deterministic drift $f$ of the nonlinear RHS of the state
     drift_function: Union[FnStateToState, FnStateAndInputToState]
-    # TODO: How to define learnable parameters for emission function?
-    #drift_parameters: Union[Float[Array], ParameterProperties] 
     # the coefficient matrix L of the state's diffusion process
     diffusion_coefficient: Union[Float[Array, "state_dim state_dim"], Float[Array, "ntime state_dim state_dim"], ParameterProperties]
     # The covariance matrix Q of the state noise process
@@ -143,15 +184,12 @@ class ParamsCDNLSSMDynamics(NamedTuple):
     The tuple doubles as a container for the ParameterProperties.
 
     :param drift_function: $f$
-    :param drift_parameters: parameters $\theta$ of the drift_function
     :param diffusion_coefficient: $L$
     :param diffusion_cov: $Q$
 
     """
     # the deterministic drift $f$ of the nonlinear RHS of the state
     drift_function: Union[FnStateToState, FnStateAndInputToState]
-    # TODO: How to define learnable parameters for dynamics drift function?
-    #drift_parameters: Union[Float[Array], ParameterProperties] 
     # the coefficient matrix L of the state's diffusion process
     diffusion_coefficient: Union[Float[Array, "state_dim state_dim"], Float[Array, "ntime state_dim state_dim"], ParameterProperties]
     # The covariance matrix Q of the state noise process
@@ -168,7 +206,6 @@ class ParamsCDNLGSSMEmissions(NamedTuple):
     The tuple doubles as a container for the ParameterProperties.
 
     :param drift_function: $f$
-    :param drift_parameters: parameters $\theta$ of the drift_function
     :param diffusion_coefficient: $L$
     :param diffusion_cov: $Q$
     :param dynamics_approx: 'zeroth', 'first' or 'second'
@@ -181,8 +218,6 @@ class ParamsCDNLGSSMEmissions(NamedTuple):
     '''
     # Emission distribution h
     emission_function: Union[FnStateToEmission, FnStateAndInputToEmission]
-    # TODO: How to define learnable parameters for emission function?
-    # emission_parameters: Union[Float[Array], ParameterProperties] 
     # The covariance matrix R of the observation noise process
     emission_cov: Union[Float[Array, "emission_dim emission_dim"], ParameterProperties]
     '''
@@ -223,27 +258,179 @@ class ParamsCDNLGSSM(NamedTuple):
     emissions: ParamsCDNLGSSMEmissions 
 '''
 
-# TODO: Move this for linear Gaussian SSM
-class GSSMForecast(NamedTuple):
-    r"""Object definition used when forecasting.
+# Some auxiliary functions for parameter handling
+## Only use the values above if the user hasn't specified their own
+default = lambda x, x0: x if x is not None else x0
 
-    # If we forecast Gaussian distributions, based on filtering methods
-    :param forecasted_state_means: array of forecasted state means $\mathbb{E}[z_{t+1:t+t_f} \mid y_{1:t}, u_{1:t}, u_{t+1:t+f}]$
-    :param filtered_covariances: array of forecasted state covariances $\mathrm{Cov}[z_{t+1:t+t_f} \mid y_{1:t}, u_{1:t}, u_{t+1:t+f}]$
-    :param forecasted_emission_means: array of forecasted emission means $\mathbb{E}[y_{t+1:t+t_f} \mid y_{1:t}, u_{1:t}, u_{t+1:t+f}]$
-    :param forecasted_emission_covariances: array of forecasted emission covariances $\mathrm{Cov}[y_{t+1:t+t_f} \mid y_{1:t}, u_{1:t}, u_{t+1:t+f}]$
+## Create CD-NLGSSM parameters and properties, based on provided dictionaries
+def create_cdnlgssm_params_and_props(
+        params: dict
+    ) -> Tuple[ParamsCDNLGSSM, ParameterProperties]:
+    r"""Create CD-LGSSM parameters and properties, based on provided dictionaries
 
-    # If we forecast paths, based on solving the SDE
-    :param forecasted_state_path: array of forecasted state path $z_{t+1:t+t_f}$ 
-    :param forecasted_emission_path: array of forecasted emission path $y_{t+1:t+t_f}$
+    Args:
+        :param params: dictionary of parameters
+
+    Returns:
+        :return: Tuple of parameters and properties objects
     """
 
-    # If we forecast Gaussian distributions, based on filtering methods
-    forecasted_state_means: Optional[Float[Array, "ntime state_dim"]] = None
-    forecasted_state_covariances: Optional[Float[Array, "ntime state_dim"]] = None
-    forecasted_emission_means: Optional[Float[Array, "ntime state_dim"]] = None
-    forecasted_emission_covariances: Optional[Float[Array, "ntime state_dim"]] = None
+    ## Create nested dictionary of params
+    params_and_props = {"params": {}, "props": {}}
 
-    # If we forecast paths, based on solving the SDE
-    forecasted_state_path: Optional[Float[Array, "ntime state_dim"]] = None
-    forecasted_emission_path: Optional[Float[Array, "ntime state_dim"]] = None
+    for key in params_and_props.keys():
+        params_and_props[key] = ParamsCDNLGSSM(
+            initial=ParamsLGSSMInitial(
+                mean=params["initial_mean"][key],
+                cov=params["initial_cov"][key]
+            ),
+            dynamics=ParamsCDNLGSSMDynamics(
+                drift=params["dynamics_drift"][key],
+                diffusion_coefficient=params["dynamics_diffusion_coefficient"][key],
+                diffusion_cov=params["dynamics_diffusion_cov"][key],
+                approx_order=params["dynamics_approx_order"][key],
+            ),
+            emissions=ParamsCDNLGSSMEmissions(
+                emission_function=params["emission_function"][key],
+                emission_cov=params["emission_cov"][key],
+            )
+        )
+
+    return params_and_props["params"], params_and_props["props"]
+
+# Create CD-NLGSSM parameters and properties, based on the provided prior, init_values or defaults
+def init_cdnlgssm_params(
+        default_params,
+        init_params = None,
+        init_prior = None,
+        key = jr.PRNGKey(0),
+    ) -> Tuple[ParamsCDNLGSSM, ParamsCDNLGSSM]:
+    r"""Create CD-NLGSSM parameters and properties, based on the provided prior, init_values or defaults
+
+    Args:
+        :param default_params: dictionary of default parameters: we at least need some default values
+        :param init_params: dictionary of all parameters
+        :param init_prior: prior distribution for the initialization. Defaults to None.
+        :param key: random key for sampling. Defaults to jr.PRNGKey(0).
+
+    Returns:
+        :return: dictionary of parameters and properties
+    """
+    # First, make sure we have all the necessary default parameters
+    params = default_params
+
+    # Replace defaults with provided initialization as needed
+    for dict_key in init_params.keys():
+        params[dict_key] = default(
+            init_params[dict_key],
+            default_params[dict_key]
+        )
+
+    # If init_prior is provided, sample from the prior
+    if init_prior is not None:
+        # Draw a single parameter from the prior
+        sampled_params = init_prior.sample(
+            key=key,
+            M = 1
+        )
+        for dict_name in sampled_params.keys():
+            if dict_name not in ['initial_mean', 'initial_cov', 'dynamics_drift', 'dynamics_diffusion_coefficient', 'dynamics_diffusion_cov', 'dynamics_approx_order', 'emission_function', 'emission_cov']:
+                raise ValueError(f"Unknown parameter dictionary name: {dict_name}")
+            
+            # Replace the provided params with the sampled ones
+            print('Initializing {} with sampled parameters'.format(dict_name))
+            # Note that for CD-NLGSSM we have learnable functions, so reinstantiate them
+            
+            # Because we sample only one set of parameters, we need to remove the extra dimension
+            # We create a new dictionary for the parameters,
+            # with key=param['param_name']
+            # value = param['params'][0] (the first and only sample)
+            params_dict = {}
+            for param in sampled_params[dict_name].get_params(): params_dict[param['param_name']] = param['params'][0]
+            # And create a new learnable function with the sampled parameters
+            params[dict_name]["params"] = sampled_params[dict_name].__class__(
+                **params_dict
+            )
+
+    # Create and return CD-NLGSSM parameter and properties objects
+    return create_cdnlgssm_params_and_props(params)
+
+
+# Sample CD-NLGSSM parameters, based on the provided prior and init_values
+# TODO: revise this as above, to match the new structure, use get_params()
+def sample_cdnlgssm_params(
+        prior,
+        M,
+        init_params,
+        key = jr.PRNGKey(0),
+    ) -> ParamsCDNLGSSM:
+    r"""Sample CD-NLGSSM parameters from the provided prior, with init_params used for non-sampled parameters
+
+    Args:
+        :param prior: prior distribution for the initialization.
+        :param M: number of samples to draw
+        :param init_params: dictionary of all parameters
+        :param key: random key for sampling from the prior. Defaults to jr.PRNGKey(0).
+
+    Returns:
+        :return: ParamsCDNLGSSM object
+    """
+
+    # First, make sure we have all the necessary parameters
+    params = init_params
+    
+    # Making sure we broadcast actual "params" to the number of samples
+    for dict_key in init_params.keys():
+        # Consider only parameters defined as dictionaries (with keys "params" and "props")
+        if isinstance(init_params[dict_key], dict):
+            # If the init_params[dict_key] has a "params" as a scalar, we need to broadcast it
+            if isinstance(init_params[dict_key]["params"], (float, int)):
+                params[dict_key]["params"] = jnp.broadcast_to(
+                    init_params[dict_key]["params"],
+                    (M,1)
+                )
+            # If the init_params[dict_key] has a "params" as an array, we can broadcast it
+            elif isinstance(
+                init_params[dict_key]["params"],
+                (jnp.ndarray, Array)
+            ):
+                params[dict_key]["params"] = jnp.broadcast_to(
+                    init_params[dict_key]["params"],
+                    (M,) + init_params[dict_key]["params"].shape
+                )
+            else:
+                # Note that for CD-NLGSSM we have learnable functions, so we reinstantiate them
+
+                # Only proceed if the object has a get_params() method
+                if hasattr(init_params[dict_key]["params"], "get_params"):
+                    # Recover initial parameters, and broadcast their values according to the number of samples M
+                    params_dict = {}
+                    for param in init_params[dict_key]["params"].get_params():
+                        params_dict[param['param_name']] = jnp.broadcast_to(
+                                param['params'],
+                                (M,) + param['params'].shape
+                            )
+                    # Create a new learnable function with the broadcasted parameters    
+                    params[dict_key]["params"] = init_params[dict_key]["params"].__class__(
+                            **params_dict
+                        )
+                else:
+                    # If not a learnable function, skip broadcasting or handle as needed
+                    raise NotImplementedError("Non-learnable functions with no get_params function are not supported.")
+
+    # Draw parameters from the provided prior
+    sampled_params = prior.sample(
+        key=key,
+        M = M
+    )
+    # And replace the provided params with the sampled ones
+    for dict_name in sampled_params.keys():
+        if dict_name not in ['initial_mean', 'initial_cov', 'dynamics_drift', 'dynamics_diffusion_coefficient', 'dynamics_diffusion_cov', 'dynamics_approx_order', 'emission_function', 'emission_cov']:
+            raise ValueError(f"Unknown parameter dictionary name: {dict_name}")
+        
+        # Replace. Note that for CD-NLGSSM we have learnable functions
+        params[dict_name]["params"] = sampled_params[dict_name]
+
+    # Create and return CD-NLGSSM parameter and properties objects
+    return create_cdnlgssm_params_and_props(params)
+
