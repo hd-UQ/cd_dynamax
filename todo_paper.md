@@ -1,3 +1,9 @@
+# Science paper TODO
+
+## Writing
+
+## Code and experiments
+
 - Data generation:
     - We should generate data using a *hi-fidelity* solver
     - Ensure that data are *read* by default, and only generated if not present
@@ -41,3 +47,4 @@
 - High dimensional inference problem:
     - Lorenz 96 model
     - Consider learning the RHS with a dictionary
+    
