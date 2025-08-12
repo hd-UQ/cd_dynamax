@@ -3,11 +3,13 @@ sys.path.append("..")
 sys.path.append("../..")
 sys.path.append("../../..")
 
-from typing import NamedTuple, Tuple, Optional, Union, List, Callable
+from typing import NamedTuple, Union
 from jaxtyping import Array, Float, Integer
 import jax.numpy as jnp
-from jax import vmap
-from dynamax.parameters import ParameterProperties, ParameterSet
+
+# From Dynamax
+from dynamax.parameters import ParameterProperties
+# From our own codebase
 from continuous_discrete_nonlinear_gaussian_ssm.cdnlgssm_utils import _get_params
 from utils.diffrax_utils import adjust_rhs
 

@@ -28,8 +28,7 @@ from utils.diffrax_utils import diffeqsolve
 from utils.debug_utils import lax_scan
 DEBUG = False
 
-# We redefe UKFHyperParams, due to dt_final
-# from dynamax.nonlinear_gaussian_ssm.inference_ukf import UKFHyperParams
+# We redefine UKFHyperParams, due to dt_final
 class UKFHyperParams(NamedTuple):
     """Lightweight container for UKF hyperparameters.
 

@@ -1,22 +1,21 @@
 from abc import ABC
 from abc import abstractmethod
-import pdb
 from fastprogress.fastprogress import progress_bar
 from functools import partial
 import jax.numpy as jnp
 import jax.random as jr
 from jax import jit, lax, vmap, grad, value_and_grad
 from jax.tree_util import tree_map
-from jaxtyping import Float, Array, PyTree
+from jaxtyping import Float, Array
 import optax
 from tensorflow_probability.substrates.jax import distributions as tfd
 from typing import Optional, Union, Tuple, Any
 from typing_extensions import Protocol
 
+from dynamax.types import PRNGKey, Scalar
 from dynamax.parameters import to_unconstrained, from_unconstrained, log_det_jac_constrain
 from dynamax.parameters import ParameterSet, PropertySet
-from dynamax.types import PRNGKey, Scalar
-from dynamax.utils.utils import ensure_array_has_batch_dim, pytree_stack, fallback_hessian
+from dynamax.utils.utils import ensure_array_has_batch_dim, fallback_hessian
 
 # From our codebase
 from utils.debug_utils import lax_scan

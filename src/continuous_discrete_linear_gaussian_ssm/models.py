@@ -1,15 +1,12 @@
 from functools import partial
 
 # JAX imports
-from jax import jit
 import jax.numpy as jnp
 import jax.random as jr
 from jax.tree_util import tree_map
-from jaxtyping import Array, Float, PyTree
+from jaxtyping import Array, Float
 
 # Debugging utilities
-import pdb
-import jax.debug as jdb
 
 # Type annotations
 from typing import Any, Optional, Tuple, Union
@@ -23,8 +20,8 @@ tfd = tfp.distributions
 tfb = tfp.bijectors
 
 # From dynamax
-from dynamax.parameters import ParameterProperties, ParameterSet
 from dynamax.types import PRNGKey, Scalar
+from dynamax.parameters import ParameterProperties
 from dynamax.utils.bijectors import RealToPSDBijector
 from dynamax.utils.utils import psd_solve, symmetrize
 

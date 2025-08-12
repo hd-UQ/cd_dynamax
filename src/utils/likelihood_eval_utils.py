@@ -3,7 +3,6 @@ from itertools import count
 import argparse
 
 import datetime
-import json
 import numpy as np
 
 # To be able to debug
@@ -25,14 +24,11 @@ sys.path.append("../..")
 
 # Import dynamax
 from dynamax.parameters import ParameterProperties
-# import discrete-time filters
-from dynamax.nonlinear_gaussian_ssm import ParamsNLGSSM, UKFHyperParams
-from dynamax.nonlinear_gaussian_ssm import extended_kalman_smoother, unscented_kalman_smoother
 
 # Our own custom src codebase
 # continuous-discrete nonlinear Gaussian SSM codebase
 from continuous_discrete_nonlinear_gaussian_ssm import ContDiscreteNonlinearGaussianSSM
-from continuous_discrete_nonlinear_gaussian_ssm import cdnlgssm_filter, cdnlgssm_forecast
+from continuous_discrete_nonlinear_gaussian_ssm import cdnlgssm_filter
 # Load models
 from continuous_discrete_nonlinear_gaussian_ssm.models import *
 
@@ -47,7 +43,6 @@ sys.path.append("../notebooks/tutorial")
 from simulation_utils import *
 from lorenz_plotting import *
 
-import time
 
 # JAX device check
 print("************* Checking JAX device *************")

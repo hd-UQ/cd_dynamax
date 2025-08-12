@@ -7,11 +7,9 @@ import jax.random as jr
 from jax.tree_util import tree_map
 
 # Debugging utilities
-import pdb
-import jax.debug as jdb
 
 # Type annotations
-from jaxtyping import Array, Float, PyTree
+from jaxtyping import Array, Float
 from typing import Tuple, Optional, Union, List
 
 # Distributions, compatible with JAX, from TensorFlow Probability
@@ -23,10 +21,10 @@ tfb = tfp.bijectors
 
 # Dynamax shared code
 from dynamax.types import PRNGKey, Scalar
-from dynamax.parameters import ParameterProperties, ParameterSet
+from dynamax.parameters import ParameterProperties
 from dynamax.utils.bijectors import RealToPSDBijector
 from dynamax.utils.utils import symmetrize
-from dynamax.linear_gaussian_ssm.inference import PosteriorGSSMFiltered, PosteriorGSSMSmoothed
+from dynamax.linear_gaussian_ssm.inference import PosteriorGSSMFiltered
 
 # Our codebase
 from ssm_temissions import SSM, Prior

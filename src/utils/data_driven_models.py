@@ -2,14 +2,12 @@ import sys
 sys.path.append("..")
 sys.path.append("../..")
 sys.path.append("../../..")
-from typing import NamedTuple, Tuple, Optional, Union, List, Callable
-from jaxtyping import Array, Float, PyTree
+from typing import NamedTuple, Union, List, Callable
+from jaxtyping import Array, Float
 import jax.numpy as jnp
-import jax.random as jr
-from dynamax.parameters import ParameterProperties, ParameterSet
+from dynamax.parameters import ParameterProperties
 import itertools
 from itertools import product
-from continuous_discrete_nonlinear_gaussian_ssm.cdnlgssm_utils import LearnableFunction
 from utils.diffrax_utils import adjust_rhs
 from flax import linen as nn
 

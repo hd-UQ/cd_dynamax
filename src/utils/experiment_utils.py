@@ -12,16 +12,12 @@ from utils.simulation_utils import *
 from utils.physics_based_models import *
 from utils.data_driven_models import *
 
-from dynamax.parameters import ParameterProperties, ParameterSet
+from dynamax.parameters import ParameterProperties
 
 import jax.numpy as jnp
 import jax.random as jr
-import diffrax as dfx
 
-from dataclasses import make_dataclass
-import inspect
 from itertools import count
-from typing import Any
 
 from jax.tree_util import tree_map
 

@@ -8,8 +8,6 @@ from jax import lax
 from jax.tree_util import tree_map
 
 # Debugging utilities
-import pdb
-import jax.debug as jdb
 
 # Distributions, compatible with JAX, from TensorFlow Probability
 import tensorflow_probability.substrates.jax as tfp
@@ -23,15 +21,13 @@ from jaxtyping import Array, Float
 from typing import NamedTuple, Optional, Union, Tuple, List
 
 # Dynamax shared code
-from dynamax.utils.utils import psd_solve, symmetrize
-from dynamax.parameters import ParameterProperties
 from dynamax.types import PRNGKey, Scalar
+from dynamax.utils.utils import psd_solve, symmetrize
 
 # To avoid unnecessary redefinitions of code,
 # We import those classes that can be reused from LGSSM first, and define the rest later
 # Filtering and smoothing classes are equivalent
-from dynamax.linear_gaussian_ssm.inference import PosteriorGSSMFiltered
-from dynamax.linear_gaussian_ssm.inference import PosteriorGSSMSmoothed
+from dynamax.linear_gaussian_ssm.inference import PosteriorGSSMFiltered, PosteriorGSSMSmoothed
 
 # Our codebase
 # Diffrax based diff-eq solver

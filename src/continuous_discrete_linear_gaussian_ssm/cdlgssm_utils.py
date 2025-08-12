@@ -1,9 +1,8 @@
 from typing import NamedTuple, Tuple, Optional, Union
-from jaxtyping import Array, Float, PyTree
-from jax.tree_util import tree_map
+from jaxtyping import Array, Float
 import jax.random as jr
 import jax.numpy as jnp
-from dynamax.parameters import ParameterProperties, ParameterSet
+from dynamax.parameters import ParameterProperties
 
 #### Parameter definitions
 # To avoid unnecessary redefinitions of code,
