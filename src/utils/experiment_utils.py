@@ -77,7 +77,8 @@ def mcmc_config_to_dict(mcmc_config):
 # Create CD-NLGSSM model from configuration files
 from continuous_discrete_nonlinear_gaussian_ssm.models import ContDiscreteNonlinearGaussianSSM
 def create_cdnlgssm_model_from_config(
-        true_model_config_file: str,
+        true_model_config_file: str = None,
+        config = None,
     ) -> Tuple[ContDiscreteNonlinearGaussianSSM, ParamsCDNLGSSM, ParameterProperties]:
     r"""Create CD-NLGSSM model from configuration files
 
@@ -87,8 +88,10 @@ def create_cdnlgssm_model_from_config(
         :return: Tuple of CD-NLGSSM model, parameters and properties
     """
     # Load the model configuration file
-    config = ConfigParser()
-    config.read(true_model_config_file)
+    # If config is None, create a new ConfigParser object
+    if config is None:
+        config = ConfigParser()
+        config.read(true_model_config_file)
 
     # The model section contains
     '''

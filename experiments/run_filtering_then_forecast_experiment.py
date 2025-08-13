@@ -9,6 +9,7 @@ sys.path.append('../src')
 from data_generator import generate_data_from_config
 from utils.experiment_utils import *
 from utils.simulation_utils import filter_and_forecast
+from continuous_discrete_nonlinear_gaussian_ssm.cdnlgssm_utils import update_params
 
 def build_results_dir(data_config_file, model_config_file, filter_config_file, output_dir):
     '''Builds the results directory path based on configuration file names.'''
@@ -24,6 +25,8 @@ def _make_data(
     model_config_file,
     enforce_twin_experiment=False,
     data_key=None,
+    model_config=None,
+    param_reset_dict={},
 ):
     ## Load data from file (or generate it if needed)--- [DATA CONFIG FILE]
     data_config = ConfigParser()
@@ -48,8 +51,10 @@ def _make_data(
         data_save_file=os.path.join(
             'data',
             '{}_{}'.format(os.path.basename(model_config_file), f'data_{data_key}.pkl')
-        )
-    )
+        ),
+        model_config=model_config,
+        param_reset_dict=param_reset_dict,
+    ) # Note that we will use the data_key to distinguish between different model_configs rather than model_config_file .
     return data, int(data_key)
 
 
@@ -62,6 +67,7 @@ def run_filter_then_forecast(
     enforce_twin_experiment=False,
     data_key=None,
     ftf_key=None,
+    param_reset_dict={},
 ):
     '''Run a filtering and forecasting experiment with specified configurations.
 
@@ -91,11 +97,14 @@ def run_filter_then_forecast(
         model_config_file=model_config_file,
         enforce_twin_experiment=enforce_twin_experiment,
         data_key=data_key,
+        param_reset_dict=param_reset_dict,
     )
-
 
     # Create and initialize the CD-NLGSSM model from the model config file
     model, params, props = create_cdnlgssm_model_from_config(model_config_file)
+    
+    # Update model parameters based on param_reset_dict
+    params = update_params(params, param_reset_dict)
 
     # Figure-out the filtering/smoothing settings from config
     filter_hyperparams = create_cdnlgssm_filter_from_config(filter_config_file)
@@ -183,6 +192,7 @@ def eval_filter_then_forecast_experiment(
     eval_output_dir='eval',
     data_key=None,
     ftf_key=None,
+    param_reset_dict={},
 ):
     '''Evaluate the filtering and forecasting experiment with specified configurations.
 
@@ -205,6 +215,7 @@ def eval_filter_then_forecast_experiment(
         model_config_file=model_config_file,
         enforce_twin_experiment=enforce_twin_experiment,
         data_key=data_key,
+        param_reset_dict=param_reset_dict,
     )
 
     # Loop through each result directory and load the results

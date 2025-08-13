@@ -10,6 +10,7 @@ from dynamax.parameters import ParameterProperties, ParameterSet
 import abc
 from configparser import ConfigParser
 
+
 def _get_params(self):
     ''' A function to return the parameters of the learnable function
         This is used for parameter initialization and sampling
@@ -448,7 +449,7 @@ def update_params(params, updates: dict):
         new_params = update_params(params, updates)
     """
 
-    def set_nested_attr(obj: Any, attr_path: str, value: Any):
+    def set_nested_attr(obj, attr_path: str, value):
         """
         Recursively returns a copy of `obj` with the nested attribute replaced by `value`.
         Works for NamedTuples and Eqx Modules too.

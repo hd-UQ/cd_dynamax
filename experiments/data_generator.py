@@ -10,11 +10,14 @@ sys.path.append('../src')
 from continuous_discrete_nonlinear_gaussian_ssm.models import ContDiscreteNonlinearGaussianSSM
 from utils.experiment_utils import *
 from utils.simulation_utils import *
+from continuous_discrete_nonlinear_gaussian_ssm.cdnlgssm_utils import update_params
 
 def generate_data_from_config(
         data_config_file=None,
         data_config=None,
         data_save_file=None,
+        model_config=None,
+        param_reset_dict={},
         ):
     """
     Load data from a configuration file.
@@ -57,7 +60,14 @@ def generate_data_from_config(
             true_model_config_file = data_gen_config.get('true_model_config_file', None)
             
             # Create and initialize the CD-NLGSSM model
-            true_model, true_params, true_props = create_cdnlgssm_model_from_config(true_model_config_file)
+            if model_config is None:
+                true_model, true_params, true_props = create_cdnlgssm_model_from_config(true_model_config_file)
+            else:
+                true_model, true_params, true_props = create_cdnlgssm_model_from_config(config=model_config)
+
+            # Reset the parameters according to the provided reset dictionary
+            # (if empty, it will not change the parameters)
+            true_params = update_params(true_params, param_reset_dict)
         
             # Sample from the model
             key = int(data_gen_config.get('key', 0))
