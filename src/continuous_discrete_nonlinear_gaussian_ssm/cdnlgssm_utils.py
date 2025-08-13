@@ -274,7 +274,6 @@ def create_cdnlgssm_params_and_props(
     Returns:
         :return: Tuple of parameters and properties objects
     """
-
     ## Create nested dictionary of params
     params_and_props = {"params": {}, "props": {}}
 
@@ -433,4 +432,41 @@ def sample_cdnlgssm_params(
 
     # Create and return CD-NLGSSM parameter and properties objects
     return create_cdnlgssm_params_and_props(params)
+
+
+def update_params(params, updates: dict):
+    """
+    Returns a copy of `params` with all updates applied.
+    
+    updates: dict with keys like "initial.mean.params" or "dynamics.drift.sigma"
+    
+    Example usage:
+        updates = {
+            "initial.mean.params": jnp.ones(3),  # Vector of ones
+            "dynamics.drift.sigma": 11.3  # Scalar value
+        }
+        new_params = update_params(params, updates)
+    """
+
+    def set_nested_attr(obj: Any, attr_path: str, value: Any):
+        """
+        Recursively returns a copy of `obj` with the nested attribute replaced by `value`.
+        Works for NamedTuples and Eqx Modules too.
+        
+        attr_path: e.g., "dynamics.drift.sigma"
+        """
+        attrs = attr_path.split(".")
+        if len(attrs) == 1:
+            # Base case: replace the final attribute
+            return obj._replace(**{attrs[0]: value})
+        else:
+            first, rest = attrs[0], ".".join(attrs[1:])
+            nested_obj = getattr(obj, first)
+            updated_nested = set_nested_attr(nested_obj, rest, value)
+            return obj._replace(**{first: updated_nested})
+
+    updated = params
+    for path, val in updates.items():
+        updated = set_nested_attr(updated, path, val)
+    return updated
 
