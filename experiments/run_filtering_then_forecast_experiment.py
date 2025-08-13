@@ -19,6 +19,40 @@ def build_results_dir(data_config_file, model_config_file, filter_config_file, o
         os.path.basename(filter_config_file).split('.')[0]
     )
 
+def _make_data(
+    data_config_file,
+    model_config_file,
+    enforce_twin_experiment=False,
+    data_key=None,
+):
+    ## Load data from file (or generate it if needed)--- [DATA CONFIG FILE]
+    data_config = ConfigParser()
+    data_config.read(data_config_file)
+    if enforce_twin_experiment:
+        # If enforcing twin experiment, set the true model config file to be the same as the model config file
+        data_config['data_generation']['true_model_config_file'] = model_config_file
+    
+    if data_key is None:
+        # If no key is provided, use the key from the data config file
+        data_key = data_config['data_generation']['key']
+        # This is just extracted to create the data save file name below
+    else:
+        # If a key is provided, set it in the data config
+        data_config['data_generation']['key'] = str(data_key)
+
+    # Generate data
+    # By calling the generate_data_from_config function with the modified config
+    # And indicating the new data_save_file
+    data = generate_data_from_config(
+        data_config=data_config,
+        data_save_file=os.path.join(
+            'data',
+            '{}_{}'.format(os.path.basename(model_config_file), f'data_{data_key}.pkl')
+        )
+    )
+    return data, int(data_key)
+
+
 def run_filter_then_forecast(
     data_config_file,
     model_config_file,
@@ -26,6 +60,8 @@ def run_filter_then_forecast(
     output_dir,
     T_filter=0.8,
     enforce_twin_experiment=False,
+    data_key=None,
+    ftf_key=None,
 ):
     '''Run a filtering and forecasting experiment with specified configurations.
 
@@ -50,23 +86,13 @@ def run_filter_then_forecast(
     )
     os.makedirs(results_dir, exist_ok=True)
 
-    ## Load data from file (or generate it if needed)--- [DATA CONFIG FILE]
-    data_config = ConfigParser()
-    data_config.read(data_config_file)
-    if enforce_twin_experiment:
-        # If enforcing twin experiment, set the true model config file to be the same as the model config file
-        data_config['data_generation']['true_model_config_file'] = model_config_file
-    
-    # Generate data
-    # By calling the generate_data_from_config function with the modified config
-    # And indicating the new data_save_file
-    data = generate_data_from_config(
-        data_config=data_config,
-        data_save_file=os.path.join(
-            'data',
-            '{}_{}'.format(os.path.basename(model_config_file), 'data.pkl')
-        )
+    data, data_key = _make_data(
+        data_config_file=data_config_file,
+        model_config_file=model_config_file,
+        enforce_twin_experiment=enforce_twin_experiment,
+        data_key=data_key,
     )
+
 
     # Create and initialize the CD-NLGSSM model from the model config file
     model, params, props = create_cdnlgssm_model_from_config(model_config_file)
@@ -79,6 +105,10 @@ def run_filter_then_forecast(
     T_forecast_end = data['t_emissions'][-1]
     T_filter_end = T0 + T_filter * (T_forecast_end - T0)
 
+    # Set ftf key
+    if ftf_key is None:
+        ftf_key = data_key + 10
+
     # Run filtering and forecasting
     filtered, forecasted, start_idx_filter, stop_idx_filter, start_idx_forecast, stop_idx_forecast = filter_and_forecast(
         model_params=params,
@@ -88,6 +118,7 @@ def run_filter_then_forecast(
         T0=T0,
         T_filter_end=T_filter_end,
         T_forecast_end=T_forecast_end,
+        key=ftf_key
     )
 
     # convert the filtered and forecasted results to dictionaries for easily adding fields.
@@ -150,6 +181,8 @@ def eval_filter_then_forecast_experiment(
     enforce_twin_experiment=False,
     model_config_file=None,
     eval_output_dir='eval',
+    data_key=None,
+    ftf_key=None,
 ):
     '''Evaluate the filtering and forecasting experiment with specified configurations.
 
@@ -160,25 +193,18 @@ def eval_filter_then_forecast_experiment(
             Done by resetting the true_model_config_file in the data_config_file = model_config_file.
         model_config_file (str): Path to the model configuration file.
         eval_output_dir (str): Directory to save the evaluation results.
+        data_key (int): Key for the data generation. If None, will use the key from the data config file.
+        ftf_key (int): Key for the filtering and forecasting. If None, will use data_key + 10.
     '''
 
     # Make sure eval_output_dir exists
     os.makedirs(eval_output_dir, exist_ok=True)
 
-    ## Load data from file (or generate it if needed)--- [DATA CONFIG FILE]
-    data_config = ConfigParser()
-    data_config.read(data_config_file)
-    if enforce_twin_experiment:
-        data_config['data_generation']['true_model_config_file'] = model_config_file
-    # Generate data
-    # By calling the generate_data_from_config function with the modified config
-    # And indicating the new data_save_file
-    data = generate_data_from_config(
-        data_config=data_config,
-        data_save_file=os.path.join(
-            'data',
-            '{}_{}'.format(os.path.basename(model_config_file), 'data.pkl')
-        )
+    data, data_key = _make_data(
+        data_config_file=data_config_file,
+        model_config_file=model_config_file,
+        enforce_twin_experiment=enforce_twin_experiment,
+        data_key=data_key,
     )
 
     # Loop through each result directory and load the results
@@ -617,7 +643,10 @@ if __name__ == "__main__":
     parser.add_argument('--do_eval', type=int, default=1)
     parser.add_argument('--enforce_twin_experiment', type=int, default=1,
                         help='If True, will enforce the twin experiment setup (default: False). Done by resetting the true_model_config_file in the data_config_file = model_config_file.')
-
+    parser.add_argument('--data_key', type=int, default=None,
+                        help='Optional key to use for data generation. If None, the key from the data config file will be used.')
+    parser.add_argument('--ftf_key', type=int, default=None,
+                        help='Key to use for filter-then-forecast. Default is None, in which case it will be set to data_key + 10.')
     args = parser.parse_args()
     # run_filter_then_forecast(**args.__dict__)
 
@@ -643,6 +672,8 @@ if __name__ == "__main__":
                 output_dir=args.output_dir,
                 T_filter=args.T_filter,
                 enforce_twin_experiment=args.enforce_twin_experiment,
+                data_key=args.data_key,
+                ftf_key=args.ftf_key
             )
     
     if args.do_eval:
@@ -664,4 +695,6 @@ if __name__ == "__main__":
             enforce_twin_experiment=args.enforce_twin_experiment,
             model_config_file=args.model_config_file,
             eval_output_dir=eval_output_dir,
+            data_key=args.data_key,
+            ftf_key=args.ftf_key
         )

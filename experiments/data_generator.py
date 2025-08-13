@@ -9,6 +9,7 @@ sys.path.append('..')
 sys.path.append('../src')
 from continuous_discrete_nonlinear_gaussian_ssm.models import ContDiscreteNonlinearGaussianSSM
 from utils.experiment_utils import *
+from utils.simulation_utils import *
 
 def generate_data_from_config(
         data_config_file=None,

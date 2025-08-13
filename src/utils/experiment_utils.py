@@ -17,18 +17,6 @@ from dynamax.parameters import ParameterProperties
 import jax.numpy as jnp
 import jax.random as jr
 
-from itertools import count
-
-from jax.tree_util import tree_map
-
-def tree_to_dict(tree):
-    """Convert a JAX tree to a dictionary."""
-    return tree_map(lambda x: x if x is not None else None, tree._asdict())
-
-def make_key_sequence(seed: int):
-    """Returns an infinite sequence of PRNG keys based on the given seed."""
-    return map(jr.PRNGKey, count(start=seed, step=1))
-
 def generate_t_emissions(
         t0: float,
         t1: float,
@@ -95,8 +83,6 @@ def create_cdnlgssm_model_from_config(
 
     Args:
         :param true_model_config_file: path to the model configuration file
-        :param true_solver_config_file: path to the solver configuration file
-
     Returns:
         :return: Tuple of CD-NLGSSM model, parameters and properties
     """

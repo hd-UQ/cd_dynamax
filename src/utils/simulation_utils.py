@@ -3,10 +3,15 @@
 # Imports
 import jax.numpy as jnp
 import jax.random as jr
+from dynamax.types import PRNGKey
+
+from itertools import count
 
 # Typing imports
 from typing import Tuple, Optional
 from jaxtyping import Float, Array
+
+from jax.tree_util import tree_map
 
 # For distributional forecasting, import MVN
 from tensorflow_probability.substrates.jax.distributions import MultivariateNormalFullCovariance as MVN
@@ -15,6 +20,16 @@ from tensorflow_probability.substrates.jax.distributions import MultivariateNorm
 # continuous-discrete nonlinear Gaussian SSM codebase
 from continuous_discrete_linear_gaussian_ssm import cdlgssm_filter, cdlgssm_forecast, ParamsCDLGSSM
 from continuous_discrete_nonlinear_gaussian_ssm import cdnlgssm_filter, cdnlgssm_forecast, ParamsCDNLGSSM
+
+
+def tree_to_dict(tree):
+    """Convert a JAX tree to a dictionary."""
+    return tree_map(lambda x: x if x is not None else None, tree._asdict())
+
+def make_key_sequence(seed: int):
+    """Returns an infinite sequence of PRNG keys based on the given seed."""
+    return map(jr.PRNGKey, count(start=seed, step=1))
+
 
 ### Simulation Utilities
 # Function to generate irregular measurement time-points
@@ -79,7 +94,11 @@ def filter_and_forecast(
     T0=50,
     T_filter_end=70,
     T_forecast_end=100,
+    key=0,
     ):
+
+    # Create a sequence of keys
+    keys = make_key_sequence(key)
 
     # Figure out the time points for filtering
     start_idx_filter = jnp.where(t_emissions >= T0)[0][0]
@@ -94,17 +113,22 @@ def filter_and_forecast(
         # Linear case
         filtering_function = cdlgssm_filter
         forecasting_function = cdlgssm_forecast
+        extra_args_filter = {}
+        extra_args_forecast = {}
     elif isinstance(model_params, ParamsCDNLGSSM):
         # Nonlinear case
         filtering_function = cdnlgssm_filter
         forecasting_function = cdnlgssm_forecast
-    
+        extra_args_filter = {'key': next(keys)}
+        extra_args_forecast = {'key': next(keys)}
+
     # Run filter on filtering time points
     filtered = filtering_function(
         params=model_params,
         emissions=emissions[start_idx_filter:stop_idx_filter],
         t_emissions=t_emissions[start_idx_filter:stop_idx_filter],
         filter_hyperparams=filter_hyperparams,
+        **extra_args_filter,
     )
     
     # Initialize forecast with last filtered state
@@ -118,6 +142,7 @@ def filter_and_forecast(
         t_init=init_time,
         t_forecast=t_emissions[start_idx_forecast:stop_idx_forecast],
         filter_hyperparams=filter_hyperparams,
+        **extra_args_forecast,
     )
 
     return filtered, forecasted, start_idx_filter, stop_idx_filter, start_idx_forecast, stop_idx_forecast
