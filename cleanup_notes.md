@@ -1,10 +1,11 @@
-- Add psd_covariance checks
-    - print warnings if non-psd (with potential solutions)
-        - add debugging option
-        
+     
 - Check for nan loglikelihood values
     - How to raise errors in jax
-   
+    - Consider the equinox approach
+        https://github.com/patrick-kidger/equinox/blob/main/equinox/_errors.py
+        https://github.com/patrick-kidger/equinox/blob/main/tests/test_errors.py
+    - add error to psd function in debug_utils.py
+    
 - Dynamax dependencies
     - Types and parameters
         from dynamax.types import PRNGKey, Scalar
@@ -13,7 +14,7 @@
     - utils
         from dynamax.parameters import to_unconstrained, from_unconstrained, log_det_jac_constrain
         from dynamax.utils.utils import ensure_array_has_batch_dim, fallback_hessian
-        from dynamax.utils.utils import psd_solve, symmetrize
+        from dynamax.utils.utils import psd_solve
         from dynamax.utils.bijectors import RealToPSDBijector
         from dynamax.utils.utils import pytree_len
 

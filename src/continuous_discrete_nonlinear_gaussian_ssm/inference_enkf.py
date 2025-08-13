@@ -16,7 +16,7 @@ tfb = tfp.bijectors
 
 # Dynamax shared code
 from dynamax.types import PRNGKey
-from dynamax.utils.utils import psd_solve, symmetrize
+from dynamax.utils.utils import psd_solve
 from dynamax.linear_gaussian_ssm.inference import PosteriorGSSMFiltered, PosteriorGSSMSmoothed
 
 # Our codebase
@@ -26,7 +26,8 @@ from continuous_discrete_linear_gaussian_ssm.cdlgssm_utils import GSSMForecast
 from continuous_discrete_nonlinear_gaussian_ssm.cdnlgssm_utils import *
 # Diffrax based diff-eq solver
 from utils.diffrax_utils import diffeqsolve
-from utils.debug_utils import lax_scan
+# Debugging utilities
+from utils.debug_utils import *
 DEBUG = False
 
 # Currently employing method from https://arxiv.org/abs/2205.02730 Neilsen et al. 2022
@@ -142,7 +143,7 @@ def _condition_on(key, x, h, R, u, y, t, perturb_measurements=True):
 
     # compute predicted covariance of measurements as outer product of differences from mean
     # represents "HPH^T" in Kalman gain computation
-    y_pred_cov = symmetrize(
+    y_pred_cov = psd(
         jnp.sum(_outer(y_ensemble - y_pred_mean, y_ensemble - y_pred_mean), axis=0) / (n_particles - 1)
     )
 
@@ -246,7 +247,7 @@ def ensemble_kalman_filter(
 
         # compute Gaussian statistics
         filtered_mean = jnp.mean(filtered_x_ens, axis=0)
-        filtered_cov = symmetrize(
+        filtered_cov = psd(
             jnp.sum(_outer(filtered_x_ens - filtered_mean, filtered_x_ens - filtered_mean), axis=0) / (
                 filter_hyperparams.N_particles - 1
             )
@@ -257,7 +258,7 @@ def ensemble_kalman_filter(
 
         # compute Gaussian statistics
         pred_mean = jnp.mean(pred_x_ens, axis=0)
-        pred_cov = symmetrize(
+        pred_cov = psd(
             jnp.sum(_outer(pred_x_ens - pred_mean, pred_x_ens - pred_mean), axis=0) / (
                 filter_hyperparams.N_particles - 1
             )
@@ -363,7 +364,7 @@ def forecast_ensemble_kalman_filter(
 
         # compute Gaussian statistics
         pred_state_mean = jnp.mean(pred_x_ens, axis=0)
-        pred_state_cov = symmetrize(
+        pred_state_cov = psd(
             jnp.sum(
                 _outer(pred_x_ens - pred_state_mean, pred_x_ens - pred_state_mean),
                 axis=0
@@ -484,7 +485,7 @@ def emissions_ensemble_kalman_filter(
 
         # compute predicted covariance of measurements as outer product of differences from mean
         # represents "HPH^T" in Kalman gain computation
-        emission_cov = symmetrize(
+        emission_cov = psd(
             jnp.sum(
                 _outer(y_ensemble - emission_mean, y_ensemble - emission_mean),
                 axis=0

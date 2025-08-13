@@ -22,7 +22,7 @@ from typing import NamedTuple, Optional, Union, Tuple, List
 
 # Dynamax shared code
 from dynamax.types import PRNGKey, Scalar
-from dynamax.utils.utils import psd_solve, symmetrize
+from dynamax.utils.utils import psd_solve
 
 # To avoid unnecessary redefinitions of code,
 # We import those classes that can be reused from LGSSM first, and define the rest later
@@ -30,6 +30,8 @@ from dynamax.utils.utils import psd_solve, symmetrize
 from dynamax.linear_gaussian_ssm.inference import PosteriorGSSMFiltered, PosteriorGSSMSmoothed
 
 # Our codebase
+# Debug utilities
+from utils.debug_utils import *
 # Diffrax based diff-eq solver
 from utils.diffrax_utils import diffeqsolve
 # CDLGSSM parameters are different to LGSSM due to different dynamics
@@ -88,7 +90,7 @@ def compute_pushforward(
         return (dAdt, dQdt)
     
     sol = diffeqsolve(rhs_all, t0=t0, t1=t1, y0=y0, **diffeqsolve_settings)
-    A, Q = sol[0][-1], symmetrize(sol[1][-1])
+    A, Q = sol[0][-1], psd(sol[1][-1])
     
     return A, Q
 
@@ -112,7 +114,7 @@ def _predict(m, S, F, B, b, Q, u):
         Sigma_pred (D_hid,D_hid): predicted covariance.
     """
     mu_pred = F @ m + B @ u + b
-    Sigma_pred = symmetrize(F @ S @ F.T + Q)
+    Sigma_pred = psd(F @ S @ F.T + Q)
     return mu_pred, Sigma_pred
 
 
@@ -164,7 +166,7 @@ def _condition_on(m, P, H, D, d, R, u, y):
         S = jnp.diag(R) + H @ P @ H.T
 
     # Compute the conditional mean and covariance
-    Sigma_cond = symmetrize(P - K @ S @ K.T)
+    Sigma_cond = psd(P - K @ S @ K.T)
     mu_cond = m + K @ (y - D @ u - d - H @ m)
     return mu_cond, Sigma_cond
 
@@ -601,7 +603,7 @@ def _smooth(
     # from t1 to t0, BUT y0 contains initial conditions at t1
     sol = diffeqsolve(rhs_all, t0=t0, t1=t1, y0=y0, reverse=True, args=(m_filter, P_filter))
     #jdb.breakpoint()
-    m_smooth, P_smooth = sol[0][-1], symmetrize(sol[1][-1])
+    m_smooth, P_smooth = sol[0][-1], psd(sol[1][-1])
     return m_smooth, P_smooth
 
 # TODO: fix preprocess_args to accommodate smoother_type if it is really necessary
@@ -679,7 +681,7 @@ def cdlgssm_smoother(
             smoothed_mean = filtered_mean + C @ (smoothed_mean_next - F @ filtered_mean - B @ u )
         else:
             smoothed_mean = filtered_mean + C @ (smoothed_mean_next - F @ filtered_mean - B @ u - b)
-        smoothed_cov = symmetrize(
+        smoothed_cov = psd(
             filtered_cov + C @ (smoothed_cov_next - F @ filtered_cov @ F.T - Q) @ C.T
         )
 
@@ -1055,7 +1057,7 @@ def cdlgssm_emissions(
 
         if this_cov is not None:
             # If we have state covariances, then we compute the emission covariance
-            emission_cov = symmetrize(H @ this_cov @ H.T + + R)
+            emission_cov = psd(H @ this_cov @ H.T + + R)
         else:
             emission_cov = jnp.diag(R) if R.ndim==1 else R
         

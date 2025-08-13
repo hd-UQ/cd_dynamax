@@ -1,8 +1,83 @@
+# JAX PSD check utility
+import jax
 import jax.numpy as jnp
+import jax.scipy.linalg
 from jax import lax
 import jax.debug as jdb
 
+# PSD checks
+def is_psd_eig(matrix, tol=1e-8):
+    eigvals = jnp.linalg.eigvalsh(matrix)
+    return jnp.all(eigvals >= -tol)
 
+def is_psd_cholesky(matrix):
+    # Cholesky only works for positive definite, not semi-definite
+    # In JIT, exceptions are not catchable, so this is best-effort
+    try:
+        _ = jax.scipy.linalg.cholesky(matrix, lower=True)
+        return True
+    except Exception:
+        return False
+
+def psd(matrix, check_psd=True, psd_check_cholesky=False, tol=1e-8, warn=True, raise_error=False):
+    """
+    Try to return a psd matrix
+        - first, by symmetrizing
+        - then simply checking if it matrix is positive semi-definite (PSD).
+            If not, optionally print a warning using jax.debug.print.
+            TODO: raise jax error
+    Args:
+        matrix: array-like, matrix to check
+        check_psd: bool, if True, check if the matrix is PSD
+        psd_check_cholesky: bool, if True, use Cholesky decomposition to check for PSD
+        tol: float, tolerance for eigenvalue PSD check
+        warn: bool, if True print warning if not PSD
+    Returns:
+        matrix: array-like, hopefully PSD matrix
+    """
+    def check_cholesky(mat):
+        return is_psd_cholesky(mat)
+        
+    def check_eig(mat):
+        return is_psd_eig(mat, tol)
+    
+    def symmetrize(mat):
+        """Symmetrize one or more matrices."""
+        return 0.5 * (mat + jnp.swapaxes(mat, -1, -2))
+
+    def handle_not_psd(_):
+        if warn:
+            jax.debug.print("Warning: matrix is not positive definite")
+        if raise_error:
+            # TODO: raise jax error
+            raise ValueError("Matrix is not positive definite")
+        return None
+    
+    # Symmetrize the input matrix
+    sym_matrix = symmetrize(matrix)
+
+    # Check PSD
+    if check_psd:
+        is_psd =jax.lax.cond(
+            psd_check_cholesky,
+            check_cholesky,
+            check_eig,
+            sym_matrix
+        )
+
+        # TODO: better to move this logic out? namely, return is_psd, then check, so we can indicate where non_psd occurred?
+        # Handle non_psd
+        jax.lax.cond(
+            ~is_psd,
+            handle_not_psd,
+            lambda _: None,
+            operand=None
+        )
+
+    # For now, just return the symmetrized matrix, regardless of PSD status
+    return sym_matrix
+
+# Wrapper over jax.lax.scan
 def lax_scan(f, init, xs, length=None, reverse=False, debug=False):
     """
     A debugging wrapper around `lax.scan` that supports multiple input sequences, including None elements,

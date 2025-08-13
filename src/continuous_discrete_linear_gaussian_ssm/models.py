@@ -23,7 +23,7 @@ tfb = tfp.bijectors
 from dynamax.types import PRNGKey, Scalar
 from dynamax.parameters import ParameterProperties
 from dynamax.utils.bijectors import RealToPSDBijector
-from dynamax.utils.utils import psd_solve, symmetrize
+from dynamax.utils.utils import psd_solve
 
 # Our codebase
 from ssm_temissions import SSM, Prior
@@ -38,6 +38,8 @@ from continuous_discrete_linear_gaussian_ssm.inference import cdlgssm_filter, cd
 # Unclear why we define this here, but not in models
 from continuous_discrete_linear_gaussian_ssm.inference import cdlgssm_joint_sample, cdlgssm_path_sample, cdlgssm_posterior_sample
 from continuous_discrete_linear_gaussian_ssm.inference import compute_pushforward
+# Debug utilities
+from utils.debug_utils import psd
 
 class SuffStatsCDLGSSM(Protocol):
     """A :class:`NamedTuple` with sufficient statistics for CDLGSSM parameter estimation."""
@@ -440,7 +442,7 @@ class ContDiscreteLinearGaussianSSM(SSM):
         R = params.emissions.cov
         emission_dim = R.shape[0]
         smoothed_emissions = posterior.smoothed_means @ H.T + b
-        smoothed_emissions_cov = symmetrize(H @ posterior.smoothed_covariances @ H.T + R)
+        smoothed_emissions_cov = psd(H @ posterior.smoothed_covariances @ H.T + R)
         smoothed_emissions_std = jnp.sqrt(
             jnp.array([smoothed_emissions_cov[:, i, i] for i in range(emission_dim)]))
         return smoothed_emissions, smoothed_emissions_std

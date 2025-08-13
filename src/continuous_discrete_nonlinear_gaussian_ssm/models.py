@@ -23,7 +23,6 @@ tfb = tfp.bijectors
 from dynamax.types import PRNGKey, Scalar
 from dynamax.parameters import ParameterProperties
 from dynamax.utils.bijectors import RealToPSDBijector
-from dynamax.utils.utils import symmetrize
 from dynamax.linear_gaussian_ssm.inference import PosteriorGSSMFiltered
 
 # Our codebase
@@ -38,7 +37,8 @@ from continuous_discrete_nonlinear_gaussian_ssm.inference_enkf import EnKFHyperP
 from continuous_discrete_nonlinear_gaussian_ssm.inference_ukf import UKFHyperParams, unscented_kalman_filter, forecast_unscented_kalman_filter, emissions_unscented_kalman_filter
 # Diffrax based diff-eq solver
 from utils.diffrax_utils import diffeqsolve
-from utils.debug_utils import lax_scan
+# Debugging utilities
+from utils.debug_utils import *
 DEBUG = False
 
 # Auxiliary function to process inputs ---from dynamax
@@ -106,7 +106,7 @@ def compute_pushforward(
         )
 
     sol = diffeqsolve(rhs_all, t0=t0, t1=t1, y0=y0, **diffeqsolve_settings)
-    x, P = sol[0][-1], symmetrize(sol[1][-1])
+    x, P = sol[0][-1], psd(sol[1][-1])
 
     return x, P
 

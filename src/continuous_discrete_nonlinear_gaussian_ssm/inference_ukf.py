@@ -15,7 +15,7 @@ tfb = tfp.bijectors
 
 # Dynamax shared code
 from dynamax.types import PRNGKey
-from dynamax.utils.utils import psd_solve, symmetrize
+from dynamax.utils.utils import psd_solve
 from dynamax.linear_gaussian_ssm.inference import PosteriorGSSMFiltered, PosteriorGSSMSmoothed
 
 # Our codebase
@@ -25,7 +25,8 @@ from continuous_discrete_linear_gaussian_ssm.cdlgssm_utils import GSSMForecast
 from continuous_discrete_nonlinear_gaussian_ssm.cdnlgssm_utils import *
 # Diffrax based diff-eq solver
 from utils.diffrax_utils import diffeqsolve
-from utils.debug_utils import lax_scan
+# Debugging utilities
+from utils.debug_utils import *
 DEBUG = False
 
 # We redefine UKFHyperParams, due to dt_final
@@ -163,7 +164,7 @@ def _predict(
         Qc_t = params.dynamics.diffusion_cov.f(None, u, t0)
         L_t = params.dynamics.diffusion_coefficient.f(None, u, t0) * filter_hyperparams.cov_rescaling
         P_pred += dt * L_t @ Qc_t @ L_t.T
-        P_pred = symmetrize(P_pred)
+        P_pred = psd(P_pred)
     else:
         # Sarkka Thesis's algo 3.24
         # weights are defined in eq. 3.69;
@@ -195,7 +196,7 @@ def _predict(
         # solve Saarka's ODE 3.183 in thesis
         y0 = (m, P)
         sol = diffeqsolve(rhs_all, t0=t0, t1=t1, y0=y0, **filter_hyperparams.diffeqsolve_settings)
-        m_pred, P_pred = sol[0][-1], symmetrize(sol[1][-1])
+        m_pred, P_pred = sol[0][-1], psd(sol[1][-1])
 
     # According to Sarkka's algo 3.24, we only need to return m_pred and P_pred (not P_cross) in continuous-discrete
     return m_pred, P_pred
@@ -232,7 +233,7 @@ def _condition_on(m, P, h, R, lamb, w_mean, w_cov, u, y, t):
 
     # Compute parameters needed to filter
     pred_mean = jnp.tensordot(w_mean, sigmas_cond_prop, axes=1)
-    pred_cov = symmetrize(
+    pred_cov = psd(
         jnp.tensordot(w_cov, _outer(sigmas_cond_prop - pred_mean, sigmas_cond_prop - pred_mean), axes=1) + R
     )
     pred_cross = jnp.tensordot(w_cov, _outer(sigmas_cond - m, sigmas_cond_prop - pred_mean), axes=1)
@@ -243,7 +244,7 @@ def _condition_on(m, P, h, R, lamb, w_mean, w_cov, u, y, t):
     # Compute filtered mean and covariace
     K = psd_solve(pred_cov, pred_cross.T).T  # Filter gain
     m_cond = m + K @ (y - pred_mean)
-    P_cond = symmetrize(P - K @ pred_cov @ K.T)
+    P_cond = psd(P - K @ pred_cov @ K.T)
     return ll, m_cond, P_cond
 
 
@@ -630,7 +631,7 @@ def emissions_unscented_kalman_filter(
             inputs[t0_idx],
             t0
         )
-        emission_cov = symmetrize(
+        emission_cov = psd(
                 jnp.tensordot(
                 w_cov,
                 _outer(sigmas_cond_prop - emission_mean,

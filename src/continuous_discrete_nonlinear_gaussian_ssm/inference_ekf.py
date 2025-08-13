@@ -16,7 +16,7 @@ tfb = tfp.bijectors
 
 # Dynamax shared code
 from dynamax.types import PRNGKey
-from dynamax.utils.utils import psd_solve, symmetrize
+from dynamax.utils.utils import psd_solve
 from dynamax.linear_gaussian_ssm.inference import PosteriorGSSMFiltered, PosteriorGSSMSmoothed
 
 # Our codebase
@@ -26,7 +26,8 @@ from continuous_discrete_linear_gaussian_ssm.cdlgssm_utils import GSSMForecast
 from continuous_discrete_nonlinear_gaussian_ssm.cdnlgssm_utils import *
 # Diffrax based diff-eq solver
 from utils.diffrax_utils import diffeqsolve
-from utils.debug_utils import lax_scan
+# Debugging utilities
+from utils.debug_utils import *
 DEBUG = False
 
 # Helper functions --- from dynamax 
@@ -144,7 +145,7 @@ def _predict(
         m_final = sol[0][-1]
         P_final = sol[1][-1]
 
-    return m_final, symmetrize(P_final)
+    return m_final, psd(P_final)
 
 # Condition on observations for EKF
 # Based on first order approximation, as in Equation 3.59
@@ -182,20 +183,20 @@ def _condition_on(m, P, h, H, R, u, y, t, num_iter, filter_hyperparams):
     def _step(carry, _):
         prior_mean, prior_cov = carry
         H_x = H(prior_mean, u, t)
-        S = symmetrize(R + H_x @ prior_cov @ H_x.T)
+        S = psd(R + H_x @ prior_cov @ H_x.T)
         # if not jnp.all(jnp.linalg.eigvals(S) > 0):
         #     print(f"Condition number of S: {jnp.linalg.cond(S)}")
         #     print(f"Most negative eigenvalue of S: {jnp.min(jnp.linalg.eigvals(S))}")
             # bp()
         K = psd_solve(S, H_x @ prior_cov).T
-        posterior_cov = symmetrize(prior_cov - K @ S @ K.T)
+        posterior_cov = psd(prior_cov - K @ S @ K.T)
         posterior_mean = prior_mean + K @ (y - h(prior_mean, u, t))
         return (posterior_mean, posterior_cov), None
 
     # Iterate re-linearization over posterior mean and covariance
     carry = (m, P)
     (mu_cond, Sigma_cond), _ = lax_scan(_step, carry, jnp.arange(num_iter), debug=DEBUG)
-    return mu_cond, symmetrize(Sigma_cond)
+    return mu_cond, psd(Sigma_cond)
 
 
 def extended_kalman_filter(
@@ -433,7 +434,7 @@ def _smooth(
     # Recall that we solve the rhs in reverse:
     # from t1 to t0, BUT y0 contains initial conditions at t1
     sol = diffeqsolve(rhs_all, t0=t0, t1=t1, y0=y0, reverse=True, args=(m_filter, P_filter), **filter_hyperparams.diffeqsolve_settings)
-    m_smooth, P_smooth = sol[0][-1], symmetrize(sol[1][-1])
+    m_smooth, P_smooth = sol[0][-1], psd(sol[1][-1])
     return m_smooth, P_smooth
 
 def extended_kalman_smoother(
@@ -822,7 +823,7 @@ def emissions_extended_kalman_filter(
             inputs[t0_idx],
             t0
         )
-        emission_cov = symmetrize(H_x @ state_cov @ H_x.T + R)
+        emission_cov = psd(H_x @ state_cov @ H_x.T + R)
         
         # Return carry and output states
         return (state_mean, state_cov), (emission_mean, emission_cov)
