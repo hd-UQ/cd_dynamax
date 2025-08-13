@@ -1,16 +1,13 @@
 import os
 from configparser import ConfigParser
-import jax.numpy as jnp
-import jax.random as jr
-import optax
 import pickle
 
+# CD-NLGSSM imports
 import sys
 sys.path.append('..')
-sys.path.append('../..')
-
-from utils.experiment_utils import *
+sys.path.append('../src')
 from data_generator import generate_data_from_config
+from utils.experiment_utils import *
 from utils.simulation_utils import filter_and_forecast
 
 def build_results_dir(data_config_file, model_config_file, filter_config_file, output_dir):
@@ -59,7 +56,17 @@ def run_filter_then_forecast(
     if enforce_twin_experiment:
         # If enforcing twin experiment, set the true model config file to be the same as the model config file
         data_config['data_generation']['true_model_config_file'] = model_config_file
-    data = generate_data_from_config(config=data_config)
+    
+    # Generate data
+    # By calling the generate_data_from_config function with the modified config
+    # And indicating the new data_save_file
+    data = generate_data_from_config(
+        data_config=data_config,
+        data_save_file=os.path.join(
+            'data',
+            '{}_{}'.format(os.path.basename(model_config_file), 'data.pkl')
+        )
+    )
 
     # Create and initialize the CD-NLGSSM model from the model config file
     model, params, props = create_cdnlgssm_model_from_config(model_config_file)
@@ -163,7 +170,16 @@ def eval_filter_then_forecast_experiment(
     data_config.read(data_config_file)
     if enforce_twin_experiment:
         data_config['data_generation']['true_model_config_file'] = model_config_file
-    data = generate_data_from_config(config=data_config)
+    # Generate data
+    # By calling the generate_data_from_config function with the modified config
+    # And indicating the new data_save_file
+    data = generate_data_from_config(
+        data_config=data_config,
+        data_save_file=os.path.join(
+            'data',
+            '{}_{}'.format(os.path.basename(model_config_file), 'data.pkl')
+        )
+    )
 
     # Loop through each result directory and load the results
     results_dict = {}
@@ -192,8 +208,6 @@ def eval_filter_then_forecast_experiment(
 
 import re
 import numpy as np
-import matplotlib.pyplot as plt
-from matplotlib.ticker import MaxNLocator
 
 # -------------------------------
 # Pretty names and styling

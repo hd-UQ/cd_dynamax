@@ -1,17 +1,16 @@
 import os
 from configparser import ConfigParser
 import jax.numpy as jnp
-import jax.random as jr
 from jax import vmap
 import pickle
 import equinox as eqx
+
+# CD-NLGSSM imports
 import sys
 sys.path.append('..')
-sys.path.append('../..')
-
+sys.path.append('../src')
 from utils.experiment_utils import *
 from data_generator import generate_data_from_config
-from utils.simulation_utils import filter_and_forecast
 
 def build_results_dir(data_config_file, model_config_file, filter_config_file, sweep_config_file, output_dir):
     '''Builds the results directory path based on configuration file names.'''
@@ -173,9 +172,6 @@ def eval_sweep_experiment(
     )
 
 import re
-import numpy as np
-import matplotlib.pyplot as plt
-from matplotlib.ticker import MaxNLocator
 
 # -------------------------------
 # Pretty names and styling

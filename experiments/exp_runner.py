@@ -5,10 +5,10 @@ import jax.random as jr
 import optax
 import pickle
 
+# CD-NLGSSM imports
 import sys
 sys.path.append('..')
-sys.path.append('../..')
-
+sys.path.append('../src')
 from utils.experiment_utils import *
 from data_generator import generate_data_from_config
 

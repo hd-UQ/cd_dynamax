@@ -16,15 +16,15 @@
 
 #!/bin/bash
 # Loop over data configurations
-for data_config in configs/data/l63_data_x1 configs/data/l63_data_x1_regular \
-                    configs/data/l63_data_x1_regular_lowFreq \
-                    configs/data/l63_data_x1_lowFreq; do
+for data_config in configs/data/l63_data_x1_lowFreq; do
+                    #configs/data/l63_data_x1 configs/data/l63_data_x1_regular \
+                    #configs/data/l63_data_x1_regular_lowFreq \
     # Loop over model configurations
-    for model_config in configs/model/true_l63_mech_x1_initCov400_diffusionCoeff1e-2_emiCov1 \
-                        configs/model/true_l63_mech_x1_initCov100_diffusionCoeff1e-2_emiCov20 \
-                        configs/model/true_l63_mech_x1_initCov100_diffusionCoeff1e-2_emiCov1 \
-                        configs/model/true_l63_mech_x1_initCov100_diffusionCoeff1e-1_emiCov1 \
-                        configs/model/true_l63_mech_x1_initCov400_diffusionCoeff1e-1_emiCov20; do
+    for model_config in configs/model/true_l63_mech_x1_initCov400_diffusionCoeff1e-1_emiCov20 \
+                        configs/model/true_l63_mech_x1_initCov400_diffusionCoeff1e-2_emiCov1 ; do
+                        #configs/model/true_l63_mech_x1_initCov100_diffusionCoeff1e-2_emiCov20 \
+                        #configs/model/true_l63_mech_x1_initCov100_diffusionCoeff1e-2_emiCov1 \
+                        #configs/model/true_l63_mech_x1_initCov100_diffusionCoeff1e-1_emiCov1 \
         # Run the filter then forecast script
         python run_filtering_then_forecast_experiment.py \
             --data_config_file $data_config \
