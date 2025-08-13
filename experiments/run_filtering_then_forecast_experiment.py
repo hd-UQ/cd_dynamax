@@ -19,6 +19,17 @@ def build_results_dir(data_config_file, model_config_file, filter_config_file, o
         os.path.basename(model_config_file).split('.')[0],
         os.path.basename(filter_config_file).split('.')[0]
     )
+def _apply_resets_to_config(cfg: ConfigParser, resets: dict | None):
+    if not resets:
+        return
+    for k, v in resets.items():
+        if "." in k:
+            sect, opt = k.split(".", 1)
+        else:
+            sect, opt = "data_generation", k
+        if sect not in cfg:
+            cfg.add_section(sect)
+        cfg[sect][opt] = str(v)
 
 def _make_data(
     data_config_file,
@@ -27,34 +38,37 @@ def _make_data(
     data_key=None,
     model_config=None,
     param_reset_dict={},
+    data_reset_dict={},
+    data_save_file: str | None = None,   # <-- allow caller to control filename
 ):
-    ## Load data from file (or generate it if needed)--- [DATA CONFIG FILE]
     data_config = ConfigParser()
     data_config.read(data_config_file)
+
     if enforce_twin_experiment:
-        # If enforcing twin experiment, set the true model config file to be the same as the model config file
         data_config['data_generation']['true_model_config_file'] = model_config_file
-    
+
+    # apply resets (supports dotted or bare keys)
+    _apply_resets_to_config(data_config, data_reset_dict)
+
+    # derive/assign key (must be unique per (L, dt, rep)!)
     if data_key is None:
-        # If no key is provided, use the key from the data config file
         data_key = data_config['data_generation']['key']
-        # This is just extracted to create the data save file name below
     else:
-        # If a key is provided, set it in the data config
         data_config['data_generation']['key'] = str(data_key)
 
-    # Generate data
-    # By calling the generate_data_from_config function with the modified config
-    # And indicating the new data_save_file
+    # choose filename (fallback to old pattern if not provided)
+    if data_save_file is None:
+        data_save_file = os.path.join(
+            'data',
+            f"{os.path.basename(model_config_file)}_data_{data_key}.pkl"
+        )
+
     data = generate_data_from_config(
         data_config=data_config,
-        data_save_file=os.path.join(
-            'data',
-            '{}_{}'.format(os.path.basename(model_config_file), f'data_{data_key}.pkl')
-        ),
+        data_save_file=data_save_file,
         model_config=model_config,
         param_reset_dict=param_reset_dict,
-    ) # Note that we will use the data_key to distinguish between different model_configs rather than model_config_file .
+    )
     return data, int(data_key)
 
 
@@ -68,6 +82,7 @@ def run_filter_then_forecast(
     data_key=None,
     ftf_key=None,
     param_reset_dict={},
+    data_reset_dict={},
 ):
     '''Run a filtering and forecasting experiment with specified configurations.
 
@@ -98,6 +113,7 @@ def run_filter_then_forecast(
         enforce_twin_experiment=enforce_twin_experiment,
         data_key=data_key,
         param_reset_dict=param_reset_dict,
+        data_reset_dict=data_reset_dict,
     )
 
     # Create and initialize the CD-NLGSSM model from the model config file
@@ -193,6 +209,7 @@ def eval_filter_then_forecast_experiment(
     data_key=None,
     ftf_key=None,
     param_reset_dict={},
+    data_reset_dict={},
 ):
     '''Evaluate the filtering and forecasting experiment with specified configurations.
 
@@ -216,6 +233,7 @@ def eval_filter_then_forecast_experiment(
         enforce_twin_experiment=enforce_twin_experiment,
         data_key=data_key,
         param_reset_dict=param_reset_dict,
+        data_reset_dict=data_reset_dict,
     )
 
     # Loop through each result directory and load the results
