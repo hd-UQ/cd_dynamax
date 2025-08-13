@@ -10,7 +10,6 @@ sys.path.append('../src')
 from continuous_discrete_nonlinear_gaussian_ssm.models import ContDiscreteNonlinearGaussianSSM
 from utils.experiment_utils import *
 
-# TODO: make sure this loads if file exists, otherwise generate data
 def generate_data_from_config(
         data_config_file=None,
         data_config=None,
