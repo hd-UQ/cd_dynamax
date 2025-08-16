@@ -40,6 +40,7 @@ def _make_data(
     param_reset_dict={},
     data_reset_dict={},
     data_save_file: str | None = None,   # <-- allow caller to control filename
+    data_dir='data',
 ):
     data_config = ConfigParser()
     data_config.read(data_config_file)
@@ -59,7 +60,7 @@ def _make_data(
     # choose filename (fallback to old pattern if not provided)
     if data_save_file is None:
         data_save_file = os.path.join(
-            'data',
+            data_dir,
             f"{os.path.basename(model_config_file)}_data_{data_key}.pkl"
         )
 
@@ -83,6 +84,7 @@ def run_filter_then_forecast(
     ftf_key=None,
     param_reset_dict={},
     data_reset_dict={},
+    data_dir=None,
 ):
     '''Run a filtering and forecasting experiment with specified configurations.
 
@@ -114,6 +116,7 @@ def run_filter_then_forecast(
         data_key=data_key,
         param_reset_dict=param_reset_dict,
         data_reset_dict=data_reset_dict,
+        data_dir=data_dir
     )
 
     # Create and initialize the CD-NLGSSM model from the model config file
@@ -210,6 +213,7 @@ def eval_filter_then_forecast_experiment(
     ftf_key=None,
     param_reset_dict={},
     data_reset_dict={},
+    data_dir=None,
 ):
     '''Evaluate the filtering and forecasting experiment with specified configurations.
 
@@ -234,6 +238,7 @@ def eval_filter_then_forecast_experiment(
         data_key=data_key,
         param_reset_dict=param_reset_dict,
         data_reset_dict=data_reset_dict,
+        data_dir=data_dir
     )
 
     # Loop through each result directory and load the results
@@ -276,6 +281,13 @@ PRETTY_NAME_MAP = {
     "enkf_StateZero": "EnKF (0th order)",
     "ukf_StateFirst": "UKF (1st order)",
     "ukf_StateZeroth": "UKF (0th order)",
+    "covInflation10_ekf_StateFirst_EmissionsFirst": "EKF (1st order) w/ 10x L",
+    "covInflation10_ekf_StateSecond_EmissionsFirst": "EKF (2nd order) w/ 10x L",
+    "covInflation10_ekf_StateZeroth_EmissionsFirst": "EKF (0th order) w/ 10x L",
+    "covInflation10_enkf_StateFirst": "EnKF (1st order) w/ 10x L",
+    "covInflation10_enkf_StateZero": "EnKF (0th order) w/ 10x L",
+    "covInflation10_ukf_StateFirst": "UKF (1st order) w/ 10x L",
+    "covInflation10_ukf_StateZeroth": "UKF (0th order) w/ 10x L",
 }
 
 def pretty_name(method_key: str) -> str:

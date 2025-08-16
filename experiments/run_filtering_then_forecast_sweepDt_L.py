@@ -55,6 +55,7 @@ def load_pickle(path: str):
     with open(path, 'rb') as f:
         return pickle.load(f)
 
+
 # ============== main ==============
 def main():
     ap = argparse.ArgumentParser(description="Simple L–dt sweep using data_reset_dict.")
@@ -62,23 +63,33 @@ def main():
     # Base configs & I/O
     ap.add_argument('--data_config_file', type=str, default='configs/data/l63_data_x1')
     ap.add_argument('--model_config_file', type=str, default='configs/model/true_l63_mech_x1')
-    ap.add_argument('--output_root', type=str, default='results/filter_then_forecast_SWEEP')
+    ap.add_argument('--output_root', type=str, default='results/filter_then_forecast_SWEEP_inflation')
+    ap.add_argument('--data_root', type=str, default='data',
+                    help='where to save data files; defaults to "data" subfolder of output_root')
     ap.add_argument('--T_filter', type=float, default=0.8)
 
     # Grid
     ap.add_argument('--Ls', type=str, default='1e-2,1e-1,1,2,5,10')
     ap.add_argument('--dts', type=str, default='1e-3,1e-2,0.1,0.2,0.5')
     ap.add_argument('--num_reps', type=int, default=10)
-
+    ap.add_argument('--irregular_samples', type=int, default=0,
+                    help='if 1, use irregular sampling; if 0, use regular sampling')
     # Filters
     ap.add_argument('--filters', type=str, default=','.join([
-        "ekf_StateFirst_EmissionsFirst",
-        "ekf_StateSecond_EmissionsFirst",
-        "ekf_StateZeroth_EmissionsFirst",
+        # "covInflation10_ekf_StateFirst_EmissionsFirst",
+        # "covInflation10_ekf_StateSecond_EmissionsFirst",
+        # "covInflation10_ekf_StateZeroth_EmissionsFirst",
+        # "covInflation10_enkf_StateFirst",
+        # "covInflation10_enkf_StateZero",
+        # "covInflation10_ukf_StateFirst",
+        # "covInflation10_ukf_StateZeroth",
+        # "ekf_StateFirst_EmissionsFirst",
+        # "ekf_StateSecond_EmissionsFirst",
+        # "ekf_StateZeroth_EmissionsFirst",
         "enkf_StateFirst",
         "enkf_StateZero",
         # "ukf_StateFirst",
-        "ukf_StateZeroth",
+        # "ukf_StateZeroth",
     ]))
 
     # Run / Eval toggles
@@ -113,6 +124,8 @@ def main():
     dts = parse_csv_floats(args.dts)
     filters = parse_csv_list(args.filters)
 
+    data_dir = ensure_dir(os.path.join(args.output_root, args.data_root))
+
     # ---------------- RUN ----------------
     if args.do_run:
         print("==> RUN PHASE")
@@ -134,7 +147,7 @@ def main():
                         't0': str(args.t0),
                         't1': str(args.t1),
                         'num_samples': str(n_samples),
-                        'irregular_samples': 'False',
+                        'irregular_samples': str(args.irregular_samples),
                         'key': str(data_key),
                     }
                     # if args.enforce_twin_experiment:
@@ -162,6 +175,7 @@ def main():
                             ftf_key=ftf_key,
                             data_reset_dict=data_reset_dict,          # <--- new, simple knob
                             param_reset_dict=param_reset_filter,      # optional
+                            data_dir=data_dir
                         )
 
                     # Per-replicate low-level plots (optional)
@@ -187,17 +201,72 @@ def main():
                             # if your evaluator also accepts data_reset_dict, pass it here too:
                             data_reset_dict=data_reset_dict,
                             param_reset_dict=param_reset_truth,
+                            data_dir=data_dir
                         )
 
     # ---------------- SUMMARY ----------------
     if args.do_eval:
+        def build_metrics_matrix(
+            Ls, dts, num_reps, filters, args,
+        ) -> dict[str, np.ndarray]:
+            """
+            Returns metrics[m] of shape (nL, nDt, nRep), with NaN where missing.
+            Each entry is rel-RMSE over the filtering window for that replicate.
+            """
+            metrics = {m: np.full((len(Ls), len(dts), num_reps), np.nan, dtype=float) for m in filters}
+
+            def data_path_for_key(data_key: int) -> str:
+                # Matches _make_data default save pattern in your run function
+                return os.path.join(data_dir, f"{os.path.basename(args.model_config_file)}_data_{data_key}.pkl")
+
+            for iL, L in enumerate(Ls):
+                for idt, dt in enumerate(dts):
+                    for rep in range(num_reps):
+                        data_key = unique_key(args.base_data_key, iL, idt, rep)
+
+                        # Load the truth data used for this replicate
+                        dp = data_path_for_key(data_key)
+                        if not os.path.exists(dp):
+                            print(f"[WARN] missing data file: {dp}")
+                            continue
+                        data = load_pickle(dp)
+                        Xtrue = np.asarray(data['states'])
+
+                        for m in filters:
+                            res_dir = os.path.join(
+                                args.output_root, f"L={pretty(L)}", f"dt={pretty(dt)}", f"rep={rep}",
+                                os.path.basename(args.data_config_file),
+                                os.path.basename(args.model_config_file),
+                                os.path.basename(f"configs/filter/{m}")
+                            )
+                            rp = os.path.join(res_dir, 'results.pkl')
+                            if not os.path.exists(rp):
+                                # Missing results for this filter/rep
+                                continue
+
+                            res = load_pickle(rp)
+                            i0, i1 = int(res['start_idx_filter']), int(res['stop_idx_filter'])
+                            if i1 <= i0:
+                                continue
+                            f_means = np.asarray(res['filtered']['filtered_means'])
+                            if f_means.shape[0] < i1:
+                                continue
+
+                            metrics[m][iL, idt, rep] = rel_rmse(Xtrue[i0:i1], f_means[i0:i1])
+
+            return metrics
+
         print("==> SUMMARY PHASE")
-        def compute_empirical_summary(metrics_dict, ci_pct: float, center: str):
+
+        # Build metrics cube first (this was missing)
+        metrics = build_metrics_matrix(Ls, dts, args.num_reps, filters, args)
+
+        def compute_empirical_summary(metrics_dict, ci_pct: float, center_mode: str):
             """
             metrics_dict[m] has shape (nL, nDt, nRep) with NaNs for missing reps.
             Returns center[m], lo[m], hi[m], nobs[m] each shape (nL, nDt).
             """
-            center = {}
+            centers = {}
             lo     = {}
             hi     = {}
             nobs   = {}
@@ -205,30 +274,28 @@ def main():
             high_q = 100.0 - low_q
 
             for m, arr in metrics_dict.items():
-                # counts of non-NaN reps
                 n = np.sum(~np.isnan(arr), axis=2)
                 nobs[m] = n
 
-                if center == 'median':
+                if center_mode == 'median':
                     c = np.nanmedian(arr, axis=2)
                 else:  # 'mean'
                     c = np.nanmean(arr, axis=2)
 
-                # Percentile bands (central CI)
                 lo_q = np.nanpercentile(arr, low_q,  axis=2)
                 hi_q = np.nanpercentile(arr, high_q, axis=2)
 
-                # If <2 reps -> no band info (set to NaN so fill_between can skip)
-                mask_insufficient = n < 2
+                # If <2 reps -> no band info
+                mask = n < 2
                 lo_q = lo_q.astype(float); hi_q = hi_q.astype(float)
-                lo_q[mask_insufficient] = np.nan
-                hi_q[mask_insufficient] = np.nan
+                lo_q[mask] = np.nan
+                hi_q[mask] = np.nan
 
-                center[m] = c
-                lo[m]     = lo_q
-                hi[m]     = hi_q
+                centers[m] = c
+                lo[m]      = lo_q
+                hi[m]      = hi_q
 
-            return center, lo, hi, nobs
+            return centers, lo, hi, nobs
 
         centers, lo, hi, nobs = compute_empirical_summary(metrics, args.ci_pct, args.center)
         summary_dir = ensure_dir(os.path.join(args.output_root, 'summary'))
