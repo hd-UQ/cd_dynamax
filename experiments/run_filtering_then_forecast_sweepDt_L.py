@@ -86,6 +86,7 @@ def main():
         # "ekf_StateFirst_EmissionsFirst",
         # "ekf_StateSecond_EmissionsFirst",
         # "ekf_StateZeroth_EmissionsFirst",
+        "enkf_StateDiscrete",
         "enkf_StateFirst",
         "enkf_StateZero",
         # "ukf_StateFirst",
@@ -131,6 +132,7 @@ def main():
         print("==> RUN PHASE")
         for iL, L in enumerate(Ls):
             for idt, dt in enumerate(dts):
+                filter_reset_dict = {'dt_average': dt}  # Optional, for filters that use it
                 for rep in range(args.num_reps):
                     data_key = unique_key(args.base_data_key, iL, idt, rep)
                     ftf_key  = args.base_ftf_key if args.base_ftf_key is not None else data_key + 10
@@ -175,6 +177,7 @@ def main():
                             ftf_key=ftf_key,
                             data_reset_dict=data_reset_dict,          # <--- new, simple knob
                             param_reset_dict=param_reset_filter,      # optional
+                            filter_reset_dict=filter_reset_dict,  # optional, for filter-specific params
                             data_dir=data_dir
                         )
 

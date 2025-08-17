@@ -42,6 +42,7 @@ class EnKFHyperParams(NamedTuple):
     cov_rescaling: float = 1.0
     diffeqsolve_settings: dict = {}
     state_order: str = 'first'
+    dt_average: float = 0.1 # Average timestep for discrete state order, if applicable
 
 
 # Helper functions --- from dynamax 
@@ -95,18 +96,25 @@ def _predict(
     sol = vmap(my_solve, in_axes=0)(x, key_array) # N_particles x 1 time x D_hid
     x_pred = sol[:, 0, :] # N_particles x D_hid
 
-    if filter_hyperparams.state_order=='zeroth':
+    if filter_hyperparams.state_order=='zeroth' or filter_hyperparams.state_order=='discrete':
         # Predicted covariance
-        dt = t1 - t0
+        if filter_hyperparams.state_order == 'zeroth':
+            # For zeroth order, we use the timestep at each step
+            dt = t1 - t0
+        else:
+            # For discrete state order, we use a user-specified average timestep
+            # This maps us into a discrete EnKF setting where the deterministic dynamics still map from t0 to t1
+            # but the same amount of noise is added after each measurement.
+            dt = filter_hyperparams.dt_average
+
         Qc_t = params.dynamics.diffusion_cov.f(None, u, t0)
-        L_t = params.dynamics.diffusion_coefficient.f(None, u, t0)
+        L_t = params.dynamics.diffusion_coefficient.f(None, u, t0) * filter_hyperparams.cov_rescaling
         state_noise_cov = dt * L_t @ Qc_t @ L_t.T # D_hid x D_hid
 
         # add noise MVN(0, state_noise_cov) to the particles (N x D_hid)
         key_array = jr.split(key, x.shape[0])
         noise = vmap(lambda key: jr.multivariate_normal(key=key, mean=jnp.zeros(x.shape[1]), cov=state_noise_cov), in_axes=0)(key_array)
         x_pred += noise
-
     return x_pred
 
 

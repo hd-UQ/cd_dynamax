@@ -84,6 +84,7 @@ def run_filter_then_forecast(
     ftf_key=None,
     param_reset_dict={},
     data_reset_dict={},
+    filter_reset_dict={},
     data_dir=None,
 ):
     '''Run a filtering and forecasting experiment with specified configurations.
@@ -127,6 +128,9 @@ def run_filter_then_forecast(
 
     # Figure-out the filtering/smoothing settings from config
     filter_hyperparams = create_cdnlgssm_filter_from_config(filter_config_file)
+    
+    # Update filter hyperparameters based on filter_reset_dict
+    filter_hyperparams = update_params(filter_hyperparams, filter_reset_dict)
 
     # Assign forecasting and filtering time indices based on T_filter fraction.
     T0 = data['t_emissions'][0]
@@ -279,6 +283,7 @@ PRETTY_NAME_MAP = {
     "ekf_StateZeroth_EmissionsFirst": "EKF (0th order)",
     "enkf_StateFirst": "EnKF (1st order)",
     "enkf_StateZero": "EnKF (0th order)",
+    "enkf_StateDiscrete": "EnKF (Discrete)",
     "ukf_StateFirst": "UKF (1st order)",
     "ukf_StateZeroth": "UKF (0th order)",
     "covInflation10_ekf_StateFirst_EmissionsFirst": "EKF (1st order) w/ 10x L",
