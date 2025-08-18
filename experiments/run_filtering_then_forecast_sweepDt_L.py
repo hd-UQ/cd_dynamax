@@ -86,9 +86,9 @@ def main():
         # "ekf_StateFirst_EmissionsFirst",
         # "ekf_StateSecond_EmissionsFirst",
         # "ekf_StateZeroth_EmissionsFirst",
-        "enkf_StateDiscrete",
         "enkf_StateFirst",
         "enkf_StateZero",
+        "enkf_StateDiscrete",
         # "ukf_StateFirst",
         # "ukf_StateZeroth",
     ]))
@@ -144,6 +144,7 @@ def main():
 
                     # === Build data_reset_dict (NO ConfigParser needed) ===
                     n_samples = num_samples_for_dt(args.t0, args.t1, dt)
+                    print(f"Running for L={pretty(L)}, dt={pretty(dt)}, rep={rep}, n_samples={n_samples}")
                     data_reset_dict = {
                         # everything lives under [data_generation] in your config.
                         't0': str(args.t0),

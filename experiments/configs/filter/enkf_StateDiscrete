@@ -1,6 +1,6 @@
 [EnKF]
     dt_final: 1e-4
-    state_order: zeroth
+    state_order: discrete
     cov_rescaling: 1.0
     N_particles: 30
     perturb_measurements: True
