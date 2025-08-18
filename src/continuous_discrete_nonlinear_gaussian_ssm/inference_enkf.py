@@ -96,7 +96,7 @@ def _predict(
     sol = vmap(my_solve, in_axes=0)(x, key_array) # N_particles x 1 time x D_hid
     x_pred = sol[:, 0, :] # N_particles x D_hid
 
-    if filter_hyperparams.state_order=='zeroth' or filter_hyperparams.state_order=='discrete':
+    if filter_hyperparams.state_order in ['zeroth', 'discrete']:
         # Predicted covariance
         if filter_hyperparams.state_order == 'zeroth':
             # For zeroth order, we use the timestep at each step

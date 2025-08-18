@@ -42,6 +42,7 @@ class UKFHyperParams(NamedTuple):
     cov_rescaling: float = 1.0
     diffeqsolve_settings: dict = {}
     state_order: str = "first"
+    dt_average: float = 0.1 # Average timestep for discrete state order, if applicable
 
 
 # Helper functions --- from dynamax 
@@ -136,7 +137,7 @@ def _predict(
     f = params.dynamics.drift.f
 
     # solve Saarka's ODE 3.183 in thesis
-    if filter_hyperparams.state_order == "zeroth":
+    if filter_hyperparams.state_order in ['zeroth', 'discrete']:
         # This is the zeroth order approximation
         # First, we need to compute the sigma points
         X_t = _compute_sigmas(m, P, n, lamb)
@@ -160,7 +161,15 @@ def _predict(
         P_pred = jnp.tensordot(w_cov, _outer(X_pred - m_pred, X_pred - m_pred), axes=1)
 
         # Finally, we add state noise
-        dt = t1 - t0
+        if filter_hyperparams.state_order == 'zeroth':
+            # For zeroth order, we use the timestep at each step
+            dt = t1 - t0
+        else:
+            # For discrete state order, we use a user-specified average timestep
+            # This maps us into a discrete setting where the deterministic dynamics still map from t0 to t1
+            # but the same amount of noise is added after each measurement.
+            dt = filter_hyperparams.dt_average
+
         Qc_t = params.dynamics.diffusion_cov.f(None, u, t0)
         L_t = params.dynamics.diffusion_coefficient.f(None, u, t0) * filter_hyperparams.cov_rescaling
         P_pred += dt * L_t @ Qc_t @ L_t.T

@@ -45,6 +45,7 @@ class EKFHyperParams(NamedTuple):
     smooth_order: str = 'first'
     cov_rescaling: float = 1.0
     diffeqsolve_settings: dict = {}
+    dt_average: float = 0.1 # Average timestep for discrete state order, if applicable
 
 def _predict(
     m, P, # Current mean and covariance
@@ -77,7 +78,7 @@ def _predict(
 
     # Predicted mean and covariance evolution, by using the EKF state order approximations
     def rhs_all(t, y, args):
-        if filter_hyperparams.state_order=='zeroth':
+        if filter_hyperparams.state_order in ['zeroth', 'discrete']:
             m, = y
         else:
             m, P = y
@@ -94,7 +95,7 @@ def _predict(
         # Evaluate the jacobian of the dynamics function at m and inputs
         F_t = jacfwd(f)(m,u,t)
 
-        if filter_hyperparams.state_order=='zeroth':
+        if filter_hyperparams.state_order in ['zeroth', 'discrete']:
             # Mean evolution
             dmdt = f(m, u, t)
 
@@ -117,13 +118,13 @@ def _predict(
         else:
             raise ValueError('EKF filter_hyperparams.state_order = {} not implemented yet'.format(filter_hyperparams.state_order))
 
-        if filter_hyperparams.state_order=='zeroth':
+        if filter_hyperparams.state_order in ['zeroth', 'discrete']:
             return (dmdt, )
         else:
             return (dmdt, dPdt)
 
     # Zero-th approach, only mean is pushed via RHS ODE
-    if filter_hyperparams.state_order=='zeroth':
+    if filter_hyperparams.state_order in ['zeroth', 'discrete']:
         # Initialize
         y0 = (m,)
 
@@ -132,7 +133,15 @@ def _predict(
         m_final = sol[0][-1]
 
         # Predicted covariance
-        dt = t1 - t0
+        if filter_hyperparams.state_order == 'zeroth':
+            # For zeroth order, we use the timestep at each step
+            dt = t1 - t0
+        else:
+            # For discrete state order, we use a user-specified average timestep
+            # This maps us into a discrete setting where the deterministic dynamics still map from t0 to t1
+            # but the same amount of noise is added after each measurement.
+            dt = filter_hyperparams.dt_average
+
         Qc_t = params.dynamics.diffusion_cov.f(None,u,t0)
         L_t = params.dynamics.diffusion_coefficient.f(None, u, t0) * filter_hyperparams.cov_rescaling
         P_final = P + jnp.sqrt(dt) * L_t @ Qc_t @ L_t.T
