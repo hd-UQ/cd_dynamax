@@ -441,11 +441,11 @@ if __name__ == "__main__":
     # Create optional flags for comamand line arguments
     import argparse
     parser = argparse.ArgumentParser(description='Run experiment with specified configurations.')
-    parser.add_argument('--data_config_file', type=str, default='configs/data/l63_data')
-    parser.add_argument('--model_config_file', type=str, default='configs/model/l63_mech')
+    parser.add_argument('--data_config_file', type=str, default='configs/data/l63_data_x1_hifiSolver')
+    parser.add_argument('--model_config_file', type=str, default='configs/model/l63_mech_x1_hifiSolver')
     parser.add_argument('--filter_config_file', type=str, default='configs/filter/ekf_StateFirst_EmissionsFirst')
     parser.add_argument('--sweep_config_file', type=str, default='configs/likelihood_sweep/sigma')
-    parser.add_argument('--output_dir', type=str, default='results/likelihood_sweep')
+    parser.add_argument('--output_dir', type=str, default='results/likelihood_sweep_x1_hifiSolver')
 
     args = parser.parse_args()
     run_likelihood_sweep(**args.__dict__)
