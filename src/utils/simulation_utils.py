@@ -107,6 +107,9 @@ def filter_and_forecast(
     # Figure out the time points for forecasting
     start_idx_forecast = jnp.where(t_emissions >= T_filter_end)[0][0]
     stop_idx_forecast = jnp.where(t_emissions >= T_forecast_end)[0][0]
+    
+    assert start_idx_filter < stop_idx_filter, "Filtering time points are invalid."
+    assert start_idx_forecast < stop_idx_forecast, "Forecasting time points are invalid."
 
     # Check whether model_params are linear or nonlinear, based on class type
     if isinstance(model_params, ParamsCDLGSSM):

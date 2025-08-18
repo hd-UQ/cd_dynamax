@@ -178,11 +178,12 @@ import re
 # -------------------------------
 
 PRETTY_NAME_MAP = {
-    "ekf_StateFirst_EmissionsFirst": "EKF (1st order, Emiss-1st)",
-    "ekf_StateSecond_EmissionsFirst": "EKF (2nd order, Emiss-1st)",
-    "ekf_StateZeroth_EmissionsFirst": "EKF (0th order, Emiss-1st)",
+    "ekf_StateFirst_EmissionsFirst": "EKF (1st order)",
+    "ekf_StateSecond_EmissionsFirst": "EKF (2nd order)",
+    "ekf_StateZeroth_EmissionsFirst": "EKF (0th order)",
     "enkf_StateFirst": "EnKF (1st order)",
     "enkf_StateZero": "EnKF (0th order)",
+    "enkf_StateDiscrete": "EnKF (Discrete)",
     "ukf_StateFirst": "UKF (1st order)",
     "ukf_StateZeroth": "UKF (0th order)",
 }
@@ -198,6 +199,8 @@ def infer_order(method_key: str) -> str:
         return 'First'
     if re.search(r'second', method_key, re.IGNORECASE):
         return 'Second'
+    if re.search(r'Discrete', method_key, re.IGNORECASE):
+        return 'Discrete'
     return 'Unknown'
 
 def infer_family(method_key: str) -> str:
@@ -221,8 +224,9 @@ def build_style_registry(method_keys):
 
     # Lightness variation (or shade tweak) by order
     order_shade_factor = {
-        'Zeroth': 0.6,   # darker
-        'Zero':   0.6,
+        'Discrete': 0.5,  # darker
+        'Zeroth': 0.8,   # darker
+        'Zero':   0.8,
         'First':  1.0,   # base
         'Second': 1.3,   # lighter
         'Unknown': 1.0,
@@ -285,6 +289,7 @@ def plot_sweep_experiment(
     eval_output_dir: str,
     save_name: str | None = None,
     dpi: int = 300,
+    opt_vline: bool = True,
 ):
     """
     1D eval plotter for the NEW sweep results format.
@@ -318,7 +323,6 @@ def plot_sweep_experiment(
 
         names = res["param_names"]
         if not isinstance(names, (list, tuple)) or len(names) != 1:
-            print("Only 1D sweep plots are supported currently.")
             raise ValueError(f"[{key}] 'param_names' must be a list of length 1; got {names}")
 
         gp = np.asarray(res["grid_points"])
@@ -355,8 +359,9 @@ def plot_sweep_experiment(
     xlabel = rf"${greek_map.get(pname, pname)}$"
 
     # --- Plot ---
-    fig, ax = plt.subplots(figsize=(6.2, 4.2), constrained_layout=True)
+    fig, ax = plt.subplots(figsize=(6.2, 4.2))
 
+    mse_dict = {}
     for key in method_keys:
         style = styles[key]
         x, y = X[key], Y[key]
@@ -372,6 +377,22 @@ def plot_sweep_experiment(
             zorder=style["zorder"],
         )
 
+        # Compute optimum and MSE if possible
+        max_idx = np.argmin(y)
+        opt_x = x[max_idx]
+        if true_val is not None:
+            mse = float((opt_x - true_val) ** 2)
+            mse_dict[key] = mse
+
+        if opt_vline:
+            ax.axvline(
+                opt_x,
+                color=style["color"],
+                linestyle=style["linestyle"],
+                linewidth=style["linewidth"],
+                zorder=style["zorder"],
+            )
+
     if true_val is not None:
         ax.axvline(
             true_val,
@@ -381,18 +402,30 @@ def plot_sweep_experiment(
             zorder=TRUTH_STYLE.get("zorder", 3),
             label=TRUTH_STYLE.get("label", "Truth"),
         )
-
+    
     ax.set_xlabel(xlabel, fontsize=11)
     ax.set_ylabel(r"$-\log p(y\,|\,\theta)$", fontsize=11)
     ax.grid(True, alpha=0.3, linewidth=0.6)
+    ax.set_yscale('log')
 
-    # De-dupe legend
+    # Legend outside with MSE annotation
     handles, labels = ax.get_legend_handles_labels()
-    seen, H, L = set(), [], []
+    new_labels = []
     for h, l in zip(handles, labels):
-        if l and l not in seen:
-            H.append(h); L.append(l); seen.add(l)
-    ax.legend(H, L, frameon=False, fontsize=9, ncol=2, loc="best")
+        if l == TRUTH_STYLE.get("label", "Truth"):
+            new_labels.append(l)
+        else:
+            key = next((k for k, v in styles.items() if v["label"] == l), None)
+            if key in mse_dict:
+                new_labels.append(f"{l} (MSE={mse_dict[key]:.3g})")
+            else:
+                new_labels.append(l)
+
+    ax.legend(
+        handles, new_labels,
+        frameon=False, fontsize=9,
+        loc="center left", bbox_to_anchor=(1.02, 0.5)
+    )
 
     ax.set_title(f"Likelihood Sweep over {xlabel}", fontsize=12)
 
@@ -402,7 +435,6 @@ def plot_sweep_experiment(
     fig.savefig(outpath, dpi=dpi, bbox_inches="tight")
     plt.close(fig)
     print(f"Saved plot to: {outpath}")
-
 
 # Main script gets two arguments: config file and data save file
 if __name__ == "__main__":
@@ -426,6 +458,7 @@ if __name__ == "__main__":
         "ekf_StateSecond_EmissionsFirst",
         "ekf_StateZeroth_EmissionsFirst",
         "enkf_StateFirst",
+        "enkf_StateDiscrete",
         "enkf_StateZero",
         "ukf_StateFirst",
         "ukf_StateZeroth",
