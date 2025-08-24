@@ -1,0 +1,29 @@
+program: l63_dict_laplace.py   # <-- point to your script
+project: l63-dict-learning
+entity: mattlevine22
+method: bayes   # or "random"
+metric:
+  name: learned/neg_log_joint
+  goal: minimize
+
+parameters:
+  num_epochs:
+    values: [100, 1000]
+  init_lr:
+    values: [0.1, 0.01, 0.001]
+  decay_rate:
+    values: [0.1, 0.5]
+  epochs_per_step:
+    values: [100, 1000]
+  laplace_scale:
+    values: [0.5]
+  clip_norm:
+    values: [1.0]
+  diffusion_coeff:
+    values: [0.01]
+  T:
+    values: [100]
+  dt:
+    values: [0.01]
+  seed:
+    values: [0, 1]
