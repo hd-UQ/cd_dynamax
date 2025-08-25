@@ -40,6 +40,7 @@ class EnKFHyperParams(NamedTuple):
     N_particles: float = 25
     perturb_measurements: bool = True
     cov_rescaling: float = 1.0
+    inflation_delta: float = 0.0 # Inflation factor for ensemble spread
     diffeqsolve_settings: dict = {}
     state_order: str = 'first'
     dt_average: float = 0.1 # Average timestep for discrete state order, if applicable
@@ -118,7 +119,7 @@ def _predict(
     return x_pred
 
 
-def _condition_on(key, x, h, R, u, y, t, perturb_measurements=True):
+def _condition_on(key, x, h, R, u, y, t, perturb_measurements=True, inflation_delta=0.0):
     """Condition a Gaussian potential on a new observation
 
     Args:
@@ -158,7 +159,31 @@ def _condition_on(key, x, h, R, u, y, t, perturb_measurements=True):
     # Compute log-likelihood of observation
     ll = MVN(y_pred_mean, y_pred_cov+R).log_prob(y)
 
-    ## Compute Kalman gain
+    # === Inflate ensemble for assimilation if requested ===
+    if inflation_delta > 0.0:
+        x_mean = jnp.mean(x, axis=0)
+        x_inflated = x_mean + (1.0 + inflation_delta) * (x - x_mean)
+        # re-propagate inflated ensemble through emission fn for assimilation
+        y_ensemble_infl = vmap(h, in_axes=(0, None, None))(x_inflated, u_s, t)
+        y_pred_mean_infl = jnp.mean(y_ensemble_infl, axis=0)
+        y_pred_cov_infl = psd(jnp.sum(_outer(y_ensemble_infl - y_pred_mean_infl,
+                                              y_ensemble_infl - y_pred_mean_infl), axis=0) / (n_particles - 1))
+    else:
+        x_inflated = x
+        y_ensemble_infl = y_ensemble
+        y_pred_mean_infl = y_pred_mean                                     # NEW
+        y_pred_cov_infl = y_pred_cov
+
+
+    # compute cross_cov between x and y_data_perturbed
+    # represents "PH^T" in Kalmna gain computation
+    # cross-covariance using inflated ensemble
+    cross_cov = jnp.sum(_outer(x_inflated - jnp.mean(x_inflated, axis=0),
+                               y_ensemble_infl - y_pred_mean_infl), axis=0) / (n_particles - 1)
+
+    S = y_pred_cov_infl + R
+    K = psd_solve(S, cross_cov.T).T
+
     # make perturbed ensemble
     if perturb_measurements:
         # Add noise to the ensemble
@@ -166,14 +191,8 @@ def _condition_on(key, x, h, R, u, y, t, perturb_measurements=True):
     else:
         y_data_perturbed = y
 
-    # compute cross_cov between x and y_data_perturbed
-    # represents "PH^T" in Kalmna gain computation
-    cross_cov = jnp.sum(_outer(x - jnp.mean(x, axis=0), y_ensemble - y_pred_mean), axis=0) / (n_particles - 1)
-    S = y_pred_cov + R
-    K = psd_solve(S, cross_cov.T).T
-
     # Updated the particles
-    x_cond = x + (K @ (y_data_perturbed - y_ensemble).T).T
+    x_cond = x_inflated + (K @ (y_data_perturbed - y_ensemble_infl).T).T
 
     return ll, x_cond
 
@@ -247,7 +266,9 @@ def ensemble_kalman_filter(
 
         # Condition on this emission
         log_likelihood, filtered_x_ens = _condition_on(
-            key_filter, pred_x_ens, h, R, u, y, t0, filter_hyperparams.perturb_measurements
+            key_filter, pred_x_ens, h, R, u, y, t0,
+            filter_hyperparams.perturb_measurements,
+            filter_hyperparams.inflation_delta
         )
 
         # Update the log likelihood

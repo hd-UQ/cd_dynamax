@@ -1,24 +1,18 @@
-program: l63_dict_laplace.py   # <-- point to your script
-project: l63-dict-learning
+program: l63_dict_laplace_localINIT.py  # <-- point to your script
+project: l63-dict-learning-localINIT-x64-inflation
 entity: mattlevine22
-method: bayes   # or "random"
+method: grid   # or "random"
 metric:
   name: learned/neg_log_joint
   goal: minimize
 
 parameters:
-  num_epochs:
-    values: [100, 1000]
+  inflation_delta:
+    values: [0.01, 0.1, 0.5, 0.8]
   init_lr:
-    values: [0.1, 0.01, 0.001]
-  decay_rate:
-    values: [0.1, 0.5]
-  epochs_per_step:
-    values: [100, 1000]
+    values: [0.01, 0.001]
   laplace_scale:
     values: [0.5]
-  clip_norm:
-    values: [1.0]
   diffusion_coeff:
     values: [0.01]
   T:
@@ -26,4 +20,18 @@ parameters:
   dt:
     values: [0.01]
   seed:
-    values: [0, 1]
+    values: [0]
+  state_order:
+    values: ["first"]
+  cov_rescaling:
+    values: [1.0]
+  eps_perturb:
+    values: [10.0, 1.0]
+  clip_norm:
+    values: [1.0]
+  decay_rate:
+    values: [0.5] #[0.5, 0.1]
+  epochs_per_step:
+    values: [1000] #[1000, 100]
+  num_epochs:
+    values: [100, 1000]

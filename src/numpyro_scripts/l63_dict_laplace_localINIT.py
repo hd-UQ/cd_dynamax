@@ -7,7 +7,7 @@ import numpy as np
 import jax
 import jax.numpy as jnp
 # Make sure everything is 64bit (should prevent NaNs, but can be slow)
-# jax.config.update("jax_enable_x64", True)
+jax.config.update("jax_enable_x64", True)
 import jax.random as jr
 import matplotlib.pyplot as plt
 import matplotlib.colors as mcolors
@@ -47,9 +47,9 @@ def plot_coeff_heatmaps(W_true, W_learned, exponents):
     axes[1].set_title("Learned weights (SVI median)"); axes[1].set_xlabel("Term index"); axes[1].set_ylabel("State index")
     fig.colorbar(im1, ax=axes[1], fraction=0.046, pad=0.04)
 
-    rel_err = jnp.abs(W_learned - W_true) / jnp.maximum(jnp.abs(W_true), 1e-8)
-    im2 = axes[2].imshow(rel_err, aspect="auto", cmap="viridis")
-    axes[2].set_title("Relative error"); axes[2].set_xlabel("Term index"); axes[2].set_ylabel("State index")
+    abs_err = jnp.abs(W_learned - W_true) #/ jnp.maximum(jnp.abs(W_true), 1e-8)
+    im2 = axes[2].imshow(abs_err, aspect="auto", cmap="viridis")
+    axes[2].set_title("Absolute error"); axes[2].set_xlabel("Term index"); axes[2].set_ylabel("State index")
     fig.colorbar(im2, ax=axes[2], fraction=0.046, pad=0.04)
 
     return fig
@@ -101,7 +101,8 @@ def make_filter_hyperparams(cfg):
             N_particles=cfg.N_particles,
             state_order=cfg.state_order,
             diffeqsolve_settings=diffeqsolve_settings,
-            cov_rescaling=cfg.cov_rescaling
+            cov_rescaling=cfg.cov_rescaling,
+            inflation_delta=cfg.inflation_delta,
         )
     elif cfg.filter_type == "EFK":
         return EKFHyperParams(
@@ -164,7 +165,7 @@ def main(**cfg):
     FILTER_HYPERPARAMS = make_filter_hyperparams(cfg)
 
     # NumPyro model
-    def model(t_emissions, emissions=None, store_filtered=False, **kwargs):
+    def model(t_emissions, emissions=None, store_filtered=False, store_grad=False, **kwargs):
         
         # Sample or use provided parameters
         weights = get_or_sample("weights", dist.Laplace(0.0, cfg.laplace_scale).expand((state_dim, EXPONENTS.shape[0])).to_event(2), kwargs.get("weights"))
@@ -209,6 +210,26 @@ def main(**cfg):
         numpyro.deterministic("neg_log_joint", -ll - lp)
         numpyro.factor("log_likelihood", ll)
 
+        # Optionally store gradients (for diagnostics)
+        if store_grad:
+            grad_w = jax.grad(lambda w: cdnlgssm_filter(
+                params=build_params(
+                    state_dim=state_dim,
+                    emission_dim=emission_dim,
+                    initial_mean=jnp.zeros(state_dim), 
+                    initial_cov=cfg.initial_cov*jnp.eye(state_dim),
+                    drift=lambda x: adjust_rhs(x, poly_drift(x, w, exponents)),
+                    diffusion_coeff=cfg.diffusion_coeff * jnp.eye(state_dim),
+                    diffusion_cov=jnp.eye(state_dim),
+                    emission_function=lambda x: H @ x,
+                    emission_cov=jnp.eye(emission_dim),
+                ),
+                emissions=emissions,
+                t_emissions=t_emissions,
+                filter_hyperparams=FILTER_HYPERPARAMS
+            ).marginal_loglik)(weights)
+            numpyro.deterministic("grad_neg_log_likelihood_w", grad_w)
+    
 
     # Define the true parameters for the model and its data generation
     true_values = {
@@ -235,8 +256,9 @@ def main(**cfg):
     print(f"True model's neg_log_likelihood from filtering: {float(sim_data['neg_log_likelihood'])}")
     
     # Next, check that the model is well-posed epsilon-close to the truth
+    eps_perturb = cfg.eps_perturb
     print("Checking predictive/ filtering performance at true parameter + small noise...")
-    W_true_noisy = W_true + 0.1 * jr.normal(next(keys), shape=W_true.shape)
+    W_true_noisy = W_true + eps_perturb * jr.normal(next(keys), shape=W_true.shape)
     perturbed_truth_predictive = Predictive(model, num_samples=1)
     perturbed_data = perturbed_truth_predictive(next(keys),
                                                 t_emissions=t_emissions,
@@ -272,8 +294,9 @@ def main(**cfg):
 
     
     # Now, generate a prior predictive conditioned on emissions/t_emissions (for diagnostics)
+    print("Checking prior predictive...")
     prior_predictive = Predictive(model, num_samples=cfg.n_prior_samples)
-    prior_data = prior_predictive(next(keys), t_emissions=t_emissions, emissions=emissions_obs, **known_values)
+    prior_data = prior_predictive(next(keys), t_emissions=t_emissions, emissions=emissions_obs, store_grad=True, **known_values)
     # Compute fraction of NaN values in the neg-log-likelihood computation
     nan_fraction = jnp.isnan(prior_data["neg_log_likelihood"]).mean()
     wandb.log({"metrics/prior_predictive/nan_fraction": nan_fraction})
@@ -286,6 +309,18 @@ def main(**cfg):
         # Optionally, you can raise an error here to stop execution        
         raise ValueError(f"NaN values found in prior predictive neg_log_likelihood: {nan_fraction:.2%} of samples are NaN. Training is TOO DANGEROUS to proceed; please refine your prior, protect the RHS from large jumps, ensure covariances are PSD, and/or try 64bit precision.")
 
+    # Now compute fraction of NaN values in the grad_neg_log_likelihood_w computation
+    nan_fraction_grad = jnp.isnan(prior_data["grad_neg_log_likelihood_w"]).mean()
+    wandb.log({"metrics/prior_predictive/nan_fraction_grad": nan_fraction_grad})
+    if nan_fraction_grad > 0.0:
+        print(f"Warning: {nan_fraction_grad:.2%} of prior predictive grad_neg_log_likelihood_w samples are NaN")
+        # Show any one example weights matrix with NaN values
+        j = jnp.where(jnp.isnan(prior_data["grad_neg_log_likelihood_w"]))[0][0]
+        print("Example weights with NaN in prior predictive grad_neg_log_likelihood_w:")
+        print(prior_data["weights"][j])
+        # Optionally, you can raise an error here to stop execution        
+        raise ValueError(f"NaN values found in prior predictive grad_neg_log_likelihood_w: {nan_fraction_grad:.2%} of samples are NaN. Training is TOO DANGEROUS to proceed; please refine your prior, protect the RHS from large jumps, ensure covariances are PSD, and/or try 64bit precision.")
+
     # SVI
     optimizer = make_optimizer(
         initial_learning_rate=cfg.init_lr,
@@ -296,13 +331,36 @@ def main(**cfg):
         clip_norm=cfg.clip_norm,
     )
     
-    def make_init_loc_fn(W_true, eps, key):
+    def make_init_value(W_true, eps, key):
         flat_W = W_true.ravel()
         noise = jr.normal(key, shape=flat_W.shape) * jnp.sqrt(eps)
         init_val = flat_W + noise
-        return init_to_value(values={"weights": init_val.reshape(W_true.shape)})
+        return init_val.reshape(W_true.shape)
 
-    init_loc_fn = make_init_loc_fn(W_true, eps=1, key=next(keys))
+    def make_init_loc_fn(W_true, eps, key):
+        weights = make_init_value(W_true, eps, key)
+        return init_to_value(values={"weights": weights})
+
+    init_key = next(keys)
+    init_loc_fn = make_init_loc_fn(W_true, eps=eps_perturb, key=init_key)
+    
+    # First, check feasibility of the initialization
+    W_init = make_init_value(W_true, eps=eps_perturb, key=init_key)
+    # Run model in predictive mode
+    print("Checking initialization predictive...")
+    init_predictive = Predictive(model, num_samples=1)
+    init_data = init_predictive(next(keys), t_emissions=t_emissions, emissions=emissions_obs, weights=W_init, store_filtered=True)
+    print(f"Initialization neg_log_likelihood from filtering: {float(init_data['neg_log_likelihood'])}")
+    if jnp.isnan(init_data['neg_log_likelihood']):
+        print("Initialization weights: ", W_init)
+        raise ValueError("NaN value found in initialization neg_log_likelihood. Training is TOO DANGEROUS to proceed; please refine your prior, protect the RHS from large jumps, ensure covariances are PSD, and/or try 64bit precision.")
+
+    init_data = init_predictive(next(keys), t_emissions=t_emissions, emissions=emissions_obs, weights=W_init, store_filtered=True, store_grad=True)
+    print(f"Initialization grad_neg_log_likelihood_w from filtering: {init_data['grad_neg_log_likelihood_w']}")
+    if jnp.any(jnp.isnan(init_data['grad_neg_log_likelihood_w'])):
+        print("Initialization weights: ", W_init)
+        raise ValueError("NaN value found in initialization grad_neg_log_likelihood_w. Training is TOO DANGEROUS to proceed; please refine your prior, protect the RHS from large jumps, ensure covariances are PSD, and/or try 64bit precision.")
+
     # init_loc_fn = init_to_median()
     # init_loc_fn = init_to_value(values={"weights": W_true})
     guide = AutoDelta(model, init_loc_fn=init_loc_fn)
@@ -329,6 +387,8 @@ def main(**cfg):
     fig = plot_coeff_heatmaps(W_true, W_learned, EXPONENTS)
     wandb.log({"fig/W_true_vs_W_learned": wandb.Image(fig)})
     plt.close(fig)
+    print("W_true: ", W_true)
+    print("W_learned: ", W_learned)
 
     # Log the trajectory from filtering
     print("Logging trajectories from filtering with learned model...")
@@ -363,6 +423,7 @@ if __name__ == "__main__":
 
     # Prior parameters
     parser.add_argument("--laplace_scale", type=float, default=0.5)
+    parser.add_argument("--eps_perturb", type=float, default=0.1) # noise level for initializing near the truth
 
     # True system parameters
     parser.add_argument("--initial_cov", type=float, default=100.0) # initial state covariance (times identity)
@@ -374,9 +435,10 @@ if __name__ == "__main__":
     # Filtering algorithm hyperparameters
     parser.add_argument("--filter_type", type=str, default="EnKF")  # "EnKF", "EFK", "UKF", "PF"
     parser.add_argument("--N_particles", type=int, default=25)  # Number of particles for EnKF
-    parser.add_argument("--state_order", type=str, default="zeroth")  # "zeroth", "first", "second"
+    parser.add_argument("--state_order", type=str, default="first")  # "zeroth", "first", "second"
     parser.add_argument("--diffeqsolve_max_steps", type=int, default=1000)  # Max steps for the ODE solver between filtered timesteps
     parser.add_argument("--cov_rescaling", type=float, default=1000.0)  # Covariance rescaling factor for EnKF
+    parser.add_argument("--inflation_delta", type=float, default=0.0)  # Inflation delta for EnKF
     
     # Diagnostics
     parser.add_argument("--n_prior_samples", type=int, default=100)
