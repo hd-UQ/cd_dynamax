@@ -8,15 +8,15 @@ metric:
 
 parameters:
   diffusion_coeff:
-    values: [1.0, 1e-1, 1e-2]
+    values: [1.0, 0.1, 0.01]
   T:
     values: [40, 100]
   dt:
-    values: [1e-2, 1e-3, 1e-1]
+    values: [0.01, 0.001, 0.1]
   diffeqsolve_max_steps:
     values: [100, 1000]
   init_lr:
-    values: [1e-2, 1e-1, 1e-3]
+    values: [0.01, 0.1, 0.001] #[1e-2, 1e-1, 1e-3]
   seed:
     values: [0, 1]
   num_epochs:
