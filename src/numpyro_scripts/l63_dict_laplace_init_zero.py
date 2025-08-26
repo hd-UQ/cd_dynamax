@@ -593,7 +593,7 @@ if __name__ == "__main__":
     parser.add_argument("--filter_type", type=str, default="EnKF")  # "EnKF", "EFK", "UKF", "PF"
     parser.add_argument("--N_particles", type=int, default=25)  # Number of particles for EnKF
     parser.add_argument("--state_order", type=str, default="first")  # "zeroth", "first", "second"
-    parser.add_argument("--diffeqsolve_max_steps", type=int, default=1e2)  # Max steps for the ODE solver between filtered timesteps
+    parser.add_argument("--diffeqsolve_max_steps", type=int, default=100)  # Max steps for the ODE solver between filtered timesteps
     parser.add_argument("--cov_rescaling", type=float, default=1.0)  # Covariance rescaling factor for EnKF
     parser.add_argument("--inflation_delta", type=float, default=0.0)  # Inflation delta for EnKF
     

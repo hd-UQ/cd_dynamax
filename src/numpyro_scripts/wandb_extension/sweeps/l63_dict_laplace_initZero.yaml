@@ -14,7 +14,7 @@ parameters:
   dt:
     values: [1e-2, 1e-3, 1e-1]
   diffeqsolve_max_steps:
-    values: [1e2, 1e3]
+    values: [100, 1000]
   init_lr:
     values: [1e-2, 1e-1, 1e-3]
   seed:
