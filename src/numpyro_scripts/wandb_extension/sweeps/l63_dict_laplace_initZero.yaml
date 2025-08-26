@@ -7,17 +7,17 @@ metric:
   goal: minimize
 
 parameters:
-  init_lr:
-    values: [1e-2, 1e-1, 1e-3]
   diffusion_coeff:
     values: [1.0, 1e-1, 1e-2]
   T:
     values: [40, 100]
   dt:
     values: [1e-2, 1e-3, 1e-1]
-  num_epochs:
-    values: [1000]
   diffeqsolve_max_steps:
     values: [1e2, 1e3]
+  init_lr:
+    values: [1e-2, 1e-1, 1e-3]
   seed:
     values: [0, 1]
+  num_epochs:
+    values: [500]
