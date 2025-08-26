@@ -263,8 +263,8 @@ def main(**cfg):
             numpyro.deterministic('predicted_means', filtered.predicted_means)
             numpyro.deterministic('predicted_covariances', filtered.predicted_covariances)
             numpyro.deterministic('neg_loglik_steps', -filtered.loglik_step)
-            numpyro.deterministic('S', filtered.S)
-            numpyro.deterministic('K', filtered.K)
+            # numpyro.deterministic('S', filtered.S)
+            # numpyro.deterministic('K', filtered.K)
             numpyro.deterministic('innovation', filtered.innovation)
             numpyro.deterministic('nis', filtered.nis)
             numpyro.deterministic('min_eig_S', filtered.min_eig_S)
@@ -439,11 +439,11 @@ def main(**cfg):
     # SVI
     optimizer = make_optimizer(
         initial_learning_rate=cfg.init_lr,
-        decay_factor=cfg.decay_rate,
-        epochs_per_step=cfg.epochs_per_step,
+        # decay_factor=cfg.decay_rate,
+        # epochs_per_step=cfg.epochs_per_step,
         num_epochs=cfg.num_epochs,
         use_lr_scheduler=cfg.use_lr_scheduler,
-        clip_norm=cfg.clip_norm,
+        # clip_norm=cfg.clip_norm,
     )
     
     def make_init_value(W_true, eps, key):
@@ -460,7 +460,13 @@ def main(**cfg):
     init_loc_fn = make_init_loc_fn(W_true, eps=eps_perturb, key=init_key)
     
     # First, check feasibility of the initialization
-    W_init = make_init_value(W_true, eps=eps_perturb, key=init_key)
+    # W_init = make_init_value(W_true, eps=eps_perturb, key=init_key)
+    W_init = jnp.zeros_like(W_true)  # try zero initialization
+    print("W_init: ", W_init)
+    
+    fig = plot_coeff_heatmaps(W_true, W_init, EXPONENTS)
+    wandb.log({"fig/W_true_vs_W_init": wandb.Image(fig)})
+
     # Run model in predictive mode
     print("Checking initialization predictive...")
     init_predictive = Predictive(model, num_samples=1)
@@ -565,12 +571,12 @@ if __name__ == "__main__":
     parser.add_argument("--seed", type=int, default=0)
 
     # Optimization
-    parser.add_argument("--num_epochs", type=int, default=100)
-    parser.add_argument("--init_lr", type=float, default=1e-2)
-    parser.add_argument("--use_lr_scheduler", type=int, default=1) # 1 for True, 0 for False
-    parser.add_argument("--decay_rate", type=float, default=0.5)
-    parser.add_argument("--epochs_per_step", type=int, default=200)
-    parser.add_argument("--clip_norm", type=float, default=1.0)  # None for no clipping, or a float value
+    parser.add_argument("--num_epochs", type=int, default=1000)
+    parser.add_argument("--init_lr", type=float, default=1e-1)
+    parser.add_argument("--use_lr_scheduler", type=int, default=0) # 1 for True, 0 for False
+    # parser.add_argument("--decay_rate", type=float, default=0.5)
+    # parser.add_argument("--epochs_per_step", type=int, default=200)
+    # parser.add_argument("--clip_norm", type=float, default=1.0)  # None for no clipping, or a float value
 
     # Prior parameters
     parser.add_argument("--laplace_scale", type=float, default=0.5)
@@ -578,8 +584,8 @@ if __name__ == "__main__":
 
     # True system parameters
     parser.add_argument("--initial_cov", type=float, default=100.0) # initial state covariance (times identity)
-    parser.add_argument("--diffusion_coeff", type=float, default=0.01)
-    parser.add_argument("--T", type=int, default=100) # final time
+    parser.add_argument("--diffusion_coeff", type=float, default=1.0)
+    parser.add_argument("--T", type=int, default=40) # final time
     parser.add_argument("--dt", type=float, default=0.01) # time step size
     parser.add_argument("--emission_dim", type=int, default=3) # observation dimension (default is to observe the first "emission_dim" states)
 
@@ -587,12 +593,12 @@ if __name__ == "__main__":
     parser.add_argument("--filter_type", type=str, default="EnKF")  # "EnKF", "EFK", "UKF", "PF"
     parser.add_argument("--N_particles", type=int, default=25)  # Number of particles for EnKF
     parser.add_argument("--state_order", type=str, default="first")  # "zeroth", "first", "second"
-    parser.add_argument("--diffeqsolve_max_steps", type=int, default=1000)  # Max steps for the ODE solver between filtered timesteps
-    parser.add_argument("--cov_rescaling", type=float, default=1000.0)  # Covariance rescaling factor for EnKF
+    parser.add_argument("--diffeqsolve_max_steps", type=int, default=1e2)  # Max steps for the ODE solver between filtered timesteps
+    parser.add_argument("--cov_rescaling", type=float, default=1.0)  # Covariance rescaling factor for EnKF
     parser.add_argument("--inflation_delta", type=float, default=0.0)  # Inflation delta for EnKF
     
     # Diagnostics
-    parser.add_argument("--n_prior_samples", type=int, default=100)
+    parser.add_argument("--n_prior_samples", type=int, default=2)
 
     # Parse arguments
     args = parser.parse_args()

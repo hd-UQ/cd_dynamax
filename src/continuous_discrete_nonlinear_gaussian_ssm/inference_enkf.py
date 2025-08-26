@@ -157,7 +157,7 @@ def _condition_on(key, x, h, R, u, y, t, perturb_measurements=True, inflation_de
     )
 
     # Compute log-likelihood of observation
-    ll = MVN(y_pred_mean, y_pred_cov+R).log_prob(y)
+    ll_step = MVN(y_pred_mean, y_pred_cov+R).log_prob(y)
 
     # === Inflate ensemble for assimilation if requested ===
     if inflation_delta > 0.0:
@@ -181,7 +181,7 @@ def _condition_on(key, x, h, R, u, y, t, perturb_measurements=True, inflation_de
     cross_cov = jnp.sum(_outer(x_inflated - jnp.mean(x_inflated, axis=0),
                                y_ensemble_infl - y_pred_mean_infl), axis=0) / (n_particles - 1)
 
-    S = y_pred_cov_infl + R
+    S = y_pred_cov_infl + R + 1e-6 * jnp.eye(R.shape[0])  # Add small jitter for numerical stability
     K = psd_solve(S, cross_cov.T).T
 
     # make perturbed ensemble
@@ -194,7 +194,25 @@ def _condition_on(key, x, h, R, u, y, t, perturb_measurements=True, inflation_de
     # Updated the particles
     x_cond = x_inflated + (K @ (y_data_perturbed - y_ensemble_infl).T).T
 
-    return ll, x_cond
+    # --- Diagnostics ---
+    innovation = y - y_pred_mean
+    nis = innovation @ jnp.linalg.solve(S, innovation)  # normalized innovation squared
+    eigvals_S = jnp.linalg.eigvalsh(S)
+    min_eig_S = jnp.min(eigvals_S)
+    max_eig_S = jnp.max(eigvals_S)
+    cond_S = max_eig_S / min_eig_S
+
+    return {
+        "loglik_step": ll_step,
+        "x_cond": x_cond,
+        "S": S,
+        "K": K,
+        "innovation": innovation,
+        "nis": nis,
+        "min_eig_S": min_eig_S,
+        "cond_S": cond_S,
+    }
+
 
 
 def ensemble_kalman_filter(
@@ -253,7 +271,7 @@ def ensemble_kalman_filter(
     inputs = _process_input(inputs, num_timesteps)
 
     def _step(carry, args):
-        ll, pred_x_ens = carry
+        ll_cum, pred_x_ens = carry
         key, t0, t1, t0_idx = args
 
         # split key for (1) diffeqsolve, (2) perturbed measurements
@@ -265,14 +283,15 @@ def ensemble_kalman_filter(
         R = params.emissions.emission_cov.f(None, u, t0)
 
         # Condition on this emission
-        log_likelihood, filtered_x_ens = _condition_on(
+        cond_dict = _condition_on(
             key_filter, pred_x_ens, h, R, u, y, t0,
             filter_hyperparams.perturb_measurements,
             filter_hyperparams.inflation_delta
         )
+        filtered_x_ens = cond_dict['x_cond']
 
         # Update the log likelihood
-        ll += log_likelihood
+        ll_cum += cond_dict['loglik_step']
 
         # compute Gaussian statistics
         filtered_mean = jnp.mean(filtered_x_ens, axis=0)
@@ -294,16 +313,25 @@ def ensemble_kalman_filter(
         )
 
         # Build carry and output states
-        carry = (ll, pred_x_ens)
+        carry = (ll_cum, pred_x_ens)
         outputs = {
             # TODO: if interested, save filtered/predicted particles here.
             "filtered_means": filtered_mean,
             "filtered_covariances": filtered_cov,
             "predicted_means": pred_mean,
             "predicted_covariances": pred_cov,
-            "marginal_loglik": ll,
+            "loglik_step": cond_dict['loglik_step'],
+            "S": cond_dict["S"],
+            "K": cond_dict["K"],
+            "innovation": cond_dict["innovation"],
+            "nis": cond_dict["nis"],
+            "min_eig_S": cond_dict["min_eig_S"],
+            "cond_S": cond_dict["cond_S"],
+            "cond_K": jnp.linalg.cond(cond_dict["K"]),
+            "x_ens_filtered": filtered_x_ens,
+            "x_ens_predicted": pred_x_ens,
         }
-        outputs = {key: val for key, val in outputs.items() if key in output_fields}
+        outputs = {key: val for key, val in outputs.items()} # if key in output_fields}
         return carry, outputs
 
     # Build keys to be used to: (1) draw initial particles, (2) run each step of the filter
@@ -318,9 +346,9 @@ def ensemble_kalman_filter(
     carry = (0.0, x_ens_init)
 
     # compute ll and outputs using a for loop instead of lax.scan to debug
-    (ll, *_), outputs = lax.scan(_step, carry, (key_times, t0, t1, t0_idx))
+    (ll_total, *_), outputs = lax.scan(_step, carry, (key_times, t0, t1, t0_idx))
 
-    outputs = {"marginal_loglik": ll, **outputs}
+    outputs = {"marginal_loglik": ll_total, **outputs}
     posterior_filtered = PosteriorGSSMFiltered(
         **outputs,
     )

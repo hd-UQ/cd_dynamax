@@ -118,10 +118,20 @@ class PosteriorGSSMFiltered(NamedTuple):
 
     """
     marginal_loglik: Union[Scalar, Float[Array, "ntime"]]
+    loglik_step: Union[Scalar, Float[Array, "ntime"]] = None
     filtered_means: Optional[Float[Array, "ntime state_dim"]] = None
     filtered_covariances: Optional[Float[Array, "ntime state_dim state_dim"]] = None
     predicted_means: Optional[Float[Array, "ntime state_dim"]] = None
     predicted_covariances: Optional[Float[Array, "ntime state_dim state_dim"]] = None
+    x_ens_filtered: Optional[Float[Array, "ntime n_particles state_dim"]] = None
+    x_ens_predicted: Optional[Float[Array, "ntime n_particles state_dim"]] = None
+    S: Optional[Float[Array, "ntime emission_dim emission_dim"]] = None
+    K: Optional[Float[Array, "ntime state_dim emission_dim"]] = None
+    innovation: Optional[Float[Array, "ntime emission_dim"]] = None
+    nis: Optional[Float[Array, "ntime"]] = None
+    min_eig_S: Optional[Float[Array, "ntime"]] = None
+    cond_S: Optional[Float[Array, "ntime"]] = None
+    cond_K: Optional[Float[Array, "ntime"]] = None
 
 
 class PosteriorGSSMSmoothed(NamedTuple):
