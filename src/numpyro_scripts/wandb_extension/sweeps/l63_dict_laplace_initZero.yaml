@@ -1,5 +1,5 @@
 program: l63_dict_laplace_init_zero.py  # <-- point to your script
-project: l63-dict-learning-init-zero-x64
+project: l63-dict-learning-init-zero-x64-lightweight
 entity: mattlevine22
 method: grid   # or "random"
 metric:
@@ -8,7 +8,7 @@ metric:
 
 parameters:
   diffusion_coeff:
-    values: [1.0, 0.1, 0.01]
+    values: [1.0, 0.01]
   T:
     values: [40, 100]
   dt:
@@ -16,8 +16,8 @@ parameters:
   diffeqsolve_max_steps:
     values: [100, 1000]
   init_lr:
-    values: [0.01, 0.1, 0.001] #[1e-2, 1e-1, 1e-3]
+    values: [0.01, 0.001]
   seed:
     values: [0, 1]
   num_epochs:
-    values: [500]
+    values: [1000]

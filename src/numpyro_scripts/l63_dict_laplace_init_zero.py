@@ -328,17 +328,18 @@ def main(**cfg):
     print(f"True model's neg_log_likelihood from filtering: {float(sim_data['neg_log_likelihood'])}")
     
     # Now plot the filtering ensemble trajectories for the true model
-    print("Plotting filtering ensemble trajectories for the true model...")
-    fig = plot_particle_diagnostics(
-        t_emissions=t_emissions.squeeze(),
-        x_ens_filtered=sim_data["x_ens_filtered"][0],   # shape (T, N, D)
-        x_ens_predicted=sim_data["x_ens_predicted"][0], # shape (T, N, D)
-        observations=emissions_obs,
-        figsize=(12, 8),
-        start_idx=0,
-        stop_idx=20,
-    )
-    wandb.log({"fig/true/ensembles_0to20": wandb.Image(fig)})
+    if cfg.log_filtering:
+        print("Plotting filtering ensemble trajectories for the true model...")
+        fig = plot_particle_diagnostics(
+            t_emissions=t_emissions.squeeze(),
+            x_ens_filtered=sim_data["x_ens_filtered"][0],   # shape (T, N, D)
+            x_ens_predicted=sim_data["x_ens_predicted"][0], # shape (T, N, D)
+            observations=emissions_obs,
+            figsize=(12, 8),
+            start_idx=0,
+            stop_idx=20,
+        )
+        wandb.log({"fig/true/ensembles_0to20": wandb.Image(fig)})
 
     # Next, check that the model is well-posed epsilon-close to the truth
     eps_perturb = cfg.eps_perturb
@@ -356,56 +357,58 @@ def main(**cfg):
         "metrics/perturbed/neg_log_lik": float(perturbed_data["neg_log_likelihood"]),
         "metrics/perturbed/neg_log_joint": float(perturbed_data["neg_log_joint"]),
     })
-    print(f"True+epsilon (perturbed) model's neg_log_likelihood from filtering: {float(perturbed_data['neg_log_likelihood'])}")
-    fig = plot_particle_diagnostics(
-        t_emissions=t_emissions.squeeze(),
-        x_ens_filtered=perturbed_data["x_ens_filtered"][0],   # shape (T, N, D)
-        x_ens_predicted=perturbed_data["x_ens_predicted"][0], # shape (T, N, D)
-        observations=emissions_obs,
-        figsize=(12, 8),
-        start_idx=0,
-        stop_idx=20,
-    )
-    wandb.log({"fig/perturbed/ensembles_0to20": wandb.Image(fig)})
 
     # Log the trajectory from filtering
-    print("Logging trajectories from filtering/simulations with true and perturbed-truth models...")
-    # Trajectories use "time" as their x-axis
-    wandb.define_metric("filtering/true/true_state_*", step_metric="time")
-    wandb.define_metric("filtering/true/pred_mean_*", step_metric="time")
-    wandb.define_metric("filtering/true/filtered_mean_*", step_metric="time")
-    wandb.define_metric("filtering/true/cond_K", step_metric="time")
-    wandb.define_metric("filtering/true/cond_S", step_metric="time")
-    wandb.define_metric("filtering/true/min_eig_S", step_metric="time")
-    wandb.define_metric("filtering/true/nis", step_metric="time")
-    wandb.define_metric("filtering/true/neg_loglik_steps", step_metric="time")
-    wandb.define_metric("filtering/perturbed/pred_mean_*", step_metric="time")
-    wandb.define_metric("filtering/perturbed/filtered_mean_*", step_metric="time")
-    wandb.define_metric("filtering/perturbed/cond_K", step_metric="time")
-    wandb.define_metric("filtering/perturbed/cond_S", step_metric="time")
-    wandb.define_metric("filtering/perturbed/min_eig_S", step_metric="time")
-    wandb.define_metric("filtering/perturbed/nis", step_metric="time")
-    wandb.define_metric("filtering/perturbed/neg_loglik_steps", step_metric="time")
-    for t in range(sim_data["predicted_means"].shape[1]):
-        log_dict = {"time": t}
-        log_dict["filtering/true/cond_S"] = float(sim_data["cond_S"][0, t])
-        log_dict["filtering/true/min_eig_S"] = float(sim_data["min_eig_S"][0, t])
-        log_dict["filtering/true/nis"] = float(sim_data["nis"][0, t])
-        log_dict["filtering/true/neg_loglik_steps"] = float(sim_data["neg_loglik_steps"][0, t])
-        log_dict["filtering/true/cond_K"] = float(sim_data["cond_K"][0, t])
-        log_dict["filtering/perturbed/cond_K"] = float(perturbed_data["cond_K"][0, t])
-        log_dict["filtering/perturbed/cond_S"] = float(perturbed_data["cond_S"][0, t])
-        log_dict["filtering/perturbed/min_eig_S"] = float(perturbed_data["min_eig_S"][0, t])
-        log_dict["filtering/perturbed/nis"] = float(perturbed_data["nis"][0, t])
-        log_dict["filtering/perturbed/neg_loglik_steps"] = float(perturbed_data["neg_loglik_steps"][0, t])
-        for d in range(state_dim):
-            log_dict[f"filtering/true/true_state_dim{d}"] = float(sim_data["states"][0, t, d])
-            log_dict[f"filtering/true/pred_mean_dim{d}"] = float(sim_data["predicted_means"][0, t, d])
-            log_dict[f"filtering/true/filtered_mean_dim{d}"] = float(sim_data["filtered_means"][0, t, d])
-            log_dict[f"filtering/perturbed/pred_mean_dim{d}"] = float(perturbed_data["predicted_means"][0, t, d])
-            log_dict[f"filtering/perturbed/filtered_mean_dim{d}"] = float(perturbed_data["filtered_means"][0, t, d])
-        # Log the current time step
-        wandb.log(log_dict)
+    if cfg.log_filtering:
+        print(f"True+epsilon (perturbed) model's neg_log_likelihood from filtering: {float(perturbed_data['neg_log_likelihood'])}")
+        fig = plot_particle_diagnostics(
+            t_emissions=t_emissions.squeeze(),
+            x_ens_filtered=perturbed_data["x_ens_filtered"][0],   # shape (T, N, D)
+            x_ens_predicted=perturbed_data["x_ens_predicted"][0], # shape (T, N, D)
+            observations=emissions_obs,
+            figsize=(12, 8),
+            start_idx=0,
+            stop_idx=20,
+        )
+        wandb.log({"fig/perturbed/ensembles_0to20": wandb.Image(fig)})
+
+        print("Logging trajectories from filtering/simulations with true and perturbed-truth models...")
+        # Trajectories use "time" as their x-axis
+        wandb.define_metric("filtering/true/true_state_*", step_metric="time")
+        wandb.define_metric("filtering/true/pred_mean_*", step_metric="time")
+        wandb.define_metric("filtering/true/filtered_mean_*", step_metric="time")
+        wandb.define_metric("filtering/true/cond_K", step_metric="time")
+        wandb.define_metric("filtering/true/cond_S", step_metric="time")
+        wandb.define_metric("filtering/true/min_eig_S", step_metric="time")
+        wandb.define_metric("filtering/true/nis", step_metric="time")
+        wandb.define_metric("filtering/true/neg_loglik_steps", step_metric="time")
+        wandb.define_metric("filtering/perturbed/pred_mean_*", step_metric="time")
+        wandb.define_metric("filtering/perturbed/filtered_mean_*", step_metric="time")
+        wandb.define_metric("filtering/perturbed/cond_K", step_metric="time")
+        wandb.define_metric("filtering/perturbed/cond_S", step_metric="time")
+        wandb.define_metric("filtering/perturbed/min_eig_S", step_metric="time")
+        wandb.define_metric("filtering/perturbed/nis", step_metric="time")
+        wandb.define_metric("filtering/perturbed/neg_loglik_steps", step_metric="time")
+        for t in range(sim_data["predicted_means"].shape[1]):
+            log_dict = {"time": t}
+            log_dict["filtering/true/cond_S"] = float(sim_data["cond_S"][0, t])
+            log_dict["filtering/true/min_eig_S"] = float(sim_data["min_eig_S"][0, t])
+            log_dict["filtering/true/nis"] = float(sim_data["nis"][0, t])
+            log_dict["filtering/true/neg_loglik_steps"] = float(sim_data["neg_loglik_steps"][0, t])
+            log_dict["filtering/true/cond_K"] = float(sim_data["cond_K"][0, t])
+            log_dict["filtering/perturbed/cond_K"] = float(perturbed_data["cond_K"][0, t])
+            log_dict["filtering/perturbed/cond_S"] = float(perturbed_data["cond_S"][0, t])
+            log_dict["filtering/perturbed/min_eig_S"] = float(perturbed_data["min_eig_S"][0, t])
+            log_dict["filtering/perturbed/nis"] = float(perturbed_data["nis"][0, t])
+            log_dict["filtering/perturbed/neg_loglik_steps"] = float(perturbed_data["neg_loglik_steps"][0, t])
+            for d in range(state_dim):
+                log_dict[f"filtering/true/true_state_dim{d}"] = float(sim_data["states"][0, t, d])
+                log_dict[f"filtering/true/pred_mean_dim{d}"] = float(sim_data["predicted_means"][0, t, d])
+                log_dict[f"filtering/true/filtered_mean_dim{d}"] = float(sim_data["filtered_means"][0, t, d])
+                log_dict[f"filtering/perturbed/pred_mean_dim{d}"] = float(perturbed_data["predicted_means"][0, t, d])
+                log_dict[f"filtering/perturbed/filtered_mean_dim{d}"] = float(perturbed_data["filtered_means"][0, t, d])
+            # Log the current time step
+            wandb.log(log_dict)
 
     
     # Now, generate a prior predictive conditioned on emissions/t_emissions (for diagnostics)
@@ -443,9 +446,9 @@ def main(**cfg):
         # epochs_per_step=cfg.epochs_per_step,
         num_epochs=cfg.num_epochs,
         use_lr_scheduler=cfg.use_lr_scheduler,
-        # clip_norm=cfg.clip_norm,
+        clip_norm=cfg.clip_norm if cfg.clip_norm > 0.0 else None,
     )
-    
+
     def make_init_value(W_true, eps, key):
         flat_W = W_true.ravel()
         noise = jr.normal(key, shape=flat_W.shape) * jnp.sqrt(eps)
@@ -472,30 +475,31 @@ def main(**cfg):
     init_predictive = Predictive(model, num_samples=1)
     init_data = init_predictive(next(keys), t_emissions=t_emissions, emissions=emissions_obs, weights=W_init, store_filtered=True)
 
-    # Log a bunch of these trajectories to wandb
-    wandb.define_metric("filtering/init/cond_K", step_metric="time")
-    wandb.define_metric("filtering/init/cond_S", step_metric="time")
-    wandb.define_metric("filtering/init/min_eig_S", step_metric="time")
-    wandb.define_metric("filtering/init/nis", step_metric="time")
-    wandb.define_metric("filtering/init/neg_loglik_steps", step_metric="time")
-    for t in range(init_data["cond_S"].shape[1]):
-        wandb.log({
-            "time": t,
-            "filtering/init/cond_S": float(init_data["cond_S"][0, t]),
-            "filtering/init/min_eig_S": float(init_data["min_eig_S"][0, t]),
-            "filtering/init/nis": float(init_data["nis"][0, t]),
-            "filtering/init/neg_loglik_steps": float(init_data["neg_loglik_steps"][0, t]),
-        })
-    fig = plot_particle_diagnostics(
-        t_emissions=t_emissions.squeeze(),
-        x_ens_filtered=init_data["x_ens_filtered"][0],   # shape (T, N, D)
-        x_ens_predicted=init_data["x_ens_predicted"][0], # shape (T, N, D)
-        observations=emissions_obs,
-        figsize=(12, 8),
-        start_idx=0,
-        stop_idx=20,
-    )
-    wandb.log({"fig/init/ensembles_0to20": wandb.Image(fig)})
+    if cfg.log_filtering:
+        # Log a bunch of these trajectories to wandb
+        wandb.define_metric("filtering/init/cond_K", step_metric="time")
+        wandb.define_metric("filtering/init/cond_S", step_metric="time")
+        wandb.define_metric("filtering/init/min_eig_S", step_metric="time")
+        wandb.define_metric("filtering/init/nis", step_metric="time")
+        wandb.define_metric("filtering/init/neg_loglik_steps", step_metric="time")
+        for t in range(init_data["cond_S"].shape[1]):
+            wandb.log({
+                "time": t,
+                "filtering/init/cond_S": float(init_data["cond_S"][0, t]),
+                "filtering/init/min_eig_S": float(init_data["min_eig_S"][0, t]),
+                "filtering/init/nis": float(init_data["nis"][0, t]),
+                "filtering/init/neg_loglik_steps": float(init_data["neg_loglik_steps"][0, t]),
+            })
+        fig = plot_particle_diagnostics(
+            t_emissions=t_emissions.squeeze(),
+            x_ens_filtered=init_data["x_ens_filtered"][0],   # shape (T, N, D)
+            x_ens_predicted=init_data["x_ens_predicted"][0], # shape (T, N, D)
+            observations=emissions_obs,
+            figsize=(12, 8),
+            start_idx=0,
+            stop_idx=20,
+        )
+        wandb.log({"fig/init/ensembles_0to20": wandb.Image(fig)})
 
     print(f"Initialization neg_log_likelihood from filtering: {float(init_data['neg_log_likelihood'])}")
     if jnp.isnan(init_data['neg_log_likelihood']):
@@ -537,29 +541,32 @@ def main(**cfg):
     print("W_true: ", W_true)
     print("W_learned: ", W_learned)
 
-    # Log the trajectory from filtering
-    print("Logging trajectories from filtering with learned model...")
-    # Trajectories use "time" as their x-axis
-    wandb.define_metric("filtering/learned/pred_mean_*", step_metric="time")
-    wandb.define_metric("filtering/learned/filtered_mean_*", step_metric="time")
-    for t in range(learned_data["predicted_means"].shape[1]):
-        log_dict = {"time": t}
-        for d in range(state_dim):
-            log_dict[f"filtering/learned/pred_mean_dim{d}"] = float(learned_data["predicted_means"][0, t, d])
-            log_dict[f"filtering/learned/filtered_mean_dim{d}"] = float(learned_data["filtered_means"][0, t, d])
-        # Log the current time step
-        wandb.log(log_dict)
-    fig = plot_particle_diagnostics(
-        t_emissions=t_emissions.squeeze(),
-        x_ens_filtered=learned_data["x_ens_filtered"][0],   # shape (T, N, D)
-        x_ens_predicted=learned_data["x_ens_predicted"][0], # shape (T, N, D)
-        observations=emissions_obs,
-        figsize=(12, 8),
-        start_idx=0,
-        stop_idx=20,
-    )
-    wandb.log({"fig/learned/ensembles_0to20": wandb.Image(fig)})
+    # Log the absolute error in weights
+    wandb.log({"metrics/learned/abs_err_weights_mean": float(jnp.abs(W_learned - W_true).mean())})
 
+    # Log the trajectory from filtering
+    if cfg.log_filtering:
+        print("Logging trajectories from filtering with learned model...")
+        # Trajectories use "time" as their x-axis
+        wandb.define_metric("filtering/learned/pred_mean_*", step_metric="time")
+        wandb.define_metric("filtering/learned/filtered_mean_*", step_metric="time")
+        for t in range(learned_data["predicted_means"].shape[1]):
+            log_dict = {"time": t}
+            for d in range(state_dim):
+                log_dict[f"filtering/learned/pred_mean_dim{d}"] = float(learned_data["predicted_means"][0, t, d])
+                log_dict[f"filtering/learned/filtered_mean_dim{d}"] = float(learned_data["filtered_means"][0, t, d])
+            # Log the current time step
+            wandb.log(log_dict)
+        fig = plot_particle_diagnostics(
+            t_emissions=t_emissions.squeeze(),
+            x_ens_filtered=learned_data["x_ens_filtered"][0],   # shape (T, N, D)
+            x_ens_predicted=learned_data["x_ens_predicted"][0], # shape (T, N, D)
+            observations=emissions_obs,
+            figsize=(12, 8),
+            start_idx=0,
+            stop_idx=20,
+        )
+        wandb.log({"fig/learned/ensembles_0to20": wandb.Image(fig)})
 
     run.finish()
 
@@ -572,11 +579,11 @@ if __name__ == "__main__":
 
     # Optimization
     parser.add_argument("--num_epochs", type=int, default=1000)
-    parser.add_argument("--init_lr", type=float, default=1e-1)
+    parser.add_argument("--init_lr", type=float, default=1e-2)
     parser.add_argument("--use_lr_scheduler", type=int, default=0) # 1 for True, 0 for False
     # parser.add_argument("--decay_rate", type=float, default=0.5)
     # parser.add_argument("--epochs_per_step", type=int, default=200)
-    # parser.add_argument("--clip_norm", type=float, default=1.0)  # None for no clipping, or a float value
+    parser.add_argument("--clip_norm", type=float, default=0.0)  # 0.0 for no clipping, or a float value to clip.
 
     # Prior parameters
     parser.add_argument("--laplace_scale", type=float, default=0.5)
@@ -600,7 +607,11 @@ if __name__ == "__main__":
     # Diagnostics
     parser.add_argument("--n_prior_samples", type=int, default=2)
 
+    # Logging
+    parser.add_argument("--log_filtering", type=int, default=0)
+    
     # Parse arguments
     args = parser.parse_args()
+    
         
     main(**vars(args))
