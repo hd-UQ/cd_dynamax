@@ -728,7 +728,7 @@ def cdnlgssm_filter(
     filter_hyperparams: Optional[Union[EKFHyperParams, EnKFHyperParams, UKFHyperParams]]=EKFHyperParams(),
     inputs: Optional[Float[Array, "ntime input_dim"]] = None,
     num_iter: Optional[int] = 1,
-    output_fields: Optional[List[str]]=["filtered_means", "filtered_covariances", "predicted_means", "predicted_covariances"],
+    output_fields: Optional[List[str]]=None,
     key: PRNGKey=jr.PRNGKey(0)
 ) -> PosteriorGSSMFiltered:
     r"""Run an continuous-discrete nonlinear filter to produce the
@@ -755,6 +755,10 @@ def cdnlgssm_filter(
     if filter_hyperparams is None:
         filter_hyperparams = EKFHyperParams()
     
+    extra_args = {}
+    if output_fields is not None:
+        extra_args["output_fields"] = output_fields
+        
     # TODO: this can be condensed, by incorporating num_iter into hyperparams of EKF
     if isinstance(filter_hyperparams, EKFHyperParams):
         filtered_posterior=iterated_extended_kalman_filter(
@@ -764,7 +768,7 @@ def cdnlgssm_filter(
             filter_hyperparams = filter_hyperparams,
             inputs = inputs,
             num_iter = num_iter,
-            output_fields=output_fields
+            **extra_args,
         )
     elif isinstance(filter_hyperparams, EnKFHyperParams):
         filtered_posterior=ensemble_kalman_filter(
@@ -773,8 +777,8 @@ def cdnlgssm_filter(
             t_emissions = t_emissions,
             filter_hyperparams = filter_hyperparams,
             inputs = inputs,
-            output_fields=output_fields,
-            key = key
+            key = key,
+            **extra_args,
         )
     elif isinstance(filter_hyperparams, UKFHyperParams):
         filtered_posterior=unscented_kalman_filter(
@@ -783,7 +787,7 @@ def cdnlgssm_filter(
             t_emissions = t_emissions,
             filter_hyperparams = filter_hyperparams,
             inputs = inputs,
-            output_fields=output_fields
+            **extra_args,
         )
     
     # TODO: use and leverage output_fields to have more or less granular returned posterior object

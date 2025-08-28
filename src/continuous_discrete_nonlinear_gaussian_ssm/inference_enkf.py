@@ -226,6 +226,17 @@ def ensemble_kalman_filter(
         "filtered_covariances",
         "predicted_means",
         "predicted_covariances",
+        "loglik_step",
+        "marginal_loglik",
+        "S",
+        "K",
+        "innovation",
+        "nis",
+        "min_eig_S",
+        "cond_S",
+        "cond_K",
+        "x_ens_filtered",
+        "x_ens_predicted",
     ],
     key: PRNGKey=jr.PRNGKey(0)
 ) -> PosteriorGSSMFiltered:
@@ -331,7 +342,7 @@ def ensemble_kalman_filter(
             "x_ens_filtered": filtered_x_ens,
             "x_ens_predicted": pred_x_ens,
         }
-        outputs = {key: val for key, val in outputs.items()} # if key in output_fields}
+        outputs = {key: val for key, val in outputs.items() if key in output_fields}
         return carry, outputs
 
     # Build keys to be used to: (1) draw initial particles, (2) run each step of the filter
