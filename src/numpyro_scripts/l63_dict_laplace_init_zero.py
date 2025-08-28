@@ -217,12 +217,6 @@ def main(**cfg):
     W_true = W_true.at[1, i_x].set(28.0).at[1, i_xz].set(-1.0).at[1, i_y].set(-1.0)
     W_true = W_true.at[2, i_xy].set(+1.0).at[2, i_z].set(-8.0/3.0)
 
-    # CORRUPT W_TRUE WITH NOISE
-    eps = 0 #0.01
-    flat_W = W_true.ravel()
-    noise = jr.normal(next(keys), shape=flat_W.shape) * jnp.sqrt(eps)
-    W_true = (flat_W + noise).reshape(W_true.shape)
-
     # Build filter hyperparameters
     FILTER_HYPERPARAMS = make_filter_hyperparams(cfg)
 
@@ -448,25 +442,12 @@ def main(**cfg):
         use_lr_scheduler=cfg.use_lr_scheduler,
         clip_norm=cfg.clip_norm if cfg.clip_norm > 0.0 else None,
     )
-
-    def make_init_value(W_true, eps, key):
-        flat_W = W_true.ravel()
-        noise = jr.normal(key, shape=flat_W.shape) * jnp.sqrt(eps)
-        init_val = flat_W + noise
-        return init_val.reshape(W_true.shape)
-
-    def make_init_loc_fn(W_true, eps, key):
-        weights = make_init_value(W_true, eps, key)
-        return init_to_value(values={"weights": weights})
-
-    init_key = next(keys)
-    init_loc_fn = make_init_loc_fn(W_true, eps=eps_perturb, key=init_key)
     
     # First, check feasibility of the initialization
-    # W_init = make_init_value(W_true, eps=eps_perturb, key=init_key)
     W_init = jnp.zeros_like(W_true)  # try zero initialization
+    guide = AutoDelta(model, init_loc_fn=init_to_value(values={"weights": W_init}))
     print("W_init: ", W_init)
-    
+
     fig = plot_coeff_heatmaps(W_true, W_init, EXPONENTS)
     wandb.log({"fig/W_true_vs_W_init": wandb.Image(fig)})
 
@@ -512,12 +493,9 @@ def main(**cfg):
         print("Initialization weights: ", W_init)
         raise ValueError("NaN value found in initialization grad_neg_log_likelihood_w. Training is TOO DANGEROUS to proceed; please refine your prior, protect the RHS from large jumps, ensure covariances are PSD, and/or try 64bit precision.")
 
-    # init_loc_fn = init_to_median()
-    # init_loc_fn = init_to_value(values={"weights": W_true})
-    guide = AutoDelta(model, init_loc_fn=init_loc_fn)
     svi = SVI(model, guide, optimizer, loss=Trace_ELBO())
     svi_result = svi.run(next(keys), num_steps=cfg.num_epochs, t_emissions=t_emissions, emissions=emissions_obs, **known_values)
-    
+
     # Log training curve
     # Loss curve uses "epoch" as its x-axis
     wandb.define_metric("svi/loss", step_metric="epoch")

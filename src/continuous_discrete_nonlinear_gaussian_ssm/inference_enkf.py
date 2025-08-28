@@ -181,7 +181,7 @@ def _condition_on(key, x, h, R, u, y, t, perturb_measurements=True, inflation_de
     cross_cov = jnp.sum(_outer(x_inflated - jnp.mean(x_inflated, axis=0),
                                y_ensemble_infl - y_pred_mean_infl), axis=0) / (n_particles - 1)
 
-    S = y_pred_cov_infl + R + 1e-6 * jnp.eye(R.shape[0])  # Add small jitter for numerical stability
+    S = y_pred_cov_infl + R
     K = psd_solve(S, cross_cov.T).T
 
     # make perturbed ensemble
