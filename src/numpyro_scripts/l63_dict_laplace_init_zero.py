@@ -315,12 +315,12 @@ def main(**cfg):
 
     # Log metrics
     wandb.log({
-        "metrics/true/neg_log_prior": float(sim_data["neg_log_prior"]),
-        "metrics/true/neg_log_lik": float(sim_data["neg_log_likelihood"]),
-        "metrics/true/neg_log_joint": float(sim_data["neg_log_joint"]),
+        "metrics/true/neg_log_prior": float(sim_data["neg_log_prior"].item()),
+        "metrics/true/neg_log_lik": float(sim_data["neg_log_likelihood"].item()),
+        "metrics/true/neg_log_joint": float(sim_data["neg_log_joint"].item()),
     })
     # Print the neg-log-likelihood values
-    print(f"True model's neg_log_likelihood from filtering: {float(sim_data['neg_log_likelihood'])}")
+    print(f"True model's neg_log_likelihood from filtering: {float(sim_data['neg_log_likelihood'].item())}")
     
     # Now plot the filtering ensemble trajectories for the true model
     if cfg.log_filtering:
@@ -349,14 +349,14 @@ def main(**cfg):
                                                 weights=W_true_noisy,
                                                 **known_values)
     wandb.log({
-        "metrics/perturbed/neg_log_prior": float(perturbed_data["neg_log_prior"]),
-        "metrics/perturbed/neg_log_lik": float(perturbed_data["neg_log_likelihood"]),
-        "metrics/perturbed/neg_log_joint": float(perturbed_data["neg_log_joint"]),
+        "metrics/perturbed/neg_log_prior": float(perturbed_data["neg_log_prior"].item()),
+        "metrics/perturbed/neg_log_lik": float(perturbed_data["neg_log_likelihood"].item()),
+        "metrics/perturbed/neg_log_joint": float(perturbed_data["neg_log_joint"].item()),
     })
 
     # Log the trajectory from filtering
     if cfg.log_filtering:
-        print(f"True+epsilon (perturbed) model's neg_log_likelihood from filtering: {float(perturbed_data['neg_log_likelihood'])}")
+        print(f"True+epsilon (perturbed) model's neg_log_likelihood from filtering: {float(perturbed_data['neg_log_likelihood'].item())}")
         fig = plot_particle_diagnostics(
             t_emissions=t_emissions.squeeze(),
             x_ens_filtered=perturbed_data["x_ens_filtered"][0],   # shape (T, N, D)
@@ -487,7 +487,7 @@ def main(**cfg):
         wandb.log({"fig/init/ensembles_0to20": wandb.Image(fig)})
         plt.close(fig)
 
-    print(f"Initialization neg_log_likelihood from filtering: {float(init_data['neg_log_likelihood'])}")
+    print(f"Initialization neg_log_likelihood from filtering: {float(init_data['neg_log_likelihood'].item())}")
     if jnp.isnan(init_data['neg_log_likelihood']):
         print("Initialization weights: ", W_init)
         raise ValueError("NaN value found in initialization neg_log_likelihood. Training is TOO DANGEROUS to proceed; please refine your prior, protect the RHS from large jumps, ensure covariances are PSD, and/or try 64bit precision.")
@@ -512,9 +512,9 @@ def main(**cfg):
     learned_data = predictive_learned(next(keys), t_emissions=t_emissions, emissions=emissions_obs, store_filtered=True, **known_values)
     # Log metrics
     wandb.log({
-        "metrics/learned/neg_log_prior": float(learned_data["neg_log_prior"]),
-        "metrics/learned/neg_log_lik": float(learned_data["neg_log_likelihood"]),
-        "metrics/learned/neg_log_joint": float(learned_data["neg_log_joint"]),
+        "metrics/learned/neg_log_prior": float(learned_data["neg_log_prior"].item()),
+        "metrics/learned/neg_log_lik": float(learned_data["neg_log_likelihood"].item()),
+        "metrics/learned/neg_log_joint": float(learned_data["neg_log_joint"].item()),
     })
     # Log figure
     W_learned = guide.median(svi_result.params)["weights"]
