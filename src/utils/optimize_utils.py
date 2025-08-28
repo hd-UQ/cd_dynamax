@@ -1,7 +1,7 @@
 import jax.numpy as jnp
 import jax.random as jr
 import optax
-from jax import lax, value_and_grad, tree_map
+from jax import lax, value_and_grad
 
 # From dynamax
 from dynamax.utils.utils import pytree_len
