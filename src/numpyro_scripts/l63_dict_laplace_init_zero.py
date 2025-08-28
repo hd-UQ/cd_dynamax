@@ -5,9 +5,10 @@ sys.path.append("../..")
 import itertools
 import numpy as np
 import jax
-import jax.numpy as jnp
 # Make sure everything is 64bit (should prevent NaNs, but can be slow)
+# Best to set this before importing jax.numpy or numpyro
 jax.config.update("jax_enable_x64", True)
+import jax.numpy as jnp
 import jax.random as jr
 import matplotlib.pyplot as plt
 import matplotlib.colors as mcolors
@@ -166,7 +167,7 @@ def make_filter_hyperparams(cfg):
             cov_rescaling=cfg.cov_rescaling,
             inflation_delta=cfg.inflation_delta,
         )
-    elif cfg.filter_type == "EFK":
+    elif cfg.filter_type == "EKF":
         return EKFHyperParams(
             state_order=cfg.state_order,
             diffeqsolve_settings=diffeqsolve_settings,
@@ -334,6 +335,7 @@ def main(**cfg):
             stop_idx=20,
         )
         wandb.log({"fig/true/ensembles_0to20": wandb.Image(fig)})
+        plt.close(fig)
 
     # Next, check that the model is well-posed epsilon-close to the truth
     eps_perturb = cfg.eps_perturb
@@ -365,6 +367,7 @@ def main(**cfg):
             stop_idx=20,
         )
         wandb.log({"fig/perturbed/ensembles_0to20": wandb.Image(fig)})
+        plt.close(fig)
 
         print("Logging trajectories from filtering/simulations with true and perturbed-truth models...")
         # Trajectories use "time" as their x-axis
@@ -450,7 +453,8 @@ def main(**cfg):
 
     fig = plot_coeff_heatmaps(W_true, W_init, EXPONENTS)
     wandb.log({"fig/W_true_vs_W_init": wandb.Image(fig)})
-
+    plt.close(fig)
+    
     # Run model in predictive mode
     print("Checking initialization predictive...")
     init_predictive = Predictive(model, num_samples=1)
@@ -481,6 +485,7 @@ def main(**cfg):
             stop_idx=20,
         )
         wandb.log({"fig/init/ensembles_0to20": wandb.Image(fig)})
+        plt.close(fig)
 
     print(f"Initialization neg_log_likelihood from filtering: {float(init_data['neg_log_likelihood'])}")
     if jnp.isnan(init_data['neg_log_likelihood']):
@@ -545,6 +550,7 @@ def main(**cfg):
             stop_idx=20,
         )
         wandb.log({"fig/learned/ensembles_0to20": wandb.Image(fig)})
+        plt.close(fig)
 
     run.finish()
 
@@ -575,9 +581,9 @@ if __name__ == "__main__":
     parser.add_argument("--emission_dim", type=int, default=3) # observation dimension (default is to observe the first "emission_dim" states)
 
     # Filtering algorithm hyperparameters
-    parser.add_argument("--filter_type", type=str, default="EnKF")  # "EnKF", "EFK", "UKF", "PF"
+    parser.add_argument("--filter_type", type=str, default="EnKF", choices=["EnKF", "EKF", "UKF"])  # Type of filter to use
     parser.add_argument("--N_particles", type=int, default=25)  # Number of particles for EnKF
-    parser.add_argument("--state_order", type=str, default="first")  # "zeroth", "first", "second"
+    parser.add_argument("--state_order", type=str, default="first", choices=["discrete", "zeroth", "first", "second"])  # Order of the Taylor expansion for EKF/UKF
     parser.add_argument("--diffeqsolve_max_steps", type=int, default=100)  # Max steps for the ODE solver between filtered timesteps
     parser.add_argument("--cov_rescaling", type=float, default=1.0)  # Covariance rescaling factor for EnKF
     parser.add_argument("--inflation_delta", type=float, default=0.0)  # Inflation delta for EnKF
