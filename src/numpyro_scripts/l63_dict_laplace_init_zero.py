@@ -439,8 +439,8 @@ def main(**cfg):
     # SVI
     optimizer = make_optimizer(
         initial_learning_rate=cfg.init_lr,
-        # decay_factor=cfg.decay_rate,
-        # epochs_per_step=cfg.epochs_per_step,
+        decay_factor=cfg.decay_rate,
+        epochs_per_step=cfg.epochs_per_step,
         num_epochs=cfg.num_epochs,
         use_lr_scheduler=cfg.use_lr_scheduler,
         clip_norm=cfg.clip_norm if cfg.clip_norm > 0.0 else None,
@@ -565,8 +565,8 @@ if __name__ == "__main__":
     parser.add_argument("--num_epochs", type=int, default=1000)
     parser.add_argument("--init_lr", type=float, default=1e-2)
     parser.add_argument("--use_lr_scheduler", type=int, default=0) # 1 for True, 0 for False
-    # parser.add_argument("--decay_rate", type=float, default=0.5)
-    # parser.add_argument("--epochs_per_step", type=int, default=200)
+    parser.add_argument("--decay_rate", type=float, default=0.5)
+    parser.add_argument("--epochs_per_step", type=int, default=200)
     parser.add_argument("--clip_norm", type=float, default=0.0)  # 0.0 for no clipping, or a float value to clip.
 
     # Prior parameters

@@ -606,7 +606,7 @@ if __name__ == "__main__":
     # Optimization
     parser.add_argument("--num_epochs", type=int, default=1000)
     parser.add_argument("--init_lr", type=float, default=1e-2)
-    parser.add_argument("--use_lr_scheduler", type=int, default=0) # 1 for True, 0 for False
+    parser.add_argument("--use_lr_scheduler", type=int, default=1) # 1 for True, 0 for False
     parser.add_argument("--lr_factor", type=float, default=0.5)  # factor by which to reduce lr
     parser.add_argument("--lr_patience", type=int, default=200)  # epochs to wait before reducing lr
     parser.add_argument("--lr_cooldown", type=int, default=0)  # epochs to wait after lr reduction before resuming normal operation
