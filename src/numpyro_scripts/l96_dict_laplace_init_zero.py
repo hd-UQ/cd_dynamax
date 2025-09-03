@@ -579,7 +579,7 @@ if __name__ == "__main__":
     parser.add_argument("--seed", type=int, default=0)
 
     # Optimization
-    parser.add_argument("--num_epochs", type=int, default=1000)
+    parser.add_argument("--num_epochs", type=int, default=2000)
     parser.add_argument("--init_lr", type=float, default=1e-2)
     parser.add_argument("--use_lr_scheduler", type=int, default=0) # 1 for True, 0 for False
     parser.add_argument("--decay_rate", type=float, default=0.5)
