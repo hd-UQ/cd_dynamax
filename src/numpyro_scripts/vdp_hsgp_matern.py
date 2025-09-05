@@ -11,7 +11,6 @@ jax.config.update("jax_enable_x64", True)
 import jax.numpy as jnp
 import jax.random as jr
 import matplotlib.pyplot as plt
-import matplotlib.colors as mcolors
 import numpyro
 import numpyro.distributions as dist
 from numpyro.infer import (
@@ -28,7 +27,6 @@ from jax.scipy.linalg import cho_solve, cho_factor
 
 from continuous_discrete_nonlinear_gaussian_ssm import (
     cdnlgssm_filter, ContDiscreteNonlinearGaussianSSM, 
-    EnKFHyperParams, EKFHyperParams, UKFHyperParams
 )
 
 from numpyro_extension import build_params
@@ -36,230 +34,7 @@ from utils.diffrax_utils import adjust_rhs
 from utils.optimize_utils import make_optimizer
 from utils.simulation_utils import make_key_sequence
 import wandb
-
-
-# ------------------------
-# Plot helpers
-# ------------------------
-def plot_drift_field(
-    f_true,
-    f_learned,
-    f_learned_sd=None,     # callable or None
-    x1_range=(-3.0, 3.0),
-    x2_range=(-3.2, 3.2),
-    num_points=50,
-    return_rmse=False,
-    relative_error=False,
-):
-    """
-    Plot true vs learned drift fields (2D state space).
-    Optionally include learned uncertainty (stddev).
-
-    Args:
-        f_true: callable f(x) -> (2,) array, true drift function
-        f_learned: callable f(x) -> (2,) array, learned drift function
-        f_learned_sd: optional callable f(x) -> (2,) array (stddev per output dim)
-        x1_range: tuple (low, high) for x1 axis
-        x2_range: tuple (low, high) for x2 axis
-        num_points: number of grid points per axis
-    """
-    x1 = jnp.linspace(*x1_range, num_points)
-    x2 = jnp.linspace(*x2_range, num_points)
-    X1, X2 = jnp.meshgrid(x1, x2, indexing="ij")
-    grid_points = jnp.stack([X1.ravel(), X2.ravel()], axis=-1)
-
-    # Evaluate true, learned drift and optional stddev
-    f_true_vals = jax.vmap(f_true)(grid_points)        # (N, 2)
-    f_learned_vals = jax.vmap(f_learned)(grid_points)  # (N, 2)
-
-    if f_learned_sd is not None:
-        f_learned_sd_vals = jax.vmap(f_learned_sd)(grid_points).squeeze(1)  # (N, 2)
-        f1_sd = f_learned_sd_vals[:, 0].reshape(num_points, num_points)
-        f2_sd = f_learned_sd_vals[:, 1].reshape(num_points, num_points)
-    else:
-        f1_sd = f2_sd = None
-
-    # Split into components and reshape
-    f1_true = f_true_vals[:, 0].reshape(num_points, num_points)
-    f2_true = f_true_vals[:, 1].reshape(num_points, num_points)
-    f1_learned = f_learned_vals[:, 0].reshape(num_points, num_points)
-    f2_learned = f_learned_vals[:, 1].reshape(num_points, num_points)
-
-    if relative_error:
-        f1_err = (f1_learned - f1_true) / (jnp.abs(f1_true) + 1e-6)
-        f2_err = (f2_learned - f2_true) / (jnp.abs(f2_true) + 1e-6)
-    else:
-        f1_err = f1_learned - f1_true
-        f2_err = f2_learned - f2_true
-
-    # Color normalization
-    vlim1 = jnp.max(jnp.abs(jnp.concatenate([f1_true.ravel(), f1_learned.ravel()])))
-    vlim2 = jnp.max(jnp.abs(jnp.concatenate([f2_true.ravel(), f2_learned.ravel()])))
-
-    # Subplot grid: add uncertainty column if available
-    ncols = 4 if f_learned_sd is not None else 3
-    fig, axes = plt.subplots(2, ncols, figsize=(5*ncols, 8), constrained_layout=True)
-
-    # f1 row
-    im0 = axes[0, 0].imshow(f1_true.T, origin="lower",
-                            extent=(*x1_range, *x2_range),
-                            cmap="seismic", vmin=-vlim1, vmax=vlim1, aspect="auto")
-    axes[0, 0].set_title("f1 true"); fig.colorbar(im0, ax=axes[0, 0], fraction=0.046, pad=0.04)
-
-    im1 = axes[0, 1].imshow(f1_learned.T, origin="lower",
-                            extent=(*x1_range, *x2_range),
-                            cmap="seismic", vmin=-vlim1, vmax=vlim1, aspect="auto")
-    axes[0, 1].set_title("f1 learned"); fig.colorbar(im1, ax=axes[0, 1], fraction=0.046, pad=0.04)
-
-    im2 = axes[0, 2].imshow(f1_err.T, origin="lower",
-                            extent=(*x1_range, *x2_range),
-                            cmap="viridis", aspect="auto")
-    axes[0, 2].set_title("f1 error"); fig.colorbar(im2, ax=axes[0, 2], fraction=0.046, pad=0.04)
-
-    if f1_sd is not None:
-        im3 = axes[0, 3].imshow(f1_sd.T, origin="lower",
-                                extent=(*x1_range, *x2_range),
-                                cmap="magma", aspect="auto")
-        axes[0, 3].set_title("f1 stddev"); fig.colorbar(im3, ax=axes[0, 3], fraction=0.046, pad=0.04)
-
-    # f2 row
-    im4 = axes[1, 0].imshow(f2_true.T, origin="lower",
-                            extent=(*x1_range, *x2_range),
-                            cmap="seismic", vmin=-vlim2, vmax=vlim2, aspect="auto")
-    axes[1, 0].set_title("f2 true"); fig.colorbar(im4, ax=axes[1, 0], fraction=0.046, pad=0.04)
-
-    im5 = axes[1, 1].imshow(f2_learned.T, origin="lower",
-                            extent=(*x1_range, *x2_range),
-                            cmap="seismic", vmin=-vlim2, vmax=vlim2, aspect="auto")
-    axes[1, 1].set_title("f2 learned"); fig.colorbar(im5, ax=axes[1, 1], fraction=0.046, pad=0.04)
-
-    im6 = axes[1, 2].imshow(f2_err.T, origin="lower",
-                            extent=(*x1_range, *x2_range),
-                            cmap="viridis", aspect="auto")
-    axes[1, 2].set_title("f2 error"); fig.colorbar(im6, ax=axes[1, 2], fraction=0.046, pad=0.04)
-
-    if f2_sd is not None:
-        im7 = axes[1, 3].imshow(f2_sd.T, origin="lower",
-                                extent=(*x1_range, *x2_range),
-                                cmap="magma", aspect="auto")
-        axes[1, 3].set_title("f2 stddev"); fig.colorbar(im7, ax=axes[1, 3], fraction=0.046, pad=0.04)
-
-    for ax in axes.ravel():
-        ax.set_xlabel("x1")
-        ax.set_ylabel("x2")
-        ax.grid(False)
-
-    if return_rmse:
-        rmse = jnp.sqrt(jnp.mean((f_learned_vals - f_true_vals)**2))
-        return fig, rmse
-    else:
-        return fig
-
-
-def plot_particle_diagnostics(
-    t_emissions,       # shape (T,) time vector
-    x_ens_filtered,    # shape (T, N, D) ensemble after update
-    x_ens_predicted,   # shape (T, N, D) ensemble before update (forecast)
-    observations,      # shape (T, D_obs) -- assume D_obs == D for now
-    start_idx=0,
-    stop_idx=None,
-    figsize=(12, 6)
-):
-    """
-    Plot particle forecasts and updates over time, along with observations.
-    One subplot per state dimension.
-
-    Args:
-        t_emissions: (T,) time vector
-        x_ens_filtered: (T, N, D) ensemble after update
-        x_ens_predicted: (T, N, D) ensemble before update (forecast)
-        observations: (T, D) true observations
-        start_idx: int, start timestep
-        stop_idx: int, stop timestep (exclusive)
-        figsize: tuple, figure size
-    """
-    T, N, D = x_ens_filtered.shape
-    if stop_idx is None:
-        stop_idx = T
-
-    t_range = t_emissions[start_idx:stop_idx]
-
-    fig, axes = plt.subplots(D, 1, figsize=figsize, sharex=True)
-    if D == 1:
-        axes = [axes]
-
-    for d in range(D):
-        ax = axes[d]
-
-        # Plot observations
-        ax.plot(t_range, observations[start_idx:stop_idx, d], "rx", label="obs", markersize=20)
-
-        # Plot filtered and forecast ensembles
-        for i, t in enumerate(range(start_idx, stop_idx - 1)):
-            t0 = t_emissions[t]
-            t1 = t_emissions[t+1]
-
-            xf = x_ens_filtered[t, :, d]
-            xp = x_ens_predicted[t+1, :, d]
-
-            ax.scatter(np.full(N, t0), xf, color="tab:blue", alpha=0.5, s=15, label="filtered" if (d==0 and i==0) else "")
-            ax.scatter(np.full(N, t1), xp, color="tab:orange", alpha=0.5, s=15, label="forecast" if (d==0 and i==0) else "")
-
-            # connect filtered[t] to forecast[t+1] with faint lines
-            for n in range(N):
-                ax.plot([t0, t1], [xf[n], xp[n]], color="gray", alpha=0.2, linewidth=0.8)
-
-        ax.set_ylabel(f"state {d}")
-        ax.grid(True, linestyle="--", alpha=0.3)
-
-    axes[-1].set_xlabel("time")
-    axes[0].legend(loc="upper right")
-    fig.suptitle("Particle diagnostics: forecasts vs updates")
-
-    return fig
-
-# ------------------------
-# Inference/model helpers
-# ------------------------
-def get_or_sample(name, dist_obj, value):
-    return (
-        numpyro.sample(name, dist_obj)
-        if value is None
-        else numpyro.deterministic(name, value)
-    )
-
-# ------------------------
-# Filter hyperparameter helper
-# ------------------------
-def make_filter_hyperparams(cfg):
-    diffeqsolve_settings = {
-        # 'solver': eval(cfg.diffeqsolve_settings['solver']),
-        # 'stepsize_controller': eval(cfg.diffeqsolve_settings['stepsize_controller']),
-        # 'adjoint': eval(cfg.diffeqsolve_settings['adjoint']),
-        # 'dt0': cfg.diffeqsolve_settings['dt0'],
-        # 'tol_vbt': cfg.diffeqsolve_settings['tol_vbt'],
-        'max_steps': cfg.diffeqsolve_max_steps,
-    }
-    if cfg.filter_type == "EnKF":
-        return EnKFHyperParams(
-            N_particles=cfg.N_particles,
-            state_order=cfg.state_order,
-            diffeqsolve_settings=diffeqsolve_settings,
-            cov_rescaling=cfg.cov_rescaling,
-            inflation_delta=cfg.inflation_delta,
-        )
-    elif cfg.filter_type == "EKF":
-        return EKFHyperParams(
-            state_order=cfg.state_order,
-            diffeqsolve_settings=diffeqsolve_settings,
-        )
-    elif cfg.filter_type == "UKF":
-        return UKFHyperParams(
-            state_order=cfg.state_order,
-            diffeqsolve_settings=diffeqsolve_settings,
-        )
-    else:
-        raise ValueError(f"Unknown filter type: {cfg.filter_type}")
+from _utils import *
 
 # ------------------------
 # Model helpers
@@ -279,7 +54,7 @@ def main(**cfg):
     #   in the run's Config tab even if they're not being swept over.
     # - When running under a sweep, the sweep controller will then overwrite any of these
     #   entries that are specified in the sweep YAML (e.g. num_epochs, init_lr, ...).
-    run = wandb.init(config=cfg)
+    run = wandb.init(config=cfg, project=cfg["project"])
 
     # After wandb.init(), wandb.config now holds the *final merged config*:
     #   argparse defaults + CLI overrides + sweep overrides (if any).
@@ -870,6 +645,9 @@ if __name__ == "__main__":
 
     # Logging
     parser.add_argument("--log_filtering", type=int, default=0)
+
+    # Wandb settings
+    parser.add_argument("--project", type=str, default="vdp_hsgp_matern")
     
     # Parse arguments
     args = parser.parse_args()

@@ -11,7 +11,6 @@ jax.config.update("jax_enable_x64", True)
 import jax.numpy as jnp
 import jax.random as jr
 import matplotlib.pyplot as plt
-import matplotlib.colors as mcolors
 import numpyro
 import numpyro.distributions as dist
 from numpyro.infer import (
@@ -23,162 +22,13 @@ from numpyro.infer.autoguide import AutoDiagonalNormal, AutoDelta
 
 from continuous_discrete_nonlinear_gaussian_ssm import (
     cdnlgssm_filter, ContDiscreteNonlinearGaussianSSM, 
-    EnKFHyperParams, EKFHyperParams, UKFHyperParams
 )
 from numpyro_extension import build_params
 from utils.diffrax_utils import adjust_rhs
 from utils.optimize_utils import make_optimizer
 from utils.simulation_utils import make_key_sequence
 import wandb
-
-
-# ------------------------
-# Plot helpers
-# ------------------------
-def plot_coeff_heatmaps(W_true, W_learned, exponents):
-    fig, axes = plt.subplots(1, 3, figsize=(16, 5), constrained_layout=True)
-    vlim = jnp.max(jnp.abs(jnp.concatenate([W_true, W_learned])))
-    norm = mcolors.TwoSlopeNorm(vmin=-vlim, vcenter=0.0, vmax=vlim)
-
-    im0 = axes[0].imshow(W_true, aspect="auto", cmap="seismic", norm=norm)
-    axes[0].set_title("True weights"); axes[0].set_xlabel("Term index"); axes[0].set_ylabel("State index")
-    fig.colorbar(im0, ax=axes[0], fraction=0.046, pad=0.04)
-
-    im1 = axes[1].imshow(W_learned, aspect="auto", cmap="seismic", norm=norm)
-    axes[1].set_title("Learned weights (SVI median)"); axes[1].set_xlabel("Term index"); axes[1].set_ylabel("State index")
-    fig.colorbar(im1, ax=axes[1], fraction=0.046, pad=0.04)
-
-    abs_err = jnp.abs(W_learned - W_true) #/ jnp.maximum(jnp.abs(W_true), 1e-8)
-    im2 = axes[2].imshow(abs_err, aspect="auto", cmap="viridis")
-    axes[2].set_title("Absolute error"); axes[2].set_xlabel("Term index"); axes[2].set_ylabel("State index")
-    fig.colorbar(im2, ax=axes[2], fraction=0.046, pad=0.04)
-
-    return fig
-
-
-def plot_particle_diagnostics(
-    t_emissions,       # shape (T,) time vector
-    x_ens_filtered,    # shape (T, N, D) ensemble after update
-    x_ens_predicted,   # shape (T, N, D) ensemble before update (forecast)
-    observations,      # shape (T, D_obs) -- assume D_obs == D for now
-    start_idx=0,
-    stop_idx=None,
-    figsize=(12, 6)
-):
-    """
-    Plot particle forecasts and updates over time, along with observations.
-    One subplot per state dimension.
-
-    Args:
-        t_emissions: (T,) time vector
-        x_ens_filtered: (T, N, D) ensemble after update
-        x_ens_predicted: (T, N, D) ensemble before update (forecast)
-        observations: (T, D) true observations
-        start_idx: int, start timestep
-        stop_idx: int, stop timestep (exclusive)
-        figsize: tuple, figure size
-    """
-    T, N, D = x_ens_filtered.shape
-    if stop_idx is None:
-        stop_idx = T
-
-    t_range = t_emissions[start_idx:stop_idx]
-
-    fig, axes = plt.subplots(D, 1, figsize=figsize, sharex=True)
-    if D == 1:
-        axes = [axes]
-
-    for d in range(D):
-        ax = axes[d]
-
-        # Plot observations
-        ax.plot(t_range, observations[start_idx:stop_idx, d], "rx", label="obs", markersize=20)
-
-        # Plot filtered and forecast ensembles
-        for i, t in enumerate(range(start_idx, stop_idx - 1)):
-            t0 = t_emissions[t]
-            t1 = t_emissions[t+1]
-
-            xf = x_ens_filtered[t, :, d]
-            xp = x_ens_predicted[t+1, :, d]
-
-            ax.scatter(np.full(N, t0), xf, color="tab:blue", alpha=0.5, s=15, label="filtered" if (d==0 and i==0) else "")
-            ax.scatter(np.full(N, t1), xp, color="tab:orange", alpha=0.5, s=15, label="forecast" if (d==0 and i==0) else "")
-
-            # connect filtered[t] to forecast[t+1] with faint lines
-            for n in range(N):
-                ax.plot([t0, t1], [xf[n], xp[n]], color="gray", alpha=0.2, linewidth=0.8)
-
-        ax.set_ylabel(f"state {d}")
-        ax.grid(True, linestyle="--", alpha=0.3)
-
-    axes[-1].set_xlabel("time")
-    axes[0].legend(loc="upper right")
-    fig.suptitle("Particle diagnostics: forecasts vs updates")
-
-    return fig
-
-# ------------------------
-# Inference/model helpers
-# ------------------------
-def get_or_sample(name, dist_obj, value):
-    return (
-        numpyro.sample(name, dist_obj)
-        if value is None
-        else numpyro.deterministic(name, value)
-    )
-
-def all_multi_indices(d, max_degree):
-    out = []
-    for total in range(max_degree + 1):
-        for exps in itertools.product(range(total + 1), repeat=d):
-            if sum(exps) == total:
-                out.append(exps)
-    return out
-
-def build_exponents(input_dim, max_degree):
-    idx = all_multi_indices(input_dim, max_degree)
-    return jnp.array(idx, dtype=jnp.int32)
-
-def eval_monomials(x, exponents):
-    return jnp.prod(jnp.where(exponents==0, 1.0, x[None,:]**exponents), axis=1)
-
-def poly_drift(x, weights, exponents):
-    phi = eval_monomials(x, exponents)
-    return weights @ phi
-
-# ------------------------
-# Filter hyperparameter helper
-# ------------------------
-def make_filter_hyperparams(cfg):
-    diffeqsolve_settings = {
-        # 'solver': eval(cfg.diffeqsolve_settings['solver']),
-        # 'stepsize_controller': eval(cfg.diffeqsolve_settings['stepsize_controller']),
-        # 'adjoint': eval(cfg.diffeqsolve_settings['adjoint']),
-        # 'dt0': cfg.diffeqsolve_settings['dt0'],
-        # 'tol_vbt': cfg.diffeqsolve_settings['tol_vbt'],
-        'max_steps': cfg.diffeqsolve_max_steps,
-    }
-    if cfg.filter_type == "EnKF":
-        return EnKFHyperParams(
-            N_particles=cfg.N_particles,
-            state_order=cfg.state_order,
-            diffeqsolve_settings=diffeqsolve_settings,
-            cov_rescaling=cfg.cov_rescaling,
-            inflation_delta=cfg.inflation_delta,
-        )
-    elif cfg.filter_type == "EKF":
-        return EKFHyperParams(
-            state_order=cfg.state_order,
-            diffeqsolve_settings=diffeqsolve_settings,
-        )
-    elif cfg.filter_type == "UKF":
-        return UKFHyperParams(
-            state_order=cfg.state_order,
-            diffeqsolve_settings=diffeqsolve_settings,
-        )
-    else:
-        raise ValueError(f"Unknown filter type: {cfg.filter_type}")
+from _utils import *
 
 # ------------------------
 # Main training entrypoint
@@ -190,7 +40,7 @@ def main(**cfg):
     #   in the run's Config tab even if they're not being swept over.
     # - When running under a sweep, the sweep controller will then overwrite any of these
     #   entries that are specified in the sweep YAML (e.g. num_epochs, init_lr, ...).
-    run = wandb.init(config=cfg)
+    run = wandb.init(config=cfg, project=cfg["project"])
 
     # After wandb.init(), wandb.config now holds the *final merged config*:
     #   argparse defaults + CLI overrides + sweep overrides (if any).
@@ -207,7 +57,7 @@ def main(**cfg):
     # Build polynomial exponents (up to quadratic)
     EXPONENTS = build_exponents(state_dim, 3)  # poly degree fixed=3 for Van der Pol
 
-    # Build true Lorenz96 weights matrix
+    # Build true FHN weights matrix
     def idx_of(alpha_tuple):
         matches = jnp.all(EXPONENTS == jnp.array(alpha_tuple, dtype=jnp.int32), axis=1)
         return int(jnp.argmax(matches))
@@ -605,6 +455,9 @@ if __name__ == "__main__":
     # Logging
     parser.add_argument("--log_filtering", type=int, default=0)
     
+    # Wandb settings
+    parser.add_argument("--project", type=str, default="fhn_dict_laplace")
+
     # Parse arguments
     args = parser.parse_args()
     
