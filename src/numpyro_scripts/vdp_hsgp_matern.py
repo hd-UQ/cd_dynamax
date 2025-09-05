@@ -574,27 +574,6 @@ def main(**cfg):
     sim_data = Predictive(model, num_samples=1)(next(keys), t_emissions=t_emissions, store_filtered=True, **true_values)
     # Extract emissions from the simulation data
     emissions_obs = sim_data["emissions"].squeeze(0)
-
-    # # Plot the emissions
-    plt.figure(figsize=(10, 4))
-    for d in range(emission_dim):
-        plt.plot(t_emissions, emissions_obs[:, d], label=f"emission dim {d}")
-    plt.xlabel("time")
-    plt.ylabel("emission value")
-    plt.title("Simulated emissions")
-    plt.legend()
-    plt.show()
-    
-    # plot the phase portrait of the emissions
-    if emission_dim == 2:
-        plt.figure(figsize=(6, 6))
-        plt.plot(emissions_obs[:, 0], emissions_obs[:, 1], 'b-')
-        plt.xlabel("emission dim 0")
-        plt.ylabel("emission dim 1")
-        plt.title("Phase portrait of emissions")
-        plt.grid(True)
-        plt.axis('equal')
-        plt.show()
         
     # Log metrics
     wandb.log({
