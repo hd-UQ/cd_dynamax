@@ -8,6 +8,7 @@ import jax.nn as jnn
 import jax.random as jr
 import jax
 import numpy as np
+from scipy.stats import gaussian_kde
 import matplotlib.pyplot as plt
 import numpyro
 import numpyro.distributions as dist
@@ -216,6 +217,179 @@ def plot_particle_diagnostics(
     axes[0].legend(loc="upper right")
     fig.suptitle("Particle diagnostics: forecasts vs updates")
 
+    return fig
+
+def _finite_1d(a):
+    a = np.asarray(a)
+    a = a[np.isfinite(a)]
+    return a.ravel()
+
+def _as_2d_TD(x):
+    """Assume (T,D) or (T,) -> return (T,D)."""
+    x = np.asarray(x)
+    if x.ndim == 1:
+        return x.reshape(-1, 1)
+    if x.ndim == 2:
+        return x
+    raise ValueError(f"Expected 1D or 2D, got {x.shape}.")
+
+def _series_colors(series_keys):
+    """Deterministic color mapping: one color per series key, consistent across subplots."""
+    base = plt.rcParams['axes.prop_cycle'].by_key().get('color', ['C0','C1','C2','C3','C4','C5','C6','C7','C8','C9'])
+    colors = {}
+    for i, k in enumerate(series_keys):
+        colors[k] = base[i % len(base)]
+    return colors
+
+def plot_traj_kde(
+    series_dict,
+    per_dim=True,
+    pool_dims=False,
+    dim_names=None,
+    gridsize=512,
+    bw_method="scott",   # or "silverman" or float
+    xlim=None,           # None -> auto from pooled data; or (lo, hi)
+    figsize=(9, 5),
+    linewidth=2.0,
+    alpha=0.85,
+    title=None,
+):
+    """
+    KDE comparison for trajectories shaped (T, D) (or (T,) -> (T,1)).
+
+    per_dim=False:
+        One axis, one KDE per series (all dims flattened).
+    per_dim=True, pool_dims=True:
+        One axis, one KDE per series (pool across dims).
+    per_dim=True, pool_dims=False:
+        Subplot per dimension; overlay series per subplot.
+
+    Legend:
+        Shown once, outside the right edge; exactly one entry per series (series_dict keys).
+        Colors are consistent for each series across all subplots/modes.
+    """
+    # Normalize to (T, D)
+    series_2d = {k: _as_2d_TD(v) for k, v in series_dict.items()}
+    Ds = {arr.shape[1] for arr in series_2d.values()}
+
+    # Fixed, consistent colors per series (respect input order)
+    keys = list(series_dict.keys())
+    color_map = _series_colors(keys)
+
+    # ---------- Case 1: flatten (single axis) ----------
+    if not per_dim:
+        data = {k: _finite_1d(v) for k, v in series_2d.items()}
+        pooled = np.concatenate([d for d in data.values() if d.size > 0]) if data else np.array([])
+        if pooled.size == 0:
+            raise ValueError("All inputs empty/NaN.")
+        lo, hi = (np.min(pooled), np.max(pooled)) if xlim is None else xlim
+        if not np.isfinite(lo) or not np.isfinite(hi) or lo == hi:
+            lo, hi = lo - 0.5, hi + 0.5
+        xs = np.linspace(lo, hi, gridsize)
+
+        fig, ax = plt.subplots(1, 1, figsize=figsize)
+        for label, d in data.items():
+            color = color_map[label]
+            if d.size < 2 or np.std(d) == 0:
+                ax.plot([float(d.mean()) if d.size else 0]*2, [0, 1], color=color, alpha=0.4)
+            else:
+                kde = gaussian_kde(d, bw_method=bw_method)
+                ax.plot(xs, kde(xs), color=color, linewidth=linewidth, alpha=alpha)
+        ax.set_xlabel("Value"); ax.set_ylabel("Density")
+        if title: ax.set_title(title)
+
+        # Build legend once, outside, using series keys and their colors
+        handles = [plt.Line2D([0],[0], color=color_map[k], lw=linewidth) for k in keys]
+        fig.subplots_adjust(right=0.80)
+        fig.legend(handles, keys, loc="center left", bbox_to_anchor=(0.82, 0.5), frameon=False)
+        return fig
+
+    # ---------- Per-dim modes require same D across series ----------
+    if len(Ds) != 1:
+        shapes = {k: v.shape for k, v in series_2d.items()}
+        raise ValueError(f"When per_dim=True, all series must share the same D. Got Ds={Ds}, shapes={shapes}.")
+    D = Ds.pop()
+
+    # ---------- Case 2: per-dim with dims pooled (single axis) ----------
+    if pool_dims:
+        pooled_per_series = {k: _finite_1d(v) for k, v in series_2d.items()}
+        pooled_all = np.concatenate([v for v in pooled_per_series.values() if v.size > 0])
+        lo, hi = (np.min(pooled_all), np.max(pooled_all)) if xlim is None else xlim
+        if not np.isfinite(lo) or not np.isfinite(hi) or lo == hi:
+            lo, hi = lo - 0.5, hi + 0.5
+        xs = np.linspace(lo, hi, gridsize)
+
+        fig, ax = plt.subplots(1, 1, figsize=figsize)
+        for label, d in pooled_per_series.items():
+            color = color_map[label]
+            if d.size < 2 or np.std(d) == 0:
+                ax.plot([float(d.mean()) if d.size else 0]*2, [0, 1], color=color, alpha=0.4)
+            else:
+                kde = gaussian_kde(d, bw_method=bw_method)
+                ax.plot(xs, kde(xs), color=color, linewidth=linewidth, alpha=alpha)
+        ax.set_xlabel("Value"); ax.set_ylabel("Density")
+        if title: ax.set_title(title + " (dims pooled)" if title else "Dims pooled")
+
+        handles = [plt.Line2D([0],[0], color=color_map[k], lw=linewidth) for k in keys]
+        fig.subplots_adjust(right=0.80)
+        fig.legend(handles, keys, loc="center left", bbox_to_anchor=(0.82, 0.5), frameon=False)
+        return fig
+
+    # ---------- Case 3: per-dim with subplots (what you want) ----------
+    # Auto-layout: up to 3 columns
+    ncols = min(3, D)
+    nrows = int(np.ceil(D / ncols))
+
+    # Scale fig to grid & leave space for legend
+    base_w, base_h = figsize
+    fig_w = max(base_w, 3.8 * ncols)
+    fig_h = max(base_h, 2.8 * nrows)
+    fig, axes = plt.subplots(nrows, ncols, figsize=(fig_w, fig_h), squeeze=False)
+    axes_flat = axes.ravel()
+
+    if dim_names is not None and len(dim_names) != D:
+        raise ValueError(f"dim_names length {len(dim_names)} != D {D}.")
+
+    # Precompute per-dim x ranges from pooled dim data
+    xs_list = []
+    for d in range(D):
+        dim_all = np.concatenate([_finite_1d(arr[:, d]) for arr in series_2d.values()])
+        lo, hi = (np.min(dim_all), np.max(dim_all)) if xlim is None else xlim
+        if not np.isfinite(lo) or not np.isfinite(hi) or lo == hi:
+            lo, hi = lo - 0.5, hi + 0.5
+        xs_list.append(np.linspace(lo, hi, gridsize))
+
+    # Plot each dimension (consistent colors, no labels on lines)
+    for d in range(D):
+        ax = axes_flat[d]
+        xs = xs_list[d]
+        for label, arr in series_2d.items():
+            color = color_map[label]
+            dvals = _finite_1d(arr[:, d])
+            if dvals.size < 2 or np.std(dvals) == 0:
+                if dvals.size:
+                    ax.plot([float(dvals.mean())]*2, [0, 1], color=color, alpha=0.4)
+                continue
+            kde = gaussian_kde(dvals, bw_method=bw_method)
+            ax.plot(xs, kde(xs), color=color, linewidth=linewidth, alpha=alpha)
+
+        name = f"Dim {d}" if dim_names is None else dim_names[d]
+        ax.set_xlabel(name); ax.set_ylabel("Density")
+        ax.set_title(f"KDE — {name}")
+
+    # Remove unused axes (if D < nrows*ncols)
+    for j in range(D, len(axes_flat)):
+        fig.delaxes(axes_flat[j])
+
+    if title:
+        fig.suptitle(title, y=0.995)
+
+    # One legend outside, with exactly len(series_dict) entries, matching colors
+    handles = [plt.Line2D([0],[0], color=color_map[k], lw=linewidth) for k in keys]
+    fig.subplots_adjust(right=0.80)  # reserve space
+    fig.legend(handles, keys, loc="center left", bbox_to_anchor=(0.82, 0.5), frameon=False)
+
+    fig.tight_layout(rect=[0, 0, 0.80, 0.96] if title else [0, 0, 0.80, 0.98])
     return fig
 
 # ------------------------

@@ -161,6 +161,19 @@ def main(**cfg):
         "metrics/learned/neg_log_joint": float(learned_data["neg_log_joint"].item()),
     })
 
+    # Generate a long sequence of emissions from the learned model
+    long_t_emissions = jnp.arange(start=0.0, stop=10*cfg.T, step=cfg.dt).reshape(-1, 1)
+    long_learned_data = predictive_learned(next(keys), t_emissions=long_t_emissions, **known_values) # no emissions provided here, so it will sample them
+    
+    fig = plot_traj_kde({"Observed traj": emissions_obs, "Long learned traj": long_learned_data["emissions"].squeeze(0)})
+    wandb.log({"figures/emissions_kde": wandb.Image(fig)})
+    plt.close(fig)
+
+    fig = plot_traj_kde({"True states": sim_data["states"].squeeze(0), "Learned states": long_learned_data["states"].squeeze(0)})
+    wandb.log({"figures/states_kde": wandb.Image(fig)})
+    plt.close(fig)
+
+    # Finish the W&B run
     run.finish()
 
 
