@@ -4,10 +4,13 @@ sys.path.append("../..")
 
 import itertools
 import jax.numpy as jnp
+import jax.nn as jnn
+import jax.random as jr
 import jax
 import numpy as np
 import matplotlib.pyplot as plt
 import numpyro
+import numpyro.distributions as dist
 import matplotlib.colors as mcolors
 import seaborn as sns
 from continuous_discrete_nonlinear_gaussian_ssm import (
@@ -243,6 +246,69 @@ def eval_monomials(x, exponents):
 def poly_drift(x, weights, exponents):
     phi = eval_monomials(x, exponents)
     return weights @ phi
+
+# -----------------------------
+# Neural Network Drift Function
+# -----------------------------
+def make_nn_init_dict(key, state_dim, hidden_dims):
+    """
+    Create an initialization dictionary for NN weights/biases.
+    Uses He-style scaling for weights, zeros for biases.
+    """
+    params = {}
+    keys = iter(jr.split(key, len(hidden_dims) * 2 + 2))  # enough rng keys
+
+    in_dim = state_dim
+    for layer_idx, out_dim in enumerate(hidden_dims):
+        kW, kb = next(keys), next(keys)
+        params[f"W{layer_idx}"] = jnp.sqrt(2.0 / in_dim) * jr.normal(kW, (in_dim, out_dim))
+        params[f"b{layer_idx}"] = jnp.zeros((out_dim,))
+        in_dim = out_dim
+
+    # Output layer
+    kW_out, kb_out = next(keys), next(keys)
+    params["W_out"] = jnp.sqrt(2.0 / in_dim) * jr.normal(kW_out, (in_dim, state_dim))
+    params["b_out"] = jnp.zeros((state_dim,))
+
+    return params
+
+def make_bayesian_drift(state_dim, hidden_dims, prior="uniform", prior_scale=10.0, **kwargs):
+    """Sample NN weights once, then return a deterministic drift(x)."""
+
+    def sample_or_use(name, shape):
+        if name in kwargs:
+            val = kwargs[name]
+            numpyro.deterministic(name, val)
+            return val
+        else:
+            if prior == "uniform":
+                return numpyro.sample(name, dist.Uniform(-prior_scale, prior_scale).expand(shape).to_event(len(shape)))
+            elif prior == "normal":
+                return numpyro.sample(name, dist.Normal(0.0, prior_scale).expand(shape).to_event(len(shape)))
+            else:
+                raise ValueError(f"Unknown prior: {prior}")
+
+    # sample weights once
+    params = {}
+    in_dim = state_dim
+    for layer_idx, out_dim in enumerate(hidden_dims):
+        params[f"W{layer_idx}"] = sample_or_use(f"W{layer_idx}", (in_dim, out_dim))
+        params[f"b{layer_idx}"] = sample_or_use(f"b{layer_idx}", (out_dim,))
+        in_dim = out_dim
+    params["W_out"] = sample_or_use("W_out", (in_dim, state_dim))
+    params["b_out"] = sample_or_use("b_out", (state_dim,))
+
+    # build deterministic forward
+    def drift_fn(x):
+        h = x
+        in_dim = state_dim
+        for layer_idx, out_dim in enumerate(hidden_dims):
+            h = jnn.gelu(jnp.dot(h, params[f"W{layer_idx}"]) + params[f"b{layer_idx}"])
+            in_dim = out_dim
+        out = jnp.dot(h, params["W_out"]) + params["b_out"]
+        return out
+
+    return drift_fn
 
 # ------------------------
 # Filter hyperparameter helper
