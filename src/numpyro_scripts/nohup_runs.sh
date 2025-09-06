@@ -26,6 +26,9 @@ nohup python l63_dict_laplace.py --init_lr 0.01 --dt 0.1 --num_epochs 10000  --d
 PROJECT_NAME="l63_nn"
 nohup python l63_nn.py --init_lr 0.01 --num_epochs 1000 --dt 0.01 --diffusion_coeff 1.0 --seed 0 --project $PROJECT_NAME &
 
+##### ------ Partially observed L63 Neural Net (regular timesteps) ------- ###
+PROJECT_NAME="l63_nn_partial"
+nohup python l63_nn.py --num_epochs 5000 --init_lr 0.01 --use_lr_scheduler 1 --emission_dim 1 --project $PROJECT_NAME &
 
 
 #### ------- Van Der Pol GP-expansion (regular timesteps) ------- ###
