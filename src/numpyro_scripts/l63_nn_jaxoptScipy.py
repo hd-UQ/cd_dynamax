@@ -36,7 +36,7 @@ from _utils import *
 # ------------------------
 def main(**cfg):
     # Initialize a new W&B run.
-    run = wandb.init(config=cfg, project=cfg["project"])
+    run = wandb.init(config=cfg, project=cfg["project"], dir=cfg["dir"])
     cfg = wandb.config
 
     # Global settings
@@ -221,7 +221,7 @@ if __name__ == "__main__":
     
     # Wandb settings
     parser.add_argument("--project", type=str, default="l63_nn_scipy")
-
+    parser.add_argument("--dir", type=str, default="./wandb")  # wandb directory
     # Parse arguments
     args = parser.parse_args()
     
