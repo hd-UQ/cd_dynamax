@@ -18,6 +18,188 @@ from continuous_discrete_nonlinear_gaussian_ssm import (
     EnKFHyperParams, EKFHyperParams, UKFHyperParams
 )
 
+
+# ------------------------
+# Optimization helpers
+# ------------------------
+from typing import Any, NamedTuple, Optional, Dict
+import warnings
+from contextlib import contextmanager
+from jaxopt import ScipyMinimize
+from jax.flatten_util import ravel_pytree
+from numpyro.infer import SVI, Trace_ELBO
+from numpyro.optim import Adam
+from tqdm.auto import tqdm
+
+class SVIRunResultCompat(NamedTuple):
+    params: Any
+    losses: jnp.ndarray
+    state: Optional[Any] = None  # API parity
+
+
+# Map methods to their SciPy "num function evals" option key.
+# If a method isn't listed here, SciPy doesn't expose a true feval cap;
+# we still cap iterations via maxiter = maxfevals.
+_FEVAL_OPT = {
+    "nelder-mead": "maxfev",
+    "powell": "maxfev",
+    "l-bfgs-b": "maxfun",
+    "tnc": "maxfun",
+}
+
+def _normalize_method(method: str) -> str:
+    return (method or "").strip().lower()
+
+def _build_options(method: str, maxfevals: Optional[int]) -> Dict[str, Any]:
+    if maxfevals is None:
+        return {}
+    m = _normalize_method(method)
+    key = _FEVAL_OPT.get(m)
+    if key is None:
+        # No method-specific feval option; iteration cap will still be applied.
+        return {}
+    return {key: int(maxfevals)}
+
+def svi_run_grad_jaxopt(
+    model,
+    guide,
+    *,
+    data_kwargs: Dict[str, Any],
+    init_key: jax.Array,
+    loss_key: jax.Array,              # FIXED key → deterministic ELBO
+    maxfevals: int,                   # NEW master knob
+    method: str = "Nelder-Mead",      # or "Powell", "L-BFGS-B", "TNC", ...
+    tol: float = 1e-6,
+):
+    """Run SVI with jaxopt.ScipyMinimize optimizers.
+    Args:
+        model: NumPyro model
+        guide: NumPyro guide
+        data_kwargs: keyword args for model/guide (e.g. observations, t_emissions)
+        init_key: PRNGKey for SVI init
+        loss_key: PRNGKey for loss evaluation (FIXED key → deterministic ELBO)
+        maxfevals: maximum number of function evaluations (positive integer)
+        method: SciPy minimization method (see jaxopt.ScipyMinimize docs)
+        tol: tolerance for termination
+    Returns:
+        SVIRunResultCompat: (params, losses, state)
+    
+    Methods:
+        "Nelder-Mead", "Powell", "CG", "BFGS", "Newton-CG","L-BFGS-B",
+        "TNC", "COBYLA", "SLSQP", "trust-constr","dogleg",
+        "trust-ncg", "trust-exact", "trust-krylov"
+
+    Notes:
+        - The usage of gradients depends on the method; 
+            e.g. "Nelder-Mead" and "Powell" do not use gradients,
+            while "BFGS" and "L-BFGS-B" do. They have gradient-free options in scipy,
+            but jaxopt's ScipyMinimize wrapper does not expose them.
+        - The number of iterations is always capped by maxfevals.        
+        - Trust-constr does not store loss history due to jaxopt mis-handling of callbacks.
+        
+    """
+    if maxfevals is None or int(maxfevals) <= 0:
+        raise ValueError("maxfevals must be a positive integer.")
+    maxfevals = int(maxfevals)
+
+    # --- tiny helpers (local to keep this drop-in clean) ---
+    @contextmanager
+    def _progress_ctx(total: int, desc: str):
+        bar = tqdm(total=total, desc=desc, leave=True)
+        try:
+            yield bar
+        finally:
+            # Clamp to total if we under-updated.
+            if bar.n < bar.total:
+                bar.update(bar.total - bar.n)
+            bar.close()
+
+    def _safe_update(bar, n=1):
+        # Avoid overshooting due to line searches or numerical quirks.
+        remaining = max(0, bar.total - bar.n)
+        if remaining > 0:
+            bar.update(min(n, remaining))
+
+    # 1) Initialize a valid params pytree (no training)
+    _init_svi = SVI(model, guide, Adam(1e-3), loss=Trace_ELBO())
+    svi_state = _init_svi.init(init_key, **data_kwargs)
+    init_params = _init_svi.get_params(svi_state)
+
+    # 2) Deterministic ELBO loss
+    elbo = Trace_ELBO()
+
+    def loss_fn(params):
+        return elbo.loss(loss_key, params, model, guide, **data_kwargs)
+
+    # 3) Callback to record losses (robust to methods that don't honor it)
+    flat0, unravel = ravel_pytree(init_params)
+    iter_losses: list = []
+
+    # Build options from maxfevals if supported by the method (uses your helper).
+    options = _build_options(method, maxfevals)
+    effective_maxiter = maxfevals  # ALWAYS tie iterations to maxfevals
+
+    # Progress via *function evaluations* by wrapping loss_fn
+    with _progress_ctx(total=maxfevals, desc=f"opt[{method}]") as bar:
+
+        def loss_fn_wrapped(params):
+            val = loss_fn(params)
+            # Update bar every feval; show latest loss (best-effort).
+            _safe_update(bar, 1)
+            try:
+                bar.set_postfix_str(f"loss={float(val):.4g}")
+            except Exception:
+                pass
+            return val
+
+        def callback(xk):
+            # Best-effort: record per-iteration loss (some methods don't call this).
+            try:
+                params_k = (
+                    unravel(jnp.asarray(xk, dtype=flat0.dtype))
+                    if isinstance(xk, (np.ndarray, jnp.ndarray))
+                    else xk
+                )
+                val = loss_fn(params_k)
+                iter_losses.append(float(val))
+                # Keep postfix fresh with "iter_loss" if available
+                try:
+                    bar.set_postfix_str(f"iter_loss={float(val):.4g}")
+                except Exception:
+                    pass
+            except Exception as e:
+                warnings.warn(
+                    f"[callback issue for method '{method}']: {type(e).__name__}: {e}"
+                )
+
+        # 5) Run SciPy
+        minimizer = ScipyMinimize(
+            fun=loss_fn_wrapped,              # << use wrapped fn to drive tqdm
+            method=method,
+            tol=tol,
+            maxiter=effective_maxiter,        # master cap
+            callback=callback,                # may be ignored by some methods
+            jit=False,                        # SciPy loop in Python; loss still JIT’d by JAX
+            options=options if options else None,
+        )
+        res = minimizer.run(init_params)
+
+    opt_params = res.params
+
+    # 6) Ensure final loss is recorded
+    try:
+        final_val = float(loss_fn(opt_params))
+        if not iter_losses or iter_losses[-1] != final_val:
+            iter_losses.append(final_val)
+    except Exception as e:
+        warnings.warn(f"[final loss eval failed] {type(e).__name__}: {e}")
+
+    return SVIRunResultCompat(
+        params=opt_params,
+        losses=jnp.array(iter_losses),
+        state=None,
+    )
+
 # ------------------------
 # Plot helpers
 # ------------------------
