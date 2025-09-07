@@ -1,0 +1,22 @@
+program: l63_nn_jaxoptScipy.py  # <-- point to your script
+project: l63-nn-scipy
+entity: mattlevine22
+method: grid   # or "random"
+metric:
+  name: learned/neg_log_joint
+  goal: minimize
+
+parameters:
+  seed:
+    values: [0, 1]
+  num_epochs:
+    values: [1000, 10000]
+  opt_method:
+    values: ["Nelder-Mead", "Powell", "CG",
+              "BFGS", "Newton-CG","L-BFGS-B",
+              "TNC", "COBYLA", "SLSQP",
+              "trust-constr","dogleg",
+              "trust-ncg", "trust-exact", "trust-krylov",
+              ]
+  emission_dim:
+    values: [1, 3]
