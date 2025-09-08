@@ -18,7 +18,7 @@ parameters:
   filter_type:
     values: ["EnKF", "EKF", "UKF"]
   state_order:
-    values: [discrete", "zeroth", "first"]
+    values: ["discrete", "zeroth", "first"]
   init_lr:
     values: [0.01, 0.005, 0.001]
   dt:
