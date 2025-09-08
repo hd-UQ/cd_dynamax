@@ -116,7 +116,7 @@ def main(**cfg):
     known_values = {key: value for key, value in true_values.items() if key not in ["drift"]}
     
     # Generate synthetic emissions
-    t_emissions = jnp.arange(start=0.0, stop=cfg.T, step=cfg.dt).reshape(-1, 1)
+    t_emissions = sample_t_emissions(start=0.0, stop=cfg.T, dt=cfg.dt, regular=cfg.t_regular, key=next(keys))
     sim_data = Predictive(model, num_samples=1)(next(keys), t_emissions=t_emissions, **true_values)
     # Extract emissions from the simulation data
     emissions_obs = sim_data["emissions"].squeeze(0)
@@ -208,6 +208,7 @@ if __name__ == "__main__":
     parser.add_argument("--diffusion_coeff", type=float, default=1.0)
     parser.add_argument("--T", type=int, default=40) # final time
     parser.add_argument("--dt", type=float, default=0.01) # time step size
+    parser.add_argument("--t_regular", type=int, default=1) # 1 for True (regular sampling), 0 for False (uniform random sampling)
     parser.add_argument("--emission_dim", type=int, default=3) # observation dimension (default is to observe the first "emission_dim" states)
     parser.add_argument("--state_dim", type=int, choices=[3], default=3) # state dimension (only 3 is supported now)
 

@@ -18,6 +18,52 @@ from continuous_discrete_nonlinear_gaussian_ssm import (
     EnKFHyperParams, EKFHyperParams, UKFHyperParams
 )
 
+# -----------------------
+# Data-generation helpers
+# -----------------------
+def sample_t_emissions(start=0.0, stop=10.0, dt=0.1, regular=True, key=None, verbose=True):
+    """
+    Generate emission times between [start, stop) using different sampling styles.
+
+    Args:
+        start (float): Start time (inclusive).
+        stop (float): Stop time (exclusive).
+        dt (float): Average spacing between points.
+        regular (bool): If True, use regular spacing. If False, use uniform random sampling.
+        key (jax.random.PRNGKey): Required for regular=False (random sampling).
+
+    Returns:
+        jnp.ndarray: Times of shape (N, 1).
+    """
+    if regular:
+        t_emissions = jnp.arange(start, stop, dt).reshape(-1, 1)
+    else:
+        if key is None:
+            raise ValueError("`key` must be provided for uniform sampling.")
+        N = int(jnp.ceil((stop - start) / dt))
+        key, subkey = jax.random.split(key)
+        t_emissions = jnp.sort(jax.random.uniform(subkey, (N,), minval=start, maxval=stop))
+        t_emissions = t_emissions.reshape(-1, 1)
+
+    # ---- Post-checks ----
+    if t_emissions.size > 1:
+        diffs = jnp.diff(t_emissions.squeeze())
+        min_step = float(diffs.min())
+        is_sorted = jnp.all(diffs >= 0.0)
+        has_dupes = jnp.any(diffs == 0.0)
+
+        assert is_sorted, "t_emissions is not sorted."
+        assert not has_dupes, "t_emissions contains duplicate points."
+
+        if verbose:
+            print(f"[make_t_emissions] Generated {t_emissions.shape[0]} points from {start} to {stop} with avg step ~{dt:.4f}")
+        print(f"[make_t_emissions] Smallest time step = {min_step:.6f}")
+    else:
+        print("[make_t_emissions] Only one or zero points generated.")
+
+    return t_emissions
+
+
 
 # ------------------------
 # Optimization helpers
