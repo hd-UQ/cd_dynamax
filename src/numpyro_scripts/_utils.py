@@ -17,6 +17,7 @@ import seaborn as sns
 from continuous_discrete_nonlinear_gaussian_ssm import (
     EnKFHyperParams, EKFHyperParams, UKFHyperParams
 )
+from sklearn.decomposition import PCA
 
 # -----------------------
 # Data-generation helpers
@@ -247,9 +248,99 @@ def svi_run_grad_jaxopt(
     )
 
 # ------------------------
+# MCMC Plot helpers
+# ------------------------
+def plot_forest(mcmc_samples, param_name="beta", max_params=50, figsize=(10, 6)):
+    """
+    Forest plot of posterior means + 95% CIs for up to max_params.
+    Works for 1D flattened parameters.
+    """
+    arr = np.asarray(mcmc_samples[param_name])  # (num_samples, ..., D?)
+    flat = arr.reshape(arr.shape[0], -1)        # (num_samples, P)
+    P = flat.shape[1]
+    idx = np.arange(min(P, max_params))
+
+    means = flat.mean(axis=0)[idx]
+    lowers = np.percentile(flat, 2.5, axis=0)[idx]
+    uppers = np.percentile(flat, 97.5, axis=0)[idx]
+
+    fig, ax = plt.subplots(figsize=figsize)
+    ax.errorbar(means, idx, xerr=[means - lowers, uppers - means],
+                fmt="o", color="tab:blue", ecolor="gray", alpha=0.8)
+    ax.set_yticks(idx)
+    ax.set_yticklabels([f"{param_name}[{i}]" for i in idx])
+    ax.axvline(0, color="k", linestyle="--", lw=1)
+    ax.set_title(f"Posterior of {param_name} (first {len(idx)} params)")
+    plt.tight_layout()
+    return fig
+
+
+def plot_violin(mcmc_samples, param_name="beta", max_params=50, figsize=(12, 6)):
+    """
+    Violin plots for marginals of posterior. Good for overview.
+    """
+    arr = np.asarray(mcmc_samples[param_name])
+    flat = arr.reshape(arr.shape[0], -1)
+    P = flat.shape[1]
+    idx = np.arange(min(P, max_params))
+
+    fig, ax = plt.subplots(figsize=figsize)
+    sns.violinplot(data=flat[:, idx], inner="quartile", orient="v", ax=ax)
+    ax.set_xticks(idx)
+    ax.set_xticklabels([f"{i}" for i in idx], rotation=90)
+    ax.set_xlabel(f"{param_name} index")
+    ax.set_ylabel("Posterior samples")
+    ax.set_title(f"Posterior violin plots (first {len(idx)} params)")
+    plt.tight_layout()
+    return fig
+
+
+def plot_correlation_heatmap(mcmc_samples, param_name="beta", figsize=(8, 6), max_params=50):
+    """
+    Heatmap of posterior correlations between parameters.
+    Subsamples if too many parameters.
+    """
+    arr = np.asarray(mcmc_samples[param_name])
+    flat = arr.reshape(arr.shape[0], -1)
+    P = flat.shape[1]
+
+    if P > max_params:
+        flat = flat[:, :max_params]
+        P = max_params
+
+    corr = np.corrcoef(flat.T)
+
+    fig, ax = plt.subplots(figsize=figsize)
+    sns.heatmap(corr, cmap="coolwarm", center=0, ax=ax,
+                xticklabels=[f"{i}" for i in range(P)],
+                yticklabels=[f"{i}" for i in range(P)])
+    ax.set_title(f"Posterior correlation heatmap ({param_name}, first {P})")
+    plt.tight_layout()
+    return fig
+
+
+def plot_pca_scatter(mcmc_samples, param_name="beta", figsize=(6, 6)):
+    """
+    PCA projection of posterior samples (first 2 PCs).
+    """
+    arr = np.asarray(mcmc_samples[param_name])
+    flat = arr.reshape(arr.shape[0], -1)
+
+    pca = PCA(n_components=2)
+    proj = pca.fit_transform(flat)
+
+    fig, ax = plt.subplots(figsize=figsize)
+    ax.scatter(proj[:, 0], proj[:, 1], alpha=0.4, s=10, color="tab:blue")
+    ax.set_xlabel("PC1")
+    ax.set_ylabel("PC2")
+    ax.set_title(f"PCA of posterior samples ({param_name})")
+    plt.tight_layout()
+    return fig
+
+# ------------------------
 # Plot helpers
 # ------------------------
-def plot_coeff_heatmaps(W_true, W_learned, exponents):
+def plot_coeff_heatmaps(W_true, W_learned, exponents=None, relative_error=False):
     fig, axes = plt.subplots(1, 3, figsize=(16, 5), constrained_layout=True)
     vlim = jnp.max(jnp.abs(jnp.concatenate([W_true, W_learned])))
     norm = mcolors.TwoSlopeNorm(vmin=-vlim, vcenter=0.0, vmax=vlim)
@@ -263,8 +354,11 @@ def plot_coeff_heatmaps(W_true, W_learned, exponents):
     fig.colorbar(im1, ax=axes[1], fraction=0.046, pad=0.04)
 
     abs_err = jnp.abs(W_learned - W_true) #/ jnp.maximum(jnp.abs(W_true), 1e-8)
+    err_title = "Relative error" if relative_error else "Absolute error"
+    if relative_error:
+        abs_err /= jnp.maximum(jnp.abs(W_true), 1e-8)
     im2 = axes[2].imshow(abs_err, aspect="auto", cmap="viridis")
-    axes[2].set_title("Absolute error"); axes[2].set_xlabel("Term index"); axes[2].set_ylabel("State index")
+    axes[2].set_title(err_title); axes[2].set_xlabel("Term index"); axes[2].set_ylabel("State index")
     fig.colorbar(im2, ax=axes[2], fraction=0.046, pad=0.04)
 
     return fig
@@ -302,7 +396,9 @@ def plot_drift_field(
     f_learned_vals = jax.vmap(f_learned)(grid_points)  # (N, 2)
 
     if f_learned_sd is not None:
-        f_learned_sd_vals = jax.vmap(f_learned_sd)(grid_points).squeeze(1)  # (N, 2)
+        f_learned_sd_vals = jax.vmap(f_learned_sd)(grid_points)#.squeeze(1)  # (N, 2)
+        if f_learned_sd_vals.ndim == 3 and f_learned_sd_vals.shape[1] == 1:
+            f_learned_sd_vals = f_learned_sd_vals.squeeze(1)
         f1_sd = f_learned_sd_vals[:, 0].reshape(num_points, num_points)
         f2_sd = f_learned_sd_vals[:, 1].reshape(num_points, num_points)
     else:
@@ -314,12 +410,12 @@ def plot_drift_field(
     f1_learned = f_learned_vals[:, 0].reshape(num_points, num_points)
     f2_learned = f_learned_vals[:, 1].reshape(num_points, num_points)
 
+    f1_err = jnp.abs(f1_learned - f1_true)
+    f2_err = jnp.abs(f2_learned - f2_true)
+
     if relative_error:
-        f1_err = (f1_learned - f1_true) / (jnp.abs(f1_true) + 1e-6)
-        f2_err = (f2_learned - f2_true) / (jnp.abs(f2_true) + 1e-6)
-    else:
-        f1_err = f1_learned - f1_true
-        f2_err = f2_learned - f2_true
+        f1_err /= (jnp.abs(f1_true) + 1e-6)
+        f2_err /= (jnp.abs(f2_true) + 1e-6)
 
     # Color normalization
     vlim1 = jnp.max(jnp.abs(jnp.concatenate([f1_true.ravel(), f1_learned.ravel()])))
@@ -652,7 +748,7 @@ def poly_drift(x, weights, exponents):
 # -----------------------------
 # Neural Network Drift Function
 # -----------------------------
-def make_nn_init_dict(key, state_dim, hidden_dims):
+def make_nn_init_dict(key, state_dim, hidden_dims, eps=1):
     """
     Create an initialization dictionary for NN weights/biases.
     Uses He-style scaling for weights, zeros for biases.
@@ -663,18 +759,18 @@ def make_nn_init_dict(key, state_dim, hidden_dims):
     in_dim = state_dim
     for layer_idx, out_dim in enumerate(hidden_dims):
         kW, kb = next(keys), next(keys)
-        params[f"W{layer_idx}"] = jnp.sqrt(2.0 / in_dim) * jr.normal(kW, (in_dim, out_dim))
+        params[f"W{layer_idx}"] = eps * jnp.sqrt(2.0 / in_dim) * jr.normal(kW, (in_dim, out_dim))
         params[f"b{layer_idx}"] = jnp.zeros((out_dim,))
         in_dim = out_dim
 
     # Output layer
     kW_out, kb_out = next(keys), next(keys)
-    params["W_out"] = jnp.sqrt(2.0 / in_dim) * jr.normal(kW_out, (in_dim, state_dim))
+    params["W_out"] = eps * jnp.sqrt(2.0 / in_dim) * jr.normal(kW_out, (in_dim, state_dim))
     params["b_out"] = jnp.zeros((state_dim,))
 
     return params
 
-def make_bayesian_drift(state_dim, hidden_dims, prior="uniform", prior_scale=10.0, **kwargs):
+def make_bayesian_nn_drift(state_dim, hidden_dims, prior="uniform", prior_scale=10.0, **kwargs):
     """Sample NN weights once, then return a deterministic drift(x)."""
 
     def sample_or_use(name, shape):
@@ -703,10 +799,8 @@ def make_bayesian_drift(state_dim, hidden_dims, prior="uniform", prior_scale=10.
     # build deterministic forward
     def drift_fn(x):
         h = x
-        in_dim = state_dim
         for layer_idx, out_dim in enumerate(hidden_dims):
             h = jnn.gelu(jnp.dot(h, params[f"W{layer_idx}"]) + params[f"b{layer_idx}"])
-            in_dim = out_dim
         out = jnp.dot(h, params["W_out"]) + params["b_out"]
         return out
 

@@ -64,7 +64,7 @@ def main(**cfg):
             drift = lambda x: adjust_rhs(x, kwargs["drift"](x))
         else:
             # Sample or use provided parameters
-            drift_base = make_bayesian_drift(
+            drift_base = make_bayesian_nn_drift(
                 state_dim=cfg.state_dim,
                 hidden_dims=cfg.hidden_dims,   # e.g., [64, 64]
                 prior="uniform",
