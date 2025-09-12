@@ -118,7 +118,6 @@ class PosteriorGSSMFiltered(NamedTuple):
 
     """
     marginal_loglik: Union[Scalar, Float[Array, "ntime"]]
-    loglik_step: Union[Scalar, Float[Array, "ntime"]] = None
     filtered_means: Optional[Float[Array, "ntime state_dim"]] = None
     filtered_covariances: Optional[Float[Array, "ntime state_dim state_dim"]] = None
     predicted_means: Optional[Float[Array, "ntime state_dim"]] = None
@@ -132,7 +131,7 @@ class PosteriorGSSMFiltered(NamedTuple):
     min_eig_S: Optional[Float[Array, "ntime"]] = None
     cond_S: Optional[Float[Array, "ntime"]] = None
     cond_K: Optional[Float[Array, "ntime"]] = None
-
+    loglik_step: Union[Scalar, Float[Array, "ntime"]] = None
 
 class PosteriorGSSMSmoothed(NamedTuple):
     r"""Marginals of the Gaussian filtering and smoothing posterior.
