@@ -716,6 +716,48 @@ def plot_traj_kde(
     fig.tight_layout(rect=[0, 0, 0.80, 0.96] if title else [0, 0, 0.80, 0.98])
     return fig
 
+
+def plot_simulated_data(t=None, states=None, emissions=None):
+    """
+    Plot simulated states and emissions over time.
+    Each state dimension gets its own subplot.
+    
+    Args:
+        t: (T,) time vector
+        states: (T, D) true states
+        emissions: (T, D) observed emissions (assumed same dim as states for now)
+    
+    Returns:
+        matplotlib Figure
+    """
+    
+    # Validate inputs
+    if states is None and emissions is None:
+        raise ValueError("At least one of states or emissions must be provided.")
+    
+    # Make a single figure with subplots for each state and emission overlayed
+    # Assume that the N emissions correspond to the the first N states
+    
+    n_rows = states.shape[1] if states is not None else emissions.shape[1]
+    fig, axes = plt.subplots(n_rows, 1, figsize=(10, 3 * n_rows), sharex=True)
+    if n_rows == 1:
+        axes = [axes]
+        
+    for i, ax in enumerate(axes):
+        if states is not None:
+            ax.plot(t, states[:, i], label="State", color="tab:blue")
+        if emissions is not None:
+            ax.scatter(t, emissions[:, i], label="Emission", color="tab:orange", s=10, alpha=0.6)
+        ax.set_ylabel(f"Dim {i}")
+        ax.grid(True, linestyle="--", alpha=0.3)
+        if i == 0:
+            ax.legend()
+    
+    axes[-1].set_xlabel("Time")
+    fig.suptitle("States and Emissions", fontsize=16)
+    fig.tight_layout(rect=[0, 0, 1, 0.96])
+    return fig
+    
 # ------------------------
 # Inference/model helpers
 # ------------------------

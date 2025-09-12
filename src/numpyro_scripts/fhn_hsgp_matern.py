@@ -221,7 +221,7 @@ def main(**cfg):
     )
 
     # NumPyro model
-    def model(t_emissions, emissions=None, store_filtered=False, store_grad=False, supervised=False, compute_fisher=False, **kwargs):
+    def model(t_emissions, emissions=None, supervised=False, **kwargs):
         # If user supplies drift, use it; otherwise build HSGP drift
         lp = 0.0  # log prior
         if "drift" in kwargs and kwargs["drift"] is not None:
@@ -277,41 +277,11 @@ def main(**cfg):
         # Sample emissions if not provided
         if emissions is None:
             states, emissions = cdnlgssm.sample(params=params, num_timesteps=t_emissions.shape[0], key=numpyro.prng_key(), t_emissions=t_emissions, transition_type="path")
-            numpyro.deterministic("states", states); numpyro.deterministic("emissions", emissions)
-
-        # optionally compute empirical fisher information via outer product of gradients from filtering loglikelihood
-        # Note that it will be 1 call to the filter, because we have 1 trajectory of emissions
-        if compute_fisher:
-            def neg_loglik_fn(_params):
-                filtered = cdnlgssm_filter(params=_params, emissions=emissions, t_emissions=t_emissions, filter_hyperparams=FILTER_HYPERPARAMS)
-                return -filtered.marginal_loglik
-            g = jax.grad(neg_loglik_fn)(params)
-            F = jnp.outer(g, g) + 1e-6 * jnp.eye(len(g))  # add small ridge for numerical stability
-
-            # store the fisher matrix (it can be large)
-            numpyro.deterministic("fisher_matrix", F)
-            
+            numpyro.deterministic("states", states); numpyro.deterministic("emissions", emissions)            
             
         # Compute (approximate) marginal log likelihood via filtering
         filtered = cdnlgssm_filter(params=params, emissions=emissions, t_emissions=t_emissions, filter_hyperparams=FILTER_HYPERPARAMS)
         ll = filtered.marginal_loglik
-        
-        if store_filtered:
-            # Store the filtering details for diagnostics
-            numpyro.deterministic('filtered_means', filtered.filtered_means)
-            numpyro.deterministic('filtered_covariances', filtered.filtered_covariances)
-            numpyro.deterministic('predicted_means', filtered.predicted_means)
-            numpyro.deterministic('predicted_covariances', filtered.predicted_covariances)
-            numpyro.deterministic('neg_loglik_steps', -filtered.loglik_step)
-            # numpyro.deterministic('S', filtered.S)
-            # numpyro.deterministic('K', filtered.K)
-            numpyro.deterministic('innovation', filtered.innovation)
-            numpyro.deterministic('nis', filtered.nis)
-            numpyro.deterministic('min_eig_S', filtered.min_eig_S)
-            numpyro.deterministic('cond_S', filtered.cond_S)
-            numpyro.deterministic('cond_K', filtered.cond_K)
-            numpyro.deterministic('x_ens_filtered', filtered.x_ens_filtered)
-            numpyro.deterministic('x_ens_predicted', filtered.x_ens_predicted)
         
         # Store the log probs (used only for diagnostics, not for learning)
         numpyro.deterministic("neg_log_prior", -lp)
@@ -319,32 +289,12 @@ def main(**cfg):
         numpyro.deterministic("neg_log_joint", -ll - lp)
         numpyro.factor("log_likelihood", ll)
 
-        # Optionally store gradients (for diagnostics)
-        if store_grad and "drift" not in kwargs:
-            grad_beta = jax.grad(lambda _beta: cdnlgssm_filter(
-                params=build_params(
-                    state_dim=state_dim,
-                    emission_dim=emission_dim,
-                    initial_mean=jnp.zeros(state_dim), 
-                    initial_cov=cfg.initial_cov*jnp.eye(state_dim),
-                    drift=lambda x: compute_drift(x, _beta),
-                    diffusion_coeff=cfg.diffusion_coeff * jnp.eye(state_dim),
-                    diffusion_cov=jnp.eye(state_dim),
-                    emission_function=lambda x: H @ x,
-                    emission_cov=cfg.emission_cov * jnp.eye(emission_dim),
-                ),
-                emissions=emissions,
-                t_emissions=t_emissions,
-                filter_hyperparams=FILTER_HYPERPARAMS
-            ).marginal_loglik)(beta)
-            numpyro.deterministic("grad_neg_log_likelihood_beta", -grad_beta)
-    
-
     # Define the true parameters for the model and its data generation
     true_values = {
         "drift": true_drift,  # <— include true weights
     }
 
+    # Initialize the HSGP weights to zero (prior mean) and plot the initial mean drift
     beta_init = jnp.zeros((MSTAR, state_dim))
     print("Neg-log-prior of beta_init:", -float(dist.Normal(0,1).log_prob(beta_init).sum().item()))
     f_init_base = lambda x: compute_drift(x=x, beta=beta_init)
@@ -360,7 +310,7 @@ def main(**cfg):
     wandb.log({"fig/true_vs_initial_drift": wandb.Image(fig)})
     plt.close(fig)
 
-    # Fit the GP directly to the true drift (for comparison)
+    # Fit the GP directly to the true drift (for comparison) either exactly (kernel trick) or with HSGP (basis regression)
     gp_predict, hsgp_predict, beta_supervised, (X_train, Y_train) = supervised_fit_drift(true_drift, sigma2=cfg.emission_cov)
     fig_exact_gp_supervised, rmse = plot_drift_field(
         f_true=true_drift,
@@ -387,34 +337,22 @@ def main(**cfg):
     plt.close(fig_hsgp_supervised)  # too many colorbars otherwise
 
 
-    # Typically you keep these fixed/known during learning
-    # know everything except "weights" # it is empty here, but useful when there are more params
-    known_values = {key: value for key, value in true_values.items() if key not in ["drift"]}
+    # Values known to the model during training
+    known_values = {}
     
     # Generate synthetic emissions
     t_emissions = jnp.arange(start=0.0, stop=cfg.T, step=cfg.dt).reshape(-1, 1)
-    sim_data = Predictive(model, num_samples=1)(next(keys), t_emissions=t_emissions, store_filtered=True, **true_values)
+    sim_data = Predictive(model, num_samples=1)(next(keys), t_emissions=t_emissions, **true_values)
     # Extract emissions from the simulation data
     emissions_obs = sim_data["emissions"].squeeze(0)
     
-    # plot the emissions
-    fig = plt.figure(figsize=(12, 6))
-    plt.plot(t_emissions, emissions_obs, label="Emissions", color='tab:blue')
-    plt.xlabel("Time")
-    plt.ylabel("Emissions")
-    plt.title("Simulated Emissions from True Model")
-    plt.legend()
-    plt.show()
-    
-    # plot in phase space
-    fig = plt.figure(figsize=(8, 8))
-    plt.plot(sim_data["states"][0, :, 0], sim_data["states"][0, :, 1], label="True State Trajectory", color='tab:orange')
-    plt.xlabel("State Dimension 1")
-    plt.ylabel("State Dimension 2")
-    plt.title("True State Trajectory in Phase Space")
-    plt.legend()
-    plt.show()
-    
+    fig = plot_simulated_data(
+        t=t_emissions.squeeze(),
+        states=sim_data["states"].squeeze(0),
+        emissions=emissions_obs,
+    )
+    wandb.log({f"fig/simulated_data_trajectory": wandb.Image(fig)})
+    plt.close(fig)
     
     # Log metrics
     wandb.log({
@@ -424,52 +362,11 @@ def main(**cfg):
     })
     # Print the neg-log-likelihood values
     print(f"True model's neg_log_likelihood from filtering: {float(sim_data['neg_log_likelihood'].item())}")
-        
-    # Now plot the filtering ensemble trajectories for the true model
-    if cfg.log_filtering:
-        print("Plotting filtering ensemble trajectories for the true model...")
-        fig = plot_particle_diagnostics(
-            t_emissions=t_emissions.squeeze(),
-            x_ens_filtered=sim_data["x_ens_filtered"][0],   # shape (T, N, D)
-            x_ens_predicted=sim_data["x_ens_predicted"][0], # shape (T, N, D)
-            observations=emissions_obs,
-            figsize=(12, 8),
-            start_idx=0,
-            stop_idx=20,
-        )
-        wandb.log({"fig/true/ensembles_0to20": wandb.Image(fig)})
-        plt.close(fig)
-
-    # Log the trajectory from filtering
-    if cfg.log_filtering:
-        print("Logging trajectories from filtering/simulations with true and perturbed-truth models...")
-        # Trajectories use "time" as their x-axis
-        wandb.define_metric("filtering/true/true_state_*", step_metric="time")
-        wandb.define_metric("filtering/true/pred_mean_*", step_metric="time")
-        wandb.define_metric("filtering/true/filtered_mean_*", step_metric="time")
-        wandb.define_metric("filtering/true/cond_K", step_metric="time")
-        wandb.define_metric("filtering/true/cond_S", step_metric="time")
-        wandb.define_metric("filtering/true/min_eig_S", step_metric="time")
-        wandb.define_metric("filtering/true/nis", step_metric="time")
-        wandb.define_metric("filtering/true/neg_loglik_steps", step_metric="time")
-        for t in range(sim_data["predicted_means"].shape[1]):
-            log_dict = {"time": t}
-            log_dict["filtering/true/cond_S"] = float(sim_data["cond_S"][0, t])
-            log_dict["filtering/true/min_eig_S"] = float(sim_data["min_eig_S"][0, t])
-            log_dict["filtering/true/nis"] = float(sim_data["nis"][0, t])
-            log_dict["filtering/true/neg_loglik_steps"] = float(sim_data["neg_loglik_steps"][0, t])
-            log_dict["filtering/true/cond_K"] = float(sim_data["cond_K"][0, t])
-            for d in range(state_dim):
-                log_dict[f"filtering/true/true_state_dim{d}"] = float(sim_data["states"][0, t, d])
-                log_dict[f"filtering/true/pred_mean_dim{d}"] = float(sim_data["predicted_means"][0, t, d])
-                log_dict[f"filtering/true/filtered_mean_dim{d}"] = float(sim_data["filtered_means"][0, t, d])
-            # Log the current time step
-            wandb.log(log_dict)
 
     # Next, check the model at beta_supervised
     print("Checking supervised-fit predictive...")
     supervised_predictive = Predictive(model, num_samples=1)
-    supervised_data = supervised_predictive(next(keys), t_emissions=t_emissions, emissions=emissions_obs, store_filtered=True, beta=beta_supervised)
+    supervised_data = supervised_predictive(next(keys), t_emissions=t_emissions, emissions=emissions_obs, beta=beta_supervised)
     print(f"Supervised-fit model's neg_log_likelihood from filtering: {float(supervised_data['neg_log_likelihood'].item())}")
     print(f"Supervised-fit model's neg_log_prior: {float(supervised_data['neg_log_prior'].item())}")
     print(f"Supervised-fit model's neg_log_joint: {float(supervised_data['neg_log_joint'].item())}")
@@ -479,34 +376,6 @@ def main(**cfg):
         "metrics/supervised/neg_log_lik": float(supervised_data["neg_log_likelihood"].item()),
         "metrics/supervised/neg_log_joint": float(supervised_data["neg_log_joint"].item()),
     })
-
-    # Now, generate a prior predictive conditioned on emissions/t_emissions (for diagnostics)
-    print("Checking prior predictive...")
-    prior_predictive = Predictive(model, num_samples=cfg.n_prior_samples)
-    prior_data = prior_predictive(next(keys), t_emissions=t_emissions, emissions=emissions_obs, store_grad=True, **known_values)
-    # Compute fraction of NaN values in the neg-log-likelihood computation
-    nan_fraction = jnp.isnan(prior_data["neg_log_likelihood"]).mean()
-    wandb.log({"metrics/prior_predictive/nan_fraction": nan_fraction})
-    if nan_fraction > 0.0:
-        print(f"Warning: {nan_fraction:.2%} of prior predictive neg_log_likelihood samples are NaN")
-        # Show any one example weights matrix with NaN values
-        j = jnp.where(jnp.isnan(prior_data["neg_log_likelihood"]))[0][0]
-        print("Example weights with NaN in prior predictive neg_log_likelihood:")
-        print(prior_data["beta"][j])
-        # Optionally, you can raise an error here to stop execution        
-        raise ValueError(f"NaN values found in prior predictive neg_log_likelihood: {nan_fraction:.2%} of samples are NaN. Training is TOO DANGEROUS to proceed; please refine your prior, protect the RHS from large jumps, ensure covariances are PSD, and/or try 64bit precision.")
-
-    # Now compute fraction of NaN values in the grad_neg_log_likelihood_beta computation
-    nan_fraction_grad = jnp.isnan(prior_data["grad_neg_log_likelihood_beta"]).mean()
-    wandb.log({"metrics/prior_predictive/nan_fraction_grad": nan_fraction_grad})
-    if nan_fraction_grad > 0.0:
-        print(f"Warning: {nan_fraction_grad:.2%} of prior predictive grad_neg_log_likelihood_beta samples are NaN")
-        # Show any one example weights matrix with NaN values
-        j = jnp.where(jnp.isnan(prior_data["grad_neg_log_likelihood_beta"]))[0][0]
-        print("Example weights with NaN in prior predictive grad_neg_log_likelihood_beta:")
-        print(prior_data["beta"][j])
-        # Optionally, you can raise an error here to stop execution        
-        raise ValueError(f"NaN values found in prior predictive grad_neg_log_likelihood_beta: {nan_fraction_grad:.2%} of samples are NaN. Training is TOO DANGEROUS to proceed; please refine your prior, protect the RHS from large jumps, ensure covariances are PSD, and/or try 64bit precision.")
     
     
     # Fit the drift in supervised mode, but use SVI + NUTS now
@@ -515,20 +384,20 @@ def main(**cfg):
     svi_supervised = SVI(model, supervised_guide, optimizer, loss=Trace_ELBO())
     svi_result_supervised = svi_supervised.run(next(keys), num_steps=cfg.num_epochs, t_emissions=t_emissions, emissions=emissions_obs, supervised=True, **known_values)
     # Log training curve
-    wandb.define_metric("svi_supervised/loss", step_metric="epoch")
+    wandb.define_metric("svi/supervised/loss", step_metric="epoch")
     for step, loss in enumerate(svi_result_supervised.losses):
-        wandb.log({"epoch": step, "svi/loss": float(loss)})
+        wandb.log({"epoch": step, "svi/supervised/loss": float(loss)})
     predictive_learned_super_svi = Predictive(model, guide=supervised_guide, params=supervised_guide.median(svi_result_supervised.params), num_samples=1)
-    learned_data_super_svi = predictive_learned_super_svi(next(keys), t_emissions=t_emissions, emissions=emissions_obs, store_filtered=True, supervised=True, **known_values)
+    learned_data_super_svi = predictive_learned_super_svi(next(keys), t_emissions=t_emissions, emissions=emissions_obs, **known_values)
     # Log metrics
     wandb.log({
-        "metrics/supervised_svi/neg_log_prior": float(learned_data_super_svi["neg_log_prior"].item()),
-        "metrics/supervised_svi/neg_log_lik": float(learned_data_super_svi["neg_log_likelihood"].item()),
-        "metrics/supervised_svi/neg_log_joint": float(learned_data_super_svi["neg_log_joint"].item()),
+        "metrics/svi/supervised/neg_log_prior": float(learned_data_super_svi["neg_log_prior"].item()),
+        "metrics/svi/supervised/neg_log_lik": float(learned_data_super_svi["neg_log_likelihood"].item()),
+        "metrics/svi/supervised/neg_log_joint": float(learned_data_super_svi["neg_log_joint"].item()),
     })
     print(f"Supervised-SVI-fit model's neg_log_prior: {float(learned_data_super_svi['neg_log_prior'].item())}")
     
-
+    # Sample from the supervised SVI posterior and plot the learned drift
     supervised_beta_posterior = supervised_guide.get_posterior(svi_result_supervised.params)
     supervised_beta_learned_svi = supervised_beta_posterior.mean.reshape(MSTAR, state_dim)
     if hasattr(supervised_beta_posterior, "covariance_matrix"):
@@ -552,13 +421,13 @@ def main(**cfg):
         x2_range=(-cfg.ell_box[1]/2, cfg.ell_box[1]/2),
         num_points=50,
     )
-    wandb.log({"fig/hsgp_svi_supervised": wandb.Image(fig)})
+    wandb.log({"fig/supervised/hsgp_svi": wandb.Image(fig)})
     plt.close(fig)
 
     # Run NUTS initialized at median VI solution
     nuts_kernel = NUTS(model, 
                        init_strategy=init_to_value(values={"beta": supervised_guide.median(svi_result_supervised.params)["beta"]}),
-                       max_tree_depth=cfg.max_tree_depth,)
+                       max_tree_depth=cfg.max_tree_depth)
     mcmc = MCMC(nuts_kernel, num_warmup=cfg.nuts_warmup, num_samples=cfg.nuts_samples, num_chains=1)
     mcmc.run(next(keys), t_emissions=t_emissions, emissions=emissions_obs, supervised=True, **known_values)
     mcmc_samples = mcmc.get_samples()
@@ -587,7 +456,7 @@ def main(**cfg):
         num_points=50,
         return_rmse=True,
     )
-    wandb.log({"fig/hsgp_NUTS_supervised": wandb.Image(fig)})
+    wandb.log({"fig/supervised/hsgp_NUTS": wandb.Image(fig)})
     plt.close(fig)
 
     # Log the learned weights as line plots
@@ -602,111 +471,34 @@ def main(**cfg):
     ax.set_xlabel("basis index")
     ax.set_ylabel("weight value")
     ax.set_yscale("symlog")
-    wandb.log({"fig/learned_beta_lines_SVI": wandb.Image(fig)})
+    wandb.log({"fig/supervised/mean_beta": wandb.Image(fig)})
     plt.close(fig)
 
     # Forest plot
     for max_params in [10, 50, 200]:
         fig = plot_forest(mcmc_samples, param_name="beta", max_params=max_params)
-        wandb.log({f"fig/hsgp_NUTS_supervised_forest_{max_params}": wandb.Image(fig)})
+        wandb.log({f"fig/supervised/hsgp_NUTS_forest_{max_params}": wandb.Image(fig)})
         plt.close(fig)
 
         # Violin plots
         fig = plot_violin(mcmc_samples, param_name="beta", max_params=max_params)
-        wandb.log({f"fig/hsgp_NUTS_supervised_violin_{max_params}": wandb.Image(fig)})
+        wandb.log({f"fig/supervised/hsgp_NUTS_violin_{max_params}": wandb.Image(fig)})
         plt.close(fig)
 
         # Correlation heatmap
         fig = plot_correlation_heatmap(mcmc_samples, param_name="beta", max_params=max_params)
-        wandb.log({f"fig/hsgp_NUTS_supervised_corr_{max_params}": wandb.Image(fig)})
+        wandb.log({f"fig/supervised/hsgp_NUTS_corr_{max_params}": wandb.Image(fig)})
         plt.close(fig)
 
     # PCA scatter
     fig = plot_pca_scatter(mcmc_samples, param_name="beta")
-    wandb.log({"fig/hsgp_NUTS_supervised_pca": wandb.Image(fig)})
-    plt.close(fig)
-
-    ####################
-    # Now extract the tuned MCMC hyperparameters and re-run with supervised=False
-    # import pdb; pdb.set_trace()
-    mcmc_tuned_kernel = NUTS(model,
-                            #  step_size=mcmc.last_state.adapt_state.step_size,
-                            #  target_accept_prob=0.7,
-                             max_tree_depth=cfg.max_tree_depth,
-                            #  inverse_mass_matrix=mcmc.last_state.adapt_state.inverse_mass_matrix,
-                            #  adapt_step_size=False,
-                            #  adapt_mass_matrix=False,
-                             init_strategy=init_to_value(values={"beta": supervised_guide.median(svi_result_supervised.params)["beta"]})
-                            # init_strategy=init_to_value(values={"beta": jnp.mean(beta_samples_mcmc, axis=0)})
-                            )
-    mcmc_tuned = MCMC(mcmc_tuned_kernel, num_warmup=cfg.nuts_warmup, num_samples=cfg.nuts_samples, num_chains=1)
-    mcmc_tuned.run(next(keys), t_emissions=t_emissions, emissions=emissions_obs, **known_values)
-    mcmc_samples = mcmc_tuned.get_samples()
-    print(mcmc_tuned.print_summary())
-
-    # Use the ensemble of MCMC samples to compute a mean and sd for the drift
-    beta_samples_mcmc = mcmc_samples["beta"]  # (num_samples, MSTAR, D)
-    def f_learned_loc_sd(x):
-        def one(p):
-            # p should be (MSTAR, D)
-            fx = compute_drift(x, p)  # (..., state_dim)
-            return adjust_rhs(x, fx, **adjust_rhs_kwargs)  # (..., state_dim)
-        vals = jax.vmap(one)(beta_samples_mcmc)                   # (N, ..., state_dim)
-        mu = jnp.mean(vals, axis=0)                        # (..., state_dim)
-        sd = jnp.std(vals, axis=0)                          # (..., state_dim)
-        return mu, sd
-    f_learned_sd = lambda x: f_learned_loc_sd(x)[1]
-    f_learned = lambda x: f_learned_loc_sd(x)[0]
-
-    fig, rmse = plot_drift_field(
-        f_true=true_drift,
-        f_learned=f_learned,
-        f_learned_sd=f_learned_sd,
-        x1_range=(-cfg.ell_box[0]/2, cfg.ell_box[0]/2),
-        x2_range=(-cfg.ell_box[1]/2, cfg.ell_box[1]/2),
-        num_points=50,
-        return_rmse=True,
-    )
-    wandb.log({"fig/hsgp_NUTS_HyperFromSupervised": wandb.Image(fig)})
-    plt.close(fig)
-
-    # Log the learned weights as line plots
-    fig, ax = plt.subplots(figsize=(8, 4))
-    for d in range(supervised_beta_learned_svi.shape[1]):
-        # plot the mean of weights for MCMC samples
-        ax.plot(jnp.mean(beta_samples_mcmc[:, :, d], axis=0), label=f"dim {d} (supervised MCMC mean)")
-        ax.plot(supervised_beta_learned_svi[:, d], ':', label=f"dim {d} (supervised SVI mean)")
-        ax.plot(beta_supervised[:, d], '--', label=f"dim {d} (supervised chol MAP)")
-    ax.legend()
-    ax.set_title("Beta weights (per output dim)")
-    ax.set_xlabel("basis index")
-    ax.set_ylabel("weight value")
-    ax.set_yscale("symlog")
-    wandb.log({"fig/learned_beta_lines_SVI": wandb.Image(fig)})
-    plt.close(fig)
-
-    # Forest plot
-    for max_params in [10, 50, 200]:
-        fig = plot_forest(mcmc_samples, param_name="beta", max_params=max_params)
-        wandb.log({f"fig/hsgp_NUTS_HyperFromSupervised_forest_{max_params}": wandb.Image(fig)})
-        plt.close(fig)
-
-        # Violin plots
-        fig = plot_violin(mcmc_samples, param_name="beta", max_params=max_params)
-        wandb.log({f"fig/hsgp_NUTS_HyperFromSupervised_violin_{max_params}": wandb.Image(fig)})
-        plt.close(fig)
-
-        # Correlation heatmap
-        fig = plot_correlation_heatmap(mcmc_samples, param_name="beta", max_params=max_params)
-        wandb.log({f"fig/hsgp_NUTS_HyperFromSupervised_corr_{max_params}": wandb.Image(fig)})
-        plt.close(fig)
-
-    # PCA scatter
-    fig = plot_pca_scatter(mcmc_samples, param_name="beta")
-    wandb.log({"fig/hsgp_NUTS_HyperFromSupervised_pca": wandb.Image(fig)})
+    wandb.log({"fig/supervised/hsgp_NUTS_pca": wandb.Image(fig)})
     plt.close(fig)
 
     ################
+    # Now, fit the drift in filtered mode using SVI, then NUTS
+    ################
+    print("Fitting drift in filtered mode using SVI + NUTS...")
     
     # First, check feasibility of the initialization
     # guide = AutoDelta(model, init_loc_fn=init_to_value(values={"beta": beta_init}))
@@ -715,60 +507,28 @@ def main(**cfg):
     # Run model in predictive mode
     print("Checking initialization predictive...")
     init_predictive = Predictive(model, num_samples=1)
-    init_data = init_predictive(next(keys), t_emissions=t_emissions, emissions=emissions_obs, store_filtered=True, beta=beta_init)
-
-    if cfg.log_filtering:
-        # Log a bunch of these trajectories to wandb
-        wandb.define_metric("filtering/init/cond_K", step_metric="time")
-        wandb.define_metric("filtering/init/cond_S", step_metric="time")
-        wandb.define_metric("filtering/init/min_eig_S", step_metric="time")
-        wandb.define_metric("filtering/init/nis", step_metric="time")
-        wandb.define_metric("filtering/init/neg_loglik_steps", step_metric="time")
-        for t in range(init_data["cond_S"].shape[1]):
-            wandb.log({
-                "time": t,
-                "filtering/init/cond_S": float(init_data["cond_S"][0, t]),
-                "filtering/init/min_eig_S": float(init_data["min_eig_S"][0, t]),
-                "filtering/init/nis": float(init_data["nis"][0, t]),
-                "filtering/init/neg_loglik_steps": float(init_data["neg_loglik_steps"][0, t]),
-            })
-        fig = plot_particle_diagnostics(
-            t_emissions=t_emissions.squeeze(),
-            x_ens_filtered=init_data["x_ens_filtered"][0],   # shape (T, N, D)
-            x_ens_predicted=init_data["x_ens_predicted"][0], # shape (T, N, D)
-            observations=emissions_obs,
-            figsize=(12, 8),
-            start_idx=0,
-            stop_idx=20,
-        )
-        wandb.log({"fig/init/ensembles_0to20": wandb.Image(fig)})
-        plt.close(fig)
+    init_data = init_predictive(next(keys), t_emissions=t_emissions, emissions=emissions_obs, beta=beta_init)
 
     print(f"Initialization neg_log_likelihood from filtering: {float(init_data['neg_log_likelihood'].item())}")
     if jnp.isnan(init_data['neg_log_likelihood']):
         raise ValueError("NaN value found in initialization neg_log_likelihood. Training is TOO DANGEROUS to proceed; please refine your prior, protect the RHS from large jumps, ensure covariances are PSD, and/or try 64bit precision.")
 
-    init_data = init_predictive(next(keys), t_emissions=t_emissions, emissions=emissions_obs, store_filtered=True, store_grad=True, beta=beta_init)
-    if jnp.any(jnp.isnan(init_data['grad_neg_log_likelihood_beta'])):
-        print(f"Initialization grad_neg_log_likelihood_beta from filtering: {init_data['grad_neg_log_likelihood_beta']}")
-        raise ValueError("NaN value found in initialization grad_neg_log_likelihood_beta. Training is TOO DANGEROUS to proceed; please refine your prior, protect the RHS from large jumps, ensure covariances are PSD, and/or try 64bit precision.")
-
     svi = SVI(model, guide, optimizer, loss=Trace_ELBO())
     svi_result = svi.run(next(keys), num_steps=cfg.num_epochs, t_emissions=t_emissions, emissions=emissions_obs, **known_values)
     # Log training curve
     # Loss curve uses "epoch" as its x-axis
-    wandb.define_metric("svi/loss", step_metric="epoch")
+    wandb.define_metric("svi/filtered/loss", step_metric="epoch")
     for step, loss in enumerate(svi_result.losses):
-        wandb.log({"epoch": step, "svi/loss": float(loss)})
+        wandb.log({"epoch": step, "svi/filtered/loss": float(loss)})
 
     # Log posterior predictive
     predictive_learned = Predictive(model, guide=guide, params=guide.median(svi_result.params), num_samples=1)
-    learned_data = predictive_learned(next(keys), t_emissions=t_emissions, emissions=emissions_obs, store_filtered=True, **known_values)
+    learned_data = predictive_learned(next(keys), t_emissions=t_emissions, emissions=emissions_obs, **known_values)
     # Log metrics
     wandb.log({
-        "metrics/learned/neg_log_prior": float(learned_data["neg_log_prior"].item()),
-        "metrics/learned/neg_log_lik": float(learned_data["neg_log_likelihood"].item()),
-        "metrics/learned/neg_log_joint": float(learned_data["neg_log_joint"].item()),
+        "metrics/filtered/neg_log_prior": float(learned_data["neg_log_prior"].item()),
+        "metrics/filtered/neg_log_lik": float(learned_data["neg_log_likelihood"].item()),
+        "metrics/filtered/neg_log_joint": float(learned_data["neg_log_joint"].item()),
     })
     # Log figure
     # if AutoDelta, then beta_learned = guide.median(svi_result.params)["beta"]
@@ -803,11 +563,8 @@ def main(**cfg):
         num_points=50,
         return_rmse=True,
     )
-    wandb.log({"fig/true_vs_learned_drift": wandb.Image(fig)})
+    wandb.log({"fig/filtered/hsgp_svi": wandb.Image(fig)})
     plt.close(fig)
-    
-    # log the learned weights
-    wandb.log({"weights/learned/beta": beta_learned})
     
     # Log the learned weights as line plots
     fig, ax = plt.subplots(figsize=(8, 4))
@@ -819,40 +576,11 @@ def main(**cfg):
     ax.set_xlabel("basis index")
     ax.set_ylabel("weight value")
     ax.set_yscale("symlog")
-    wandb.log({"fig/learned_beta_lines": wandb.Image(fig)})
+    wandb.log({"fig/mean_beta_svi": wandb.Image(fig)})
     plt.close(fig)
 
-    # Log the absolute error in weights
-    wandb.log({"metrics/learned/rmse_error": float(rmse)})
-
-    # Log the trajectory from filtering
-    if cfg.log_filtering:
-        print("Logging trajectories from filtering with learned model...")
-        # Trajectories use "time" as their x-axis
-        wandb.define_metric("filtering/learned/pred_mean_*", step_metric="time")
-        wandb.define_metric("filtering/learned/filtered_mean_*", step_metric="time")
-        for t in range(learned_data["predicted_means"].shape[1]):
-            log_dict = {"time": t}
-            for d in range(state_dim):
-                log_dict[f"filtering/learned/pred_mean_dim{d}"] = float(learned_data["predicted_means"][0, t, d])
-                log_dict[f"filtering/learned/filtered_mean_dim{d}"] = float(learned_data["filtered_means"][0, t, d])
-            # Log the current time step
-            wandb.log(log_dict)
-        fig = plot_particle_diagnostics(
-            t_emissions=t_emissions.squeeze(),
-            x_ens_filtered=learned_data["x_ens_filtered"][0],   # shape (T, N, D)
-            x_ens_predicted=learned_data["x_ens_predicted"][0], # shape (T, N, D)
-            observations=emissions_obs,
-            figsize=(12, 8),
-            start_idx=0,
-            stop_idx=20,
-        )
-        wandb.log({"fig/learned/ensembles_0to20": wandb.Image(fig)})
-        plt.close(fig)
-
-
     # Run NUTS initialized at median VI solution
-    nuts_kernel = NUTS(model, init_strategy=init_to_value(values={"beta": guide.median(svi_result.params)["beta"]}))
+    nuts_kernel = NUTS(model, init_strategy=init_to_value(values={"beta": guide.median(svi_result.params)["beta"]}), max_tree_depth=cfg.max_tree_depth)
     mcmc = MCMC(nuts_kernel, num_warmup=cfg.nuts_warmup, num_samples=cfg.nuts_samples, num_chains=1)
     mcmc.run(next(keys), t_emissions=t_emissions, emissions=emissions_obs, **known_values)
     mcmc_samples = mcmc.get_samples()
@@ -881,10 +609,46 @@ def main(**cfg):
         num_points=50,
         return_rmse=True,
     )
-    wandb.log({"fig/true_vs_learned_drift_mcmc": wandb.Image(fig)})
+    wandb.log({"fig/filtered/hsgp_NUTS": wandb.Image(fig)})
     plt.close(fig)
 
+    # Log the learned weights as line plots
+    fig, ax = plt.subplots(figsize=(8, 4))
+    for d in range(supervised_beta_learned_svi.shape[1]):
+        # plot the mean of weights for MCMC samples
+        ax.plot(jnp.mean(beta_samples_mcmc[:, :, d], axis=0), label=f"dim {d} (filtered MCMC mean)")
+        ax.plot(supervised_beta_learned_svi[:, d], ':', label=f"dim {d} (supervised SVI mean)")
+        ax.plot(beta_supervised[:, d], '--', label=f"dim {d} (supervised chol MAP)")
+    ax.legend()
+    ax.set_title("Beta weights (per output dim)")
+    ax.set_xlabel("basis index")
+    ax.set_ylabel("weight value")
+    ax.set_yscale("symlog")
+    wandb.log({"fig/filtered/mean_beta": wandb.Image(fig)})
+    plt.close(fig)
 
+    # Forest plot
+    for max_params in [10, 50, 200]:
+        fig = plot_forest(mcmc_samples, param_name="beta", max_params=max_params)
+        wandb.log({f"fig/filtered/hsgp_NUTS_forest_{max_params}": wandb.Image(fig)})
+        plt.close(fig)
+
+        # Violin plots
+        fig = plot_violin(mcmc_samples, param_name="beta", max_params=max_params)
+        wandb.log({f"fig/filtered/hsgp_NUTS_violin_{max_params}": wandb.Image(fig)})
+        plt.close(fig)
+
+        # Correlation heatmap
+        fig = plot_correlation_heatmap(mcmc_samples, param_name="beta", max_params=max_params)
+        wandb.log({f"fig/filtered/hsgp_NUTS_corr_{max_params}": wandb.Image(fig)})
+        plt.close(fig)
+
+    # PCA scatter
+    fig = plot_pca_scatter(mcmc_samples, param_name="beta")
+    wandb.log({"fig/filtered/hsgp_NUTS_pca": wandb.Image(fig)})
+    plt.close(fig)
+
+    print("Completed all tasks.")
     run.finish()
 
 
@@ -938,16 +702,24 @@ if __name__ == "__main__":
     # Diagnostics
     parser.add_argument("--n_prior_samples", type=int, default=2)
 
-    # Logging
-    parser.add_argument("--log_filtering", type=int, default=0)
-
     # Wandb settings
-    parser.add_argument("--project", type=str, default="vdp_hsgp_matern-deleteme")
+    parser.add_argument("--project", type=str, default="FHN-HSGP")
     parser.add_argument("--run_name", type=str, default=None) # Allows you to custom-specify wandb run name (else uses default)
     parser.add_argument("--dir", type=str, default=None)  # Allows you to custom-specify wandb directory (else uses default)
 
+    # Test run
+    parser.add_argument("--test", type=int, default=0) # 1 for True, 0 for False
+    
     # Parse arguments
     args = parser.parse_args()
 
+    if args.test:
+        # Override some settings for a quick test run
+        args.num_epochs = 10
+        args.nuts_warmup = 10
+        args.nuts_samples = 10
+        args.max_tree_depth = 3
+        if args.run_name is None:
+            args.run_name = args.run_name + "-test_run_deleteme"
 
     main(**vars(args))
