@@ -4,6 +4,12 @@ DIR="." # It will put a "wandb/" directory in whatever DIR is set to.
 # If on a cluster, you might want to set DIR to a path to a directory with plenty of storage, e.g.
 # DIR="/data/levinema/cd_dynamax"
 
+# Activate conda env
+conda activate cd_dynamax-2025
+
+# Take wandb online
+wandb online
+
 ### ----- L63 DICT (regular timesteps) ------- ###
 #### L = 0.01 (small diffusion) requires covariance inflation to track true state
 # dt=0.001 (small dt)
