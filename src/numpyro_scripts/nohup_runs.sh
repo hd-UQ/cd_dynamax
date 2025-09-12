@@ -74,19 +74,19 @@ nohup python l96_dict_laplace_init_zero.py --init_lr 0.01 --num_epochs 1000 --st
 # FitzHugh-Nagumo with UQ via matern HSGP #####
 ##### -------------------------- #############
 RUN_NAME="FHN-HSGP-Matern"
-nohup python fhn_hsgp_matern.py --num_epochs 10000 --nuts_warmup 200 --nuts_samples 500 --max_tree_depth 6 --m 4 --T 50 --proj $PROJECT_NAME --run_name $RUN_NAME --dir $DIR & > $DIR/$PROJECT_NAME/$RUN_NAME.out 2>&1
+nohup python fhn_hsgp_matern.py --num_epochs 10000 --nuts_warmup 200 --nuts_samples 500 --max_tree_depth 6 --m 4 --T 50 --project $PROJECT_NAME --run_name $RUN_NAME --dir $DIR & > $DIR/$PROJECT_NAME/$RUN_NAME.out 2>&1
 
 RUN_NAME="FHN-HSGP-Matern-8particles"
-nohup python fhn_hsgp_matern.py --num_epochs 10000 --nuts_warmup 200 --nuts_samples 500 --max_tree_depth 6 --m 4 --N_particles 8 --T 50 --proj $PROJECT_NAME --run_name $RUN_NAME --dir $DIR & > $DIR/$PROJECT_NAME/$RUN_NAME.out 2>&1
+nohup python fhn_hsgp_matern.py --num_epochs 10000 --nuts_warmup 200 --nuts_samples 500 --max_tree_depth 6 --m 4 --N_particles 8 --T 50 --project $PROJECT_NAME --run_name $RUN_NAME --dir $DIR & > $DIR/$PROJECT_NAME/$RUN_NAME.out 2>&1
 
 RUN_NAME="FHN-HSGP-Matern-m10"
-nohup python fhn_hsgp_matern.py --num_epochs 10000 --nuts_warmup 200 --nuts_samples 500 --max_tree_depth 6 --m 10 --T 50 --proj $PROJECT_NAME --run_name $RUN_NAME --dir $DIR & > $DIR/$PROJECT_NAME/$RUN_NAME.out 2>&1
+nohup python fhn_hsgp_matern.py --num_epochs 10000 --nuts_warmup 200 --nuts_samples 500 --max_tree_depth 6 --m 10 --T 50 --project $PROJECT_NAME --run_name $RUN_NAME --dir $DIR & > $DIR/$PROJECT_NAME/$RUN_NAME.out 2>&1
 
 RUN_NAME="FHN-HSGP-Matern-maxTree10-8particles"
-nohup python fhn_hsgp_matern.py --num_epochs 10000 --nuts_warmup 200 --nuts_samples 500 --max_tree_depth 10 --m 4 --T 50 --N_particles 8 --proj $PROJECT_NAME --run_name $RUN_NAME --dir $DIR & > $DIR/$PROJECT_NAME/$RUN_NAME.out 2>&1
+nohup python fhn_hsgp_matern.py --num_epochs 10000 --nuts_warmup 200 --nuts_samples 500 --max_tree_depth 10 --m 4 --T 50 --N_particles 8 --project $PROJECT_NAME --run_name $RUN_NAME --dir $DIR & > $DIR/$PROJECT_NAME/$RUN_NAME.out 2>&1
 
 RUN_NAME="FHN-HSGP-Matern-maxTree10-m10-8particles"
-nohup python fhn_hsgp_matern.py --num_epochs 10000 --nuts_warmup 200 --nuts_samples 500 --max_tree_depth 10 --m 10 --N_particles 8 --T 50 --proj $PROJECT_NAME --run_name $RUN_NAME --dir $DIR & > $DIR/$PROJECT_NAME/$RUN_NAME.out 2>&1
+nohup python fhn_hsgp_matern.py --num_epochs 10000 --nuts_warmup 200 --nuts_samples 500 --max_tree_depth 10 --m 10 --N_particles 8 --T 50 --project $PROJECT_NAME --run_name $RUN_NAME --dir $DIR & > $DIR/$PROJECT_NAME/$RUN_NAME.out 2>&1
 
 
 ##### -------------------------- #############
@@ -97,4 +97,4 @@ nohup python fhn_hsgp_matern.py --num_epochs 10000 --nuts_warmup 200 --nuts_samp
 # We then fit a single model to all trajectories, learning the shared parameters A and b.
 # We use the EKF for filtering, because it is equivalent to the Kalman filter for linear systems (and we don't yet have a consistent API for KF in CD-Dynamax).
 RUN_NAME="LinearGaussian-MultiTraj"
-nohup python LinearGaussian_MultiTraj.py --project LinearGaussian_example--proj $PROJECT_NAME --run_name $RUN_NAME --dir $DIR & > $DIR/$PROJECT_NAME/$RUN_NAME.out 2>&1
+nohup python LinearGaussian_MultiTraj.py --project $PROJECT_NAME --run_name $RUN_NAME --dir $DIR & > $DIR/$PROJECT_NAME/$RUN_NAME.out 2>&1

@@ -257,6 +257,8 @@ def main(**cfg):
     wandb.log({"figures/states_kde": wandb.Image(fig)})
     plt.close(fig)
 
+    print("Completed!")
+
     # Finish the W&B run
     run.finish()
 
