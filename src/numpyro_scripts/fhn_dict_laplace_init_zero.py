@@ -40,7 +40,7 @@ def main(**cfg):
     #   in the run's Config tab even if they're not being swept over.
     # - When running under a sweep, the sweep controller will then overwrite any of these
     #   entries that are specified in the sweep YAML (e.g. num_epochs, init_lr, ...).
-    run = wandb.init(config=cfg, project=cfg["project"])
+    run = wandb.init(config=cfg, project=cfg["project"], name=cfg["run_name"], dir=cfg["dir"])
 
     # After wandb.init(), wandb.config now holds the *final merged config*:
     #   argparse defaults + CLI overrides + sweep overrides (if any).
@@ -457,6 +457,8 @@ if __name__ == "__main__":
     
     # Wandb settings
     parser.add_argument("--project", type=str, default="fhn_dict_laplace")
+    parser.add_argument("--run_name", type=str, default=None) # Allows you to custom-specify wandb run name (else uses default)
+    parser.add_argument("--dir", type=str, default=None)  # Allows you to custom-specify wandb directory (else uses default)
 
     # Parse arguments
     args = parser.parse_args()
