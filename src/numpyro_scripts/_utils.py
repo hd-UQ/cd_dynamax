@@ -724,8 +724,9 @@ def plot_simulated_data(t=None, states=None, emissions=None):
     
     Args:
         t: (T,) time vector
-        states: (T, D) true states
-        emissions: (T, D) observed emissions (assumed same dim as states for now)
+        states: (T, state_dim) true states
+        emissions: (T, emission_dim) observed emissions
+            Assume emission_dim <= state_dim and emissions correspond to first N states.
     
     Returns:
         matplotlib Figure
@@ -746,7 +747,7 @@ def plot_simulated_data(t=None, states=None, emissions=None):
     for i, ax in enumerate(axes):
         if states is not None:
             ax.plot(t, states[:, i], label="State", color="tab:blue")
-        if emissions is not None:
+        if emissions is not None and i < emissions.shape[1]:
             ax.scatter(t, emissions[:, i], label="Emission", color="tab:orange", s=10, alpha=0.6)
         ax.set_ylabel(f"Dim {i}")
         ax.grid(True, linestyle="--", alpha=0.3)
@@ -847,6 +848,74 @@ def make_bayesian_nn_drift(state_dim, hidden_dims, prior="uniform", prior_scale=
         return out
 
     return drift_fn
+
+# ------------------------
+# Prior helpers
+# ------------------------
+def moment_matching_prior(
+    states,                 # (T, D) or (T,)
+    mu_0=0.0,               # target mean     (scalar, (1,), or (D,))
+    tau_0=0.1,              # sd around mean  (scalar, (1,), or (D,))
+    mu_1=1.0,               # target SD       (scalar, (1,), or (D,))
+    tau_1=0.2,              # sd around SD    (scalar, (1,), or (D,))
+    t_emissions=None,       # optional (T,) times for irregular sampling
+    eps=1e-6,
+):
+    """
+    Put Normal priors on:
+      - m̄_d  = time-averaged mean of states (per dim)
+      - s̄_d  = time-averaged SD of states  (per dim)
+
+    Defaults treat all dimensions the same. If you pass scalar or length-1 vectors
+    they are broadcast to (D,). If you pass length-D vectors, they are used as-is.
+    """
+    x = jnp.asarray(states)
+    if x.ndim == 1:
+        x = x[:, None]  # -> (T, 1)
+    T, D = x.shape
+
+    # --- weights over time (uniform or Δt) ---
+    if t_emissions is None:
+        w = jnp.ones((T,)) / T
+    else:
+        # Trapezoidal rule weights based on time intervals
+        t = jnp.asarray(t_emissions).reshape(-1)
+        dt_fwd = jnp.diff(t, append=t[-1])
+        dt_bwd = jnp.diff(t, prepend=t[0])
+        w = 0.5 * (dt_fwd + dt_bwd)
+        w = jnp.clip(w, a_min=eps, a_max=None)
+        w = w / jnp.sum(w)
+
+    # time-weighted mean and SD per dim
+    mean_t = (w[:, None] * x).sum(axis=0)                          # (D,)
+    var_t  = (w[:, None] * (x - mean_t[None, :])**2).sum(axis=0)   # (D,)
+    sd_t   = jnp.sqrt(var_t + eps)                                  # (D,)
+
+    # --- broadcasting helpers ---
+    def _as_vector(z, D, name):
+        z = jnp.asarray(z)
+        if z.ndim == 0:                    # scalar -> (D,)
+            return jnp.full((D,), z)
+        if z.ndim == 1 and z.size == 1:    # length-1 -> (D,)
+            return jnp.full((D,), z.item())
+        if z.ndim == 1 and z.size == D:    # length-D -> ok
+            return z
+        raise ValueError(f"{name} must be scalar, length-1, or length-{D}; got shape {z.shape}")
+
+    mu_0_vec  = _as_vector(mu_0,  D, "mu_0")
+    tau_0_vec = _as_vector(tau_0, D, "tau_0")
+    mu_1_vec  = _as_vector(mu_1,  D, "mu_1")
+    tau_1_vec = _as_vector(tau_1, D, "tau_1")
+
+    # guard against zero/negative taus
+    tau_0_vec = jnp.maximum(tau_0_vec, 1e-12)
+    tau_1_vec = jnp.maximum(tau_1_vec, 1e-12)
+
+    # Normal penalties
+    lp_mean = dist.Normal(mu_0_vec, tau_0_vec).log_prob(mean_t).sum()
+    lp_sd   = dist.Normal(mu_1_vec, tau_1_vec).log_prob(sd_t).sum()
+
+    return lp_mean, lp_sd, mean_t, sd_t
 
 # ------------------------
 # Filter hyperparameter helper
