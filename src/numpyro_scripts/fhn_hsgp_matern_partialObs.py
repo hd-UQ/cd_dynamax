@@ -221,7 +221,7 @@ def main(**cfg):
     )
 
     # NumPyro model
-    def model(t_emissions, emissions=None, supervised=False, state_prior=True, **kwargs):
+    def model(t_emissions, emissions=None, supervised=False, state_prior=cfg.state_prior, **kwargs):
         # If user supplies drift, use it; otherwise build HSGP drift
         lp = 0.0  # log prior
         if "drift" in kwargs and kwargs["drift"] is not None:
@@ -708,6 +708,9 @@ if __name__ == "__main__":
     parser.add_argument("--ell_box", type=float, nargs='+', default=[4.0, 4.0]) # size of the spectral box (one per input dimension)
     parser.add_argument("--m", type=int, default=10) # number of basis functions (20 is a bit better for this problem)
 
+    # Prior parameters for state moments (used if cfg.state_prior=True)
+    parser.add_argument("--state_prior", type=int, default=1) # 1 for
+    
     # True system parameters
     parser.add_argument("--initial_cov", type=float, default=1.0) # initial state covariance (times identity)
     parser.add_argument("--emission_cov", type=float, default=0.01) # emission noise covariance (times identity)
