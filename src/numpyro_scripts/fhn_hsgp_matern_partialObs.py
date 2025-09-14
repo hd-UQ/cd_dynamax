@@ -428,6 +428,22 @@ def main(**cfg):
     })
     print(f"Supervised-SVI-fit model's neg_log_prior: {float(learned_data_super_svi['neg_log_prior'].item())}")
     
+    # Generate a long sequence of emissions from the learned and true models
+    print("Generating long trajectory from learned model...")
+    long_t_emissions = jnp.arange(start=0.0, stop=100*cfg.T, step=cfg.dt).reshape(-1, 1)
+    long_learned_data = predictive_learned_super_svi(next(keys), t_emissions=long_t_emissions, **known_values) # no emissions provided here, so it will sample them
+    print("Generating long trajectory from true model...")
+    long_true_data = Predictive(model, num_samples=1)(next(keys), t_emissions=long_t_emissions, **true_values)
+    burnin_frac = 0.5
+    burnin_idx = int(burnin_frac * long_t_emissions.shape[0])
+    fig = plot_traj_kde({"Observed traj": long_true_data["emissions"].squeeze(0)[burnin_idx:], "Long learned traj": long_learned_data["emissions"].squeeze(0)[burnin_idx:]})
+    wandb.log({"figures/supervised/svi_emissions_kde": wandb.Image(fig)})
+    plt.close(fig)
+
+    fig = plot_traj_kde({"True states": long_true_data["states"].squeeze(0)[burnin_idx:], "Learned states": long_learned_data["states"].squeeze(0)[burnin_idx:]})
+    wandb.log({"figures/supervised/svi_states_kde": wandb.Image(fig)})
+    plt.close(fig)
+
     # Sample from the supervised SVI posterior and plot the learned drift
     if cfg.svi_guide == "AutoDelta":
         supervised_beta_learned_svi = supervised_guide.median(svi_result_supervised.params)["beta"]
@@ -566,6 +582,23 @@ def main(**cfg):
         "metrics/filtered/neg_log_lik": float(learned_data["neg_log_likelihood"].item()),
         "metrics/filtered/neg_log_joint": float(learned_data["neg_log_joint"].item()),
     })
+
+    # Generate a long sequence of emissions from the learned and true models
+    print("Generating long trajectory from learned model...")
+    long_t_emissions = jnp.arange(start=0.0, stop=100*cfg.T, step=cfg.dt).reshape(-1, 1)
+    long_learned_data = predictive_learned(next(keys), t_emissions=long_t_emissions, **known_values) # no emissions provided here, so it will sample them
+    print("Generating long trajectory from true model...")
+    long_true_data = Predictive(model, num_samples=1)(next(keys), t_emissions=long_t_emissions, **true_values)
+    burnin_frac = 0.5
+    burnin_idx = int(burnin_frac * long_t_emissions.shape[0])
+    fig = plot_traj_kde({"Observed traj": long_true_data["emissions"].squeeze(0)[burnin_idx:], "Long learned traj": long_learned_data["emissions"].squeeze(0)[burnin_idx:]})
+    wandb.log({"figures/filtered/svi_emissions_kde": wandb.Image(fig)})
+    plt.close(fig)
+
+    fig = plot_traj_kde({"True states": long_true_data["states"].squeeze(0)[burnin_idx:], "Learned states": long_learned_data["states"].squeeze(0)[burnin_idx:]})
+    wandb.log({"figures/filtered/svi_states_kde": wandb.Image(fig)})
+    plt.close(fig)
+    
     # Log figure
     # if AutoDelta, then beta_learned = guide.median(svi_result.params)["beta"]
     if isinstance(guide, AutoDelta):
@@ -683,6 +716,7 @@ def main(**cfg):
     fig = plot_pca_scatter(mcmc_samples, param_name="beta")
     wandb.log({"fig/filtered/hsgp_NUTS_pca": wandb.Image(fig)})
     plt.close(fig)
+
 
     print("Completed all tasks.")
     run.finish()
