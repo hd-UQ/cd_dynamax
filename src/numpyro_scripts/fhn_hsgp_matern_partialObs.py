@@ -429,17 +429,21 @@ def main(**cfg):
     print(f"Supervised-SVI-fit model's neg_log_prior: {float(learned_data_super_svi['neg_log_prior'].item())}")
     
     # Sample from the supervised SVI posterior and plot the learned drift
-    supervised_beta_posterior = supervised_guide.get_posterior(svi_result_supervised.params)
-    supervised_beta_learned_svi = supervised_beta_posterior.mean.reshape(MSTAR, state_dim)
-    if hasattr(supervised_beta_posterior, "covariance_matrix"):
-        # e.g. AutoMultivariateNormal
-        supervised_beta_cov = supervised_beta_posterior.covariance_matrix
+    if cfg.svi_guide == "AutoDelta":
+        supervised_beta_learned_svi = supervised_guide.median(svi_result_supervised.params)["beta"]
+        f_sd_supervised = None
     else:
-        # AutoDiagonalNormal
-        supervised_beta_cov = jnp.diag(supervised_beta_posterior.variance.flatten())
+        supervised_beta_posterior = supervised_guide.get_posterior(svi_result_supervised.params)
+        supervised_beta_learned_svi = supervised_beta_posterior.mean.reshape(MSTAR, state_dim)
+        if hasattr(supervised_beta_posterior, "covariance_matrix"):
+            # e.g. AutoMultivariateNormal
+            supervised_beta_cov = supervised_beta_posterior.covariance_matrix
+        else:
+            # AutoDiagonalNormal
+            supervised_beta_cov = jnp.diag(supervised_beta_posterior.variance.flatten())
 
-    f_cov_supervised = lambda x: compute_drift_covariance(x, supervised_beta_cov)  # (N, D, D)
-    f_sd_supervised = lambda x: jnp.sqrt(jnp.diagonal(f_cov_supervised(x), axis1=-2, axis2=-1))
+        f_cov_supervised = lambda x: compute_drift_covariance(x, supervised_beta_cov)  # (N, D, D)
+        f_sd_supervised = lambda x: jnp.sqrt(jnp.diagonal(f_cov_supervised(x), axis1=-2, axis2=-1))
 
     # beta_learned = guide.median(svi_result.params)["beta"]
     f_learned_base_sup = lambda x: compute_drift(x=x, beta=supervised_beta_learned_svi)
