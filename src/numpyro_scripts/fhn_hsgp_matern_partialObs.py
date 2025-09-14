@@ -300,11 +300,21 @@ def main(**cfg):
                 mu_1=jnp.array([1.42128004, 0.57646959]),
                 tau_1=0.1,
             )
+            
+            # Add these log priors to the total log joint via factor.
+            # Note that you only use factor if it didn't come from a sample statement.
+            # e.g. the beta prior is already included in lp above because it came from a sample statement,
+            # which numpyro automatically adds to the joint log prob.
+            numpyro.factor("state_mean_log_prior", lp_mean)
+            numpyro.factor("state_sd_log_prior", lp_sd)
+            
             lp += lp_mean + lp_sd
             numpyro.deterministic("state_mean", mean_t)
             numpyro.deterministic("state_sd", sd_t)
             numpyro.deterministic("neg_log_prior_state_mean", -lp_mean)
             numpyro.deterministic("neg_log_prior_state_sd", -lp_sd)
+        # Add log prior to the model's internal log prob for use by
+            numpyro
         
         # Store the log probs (used only for diagnostics, not for learning)
         numpyro.deterministic("neg_log_prior", -lp)
@@ -437,11 +447,11 @@ def main(**cfg):
     burnin_frac = 0.5
     burnin_idx = int(burnin_frac * long_t_emissions.shape[0])
     fig = plot_traj_kde({"Observed traj": long_true_data["emissions"].squeeze(0)[burnin_idx:], "Long learned traj": long_learned_data["emissions"].squeeze(0)[burnin_idx:]})
-    wandb.log({"figures/supervised/svi_emissions_kde": wandb.Image(fig)})
+    wandb.log({"fig/supervised/svi_emissions_kde": wandb.Image(fig)})
     plt.close(fig)
 
     fig = plot_traj_kde({"True states": long_true_data["states"].squeeze(0)[burnin_idx:], "Learned states": long_learned_data["states"].squeeze(0)[burnin_idx:]})
-    wandb.log({"figures/supervised/svi_states_kde": wandb.Image(fig)})
+    wandb.log({"fig/supervised/svi_states_kde": wandb.Image(fig)})
     plt.close(fig)
 
     # Sample from the supervised SVI posterior and plot the learned drift
@@ -592,11 +602,11 @@ def main(**cfg):
     burnin_frac = 0.5
     burnin_idx = int(burnin_frac * long_t_emissions.shape[0])
     fig = plot_traj_kde({"Observed traj": long_true_data["emissions"].squeeze(0)[burnin_idx:], "Long learned traj": long_learned_data["emissions"].squeeze(0)[burnin_idx:]})
-    wandb.log({"figures/filtered/svi_emissions_kde": wandb.Image(fig)})
+    wandb.log({"fig/filtered/svi_emissions_kde": wandb.Image(fig)})
     plt.close(fig)
 
     fig = plot_traj_kde({"True states": long_true_data["states"].squeeze(0)[burnin_idx:], "Learned states": long_learned_data["states"].squeeze(0)[burnin_idx:]})
-    wandb.log({"figures/filtered/svi_states_kde": wandb.Image(fig)})
+    wandb.log({"fig/filtered/svi_states_kde": wandb.Image(fig)})
     plt.close(fig)
     
     # Log figure
