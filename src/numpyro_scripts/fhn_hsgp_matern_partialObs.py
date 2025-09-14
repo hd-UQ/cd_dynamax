@@ -18,7 +18,7 @@ from numpyro.infer import (
     init_to_median, init_to_value,
     Predictive,
 )
-from numpyro.infer.autoguide import AutoDiagonalNormal, AutoDelta, AutoMultivariateNormal
+from numpyro.infer.autoguide import AutoDiagonalNormal, AutoDelta, AutoMultivariateNormal, AutoLowRankMultivariateNormal
 from numpyro.infer import MCMC, NUTS
 from numpyro.contrib.hsgp.approximation import (
     eigenfunctions,
@@ -69,6 +69,13 @@ def main(**cfg):
     # An iterable of PRNG (use is next(keys) to get the next key)
     keys = make_key_sequence(cfg.seed)
     
+    autoguide = {
+        "AutoDelta": AutoDelta,
+        "AutoNormal": AutoDiagonalNormal,
+        "AutoMultivariateNormal": AutoMultivariateNormal,
+        "AutoLowRankMultivariateNormal": AutoLowRankMultivariateNormal,
+    }[cfg.svi_guide]
+
     # Build FitzHugh-Nagumo true drift
     _a, _b, _c, _I = 0.08, 0.7, 0.8, 0.5
     # Equation 1: v' = v - (1/3)v^3 - w + I
@@ -221,7 +228,7 @@ def main(**cfg):
     )
 
     # NumPyro model
-    def model(t_emissions, emissions=None, supervised=False, state_prior=cfg.state_prior, **kwargs):
+    def model(t_emissions, emissions=None, supervised=False, **kwargs):
         # If user supplies drift, use it; otherwise build HSGP drift
         lp = 0.0  # log prior
         if "drift" in kwargs and kwargs["drift"] is not None:
@@ -283,7 +290,7 @@ def main(**cfg):
         filtered = cdnlgssm_filter(params=params, emissions=emissions, t_emissions=t_emissions, filter_hyperparams=FILTER_HYPERPARAMS)
         ll = filtered.marginal_loglik
 
-        if state_prior:
+        if cfg.state_prior:
             # State means: [-0.20176842  0.53057752]
             # State stds: [1.42128004 0.57646959]
             lp_mean, lp_sd, mean_t, sd_t = moment_matching_prior(
@@ -402,7 +409,7 @@ def main(**cfg):
     
     # Fit the drift in supervised mode, but use SVI + NUTS now
     print("Fitting drift in supervised mode using SVI + NUTS...")
-    supervised_guide = AutoMultivariateNormal(model, init_loc_fn=init_to_value(values={"beta": beta_init}))
+    supervised_guide = autoguide(model, init_loc_fn=init_to_value(values={"beta": beta_init}))
     svi_supervised = SVI(model, supervised_guide, optimizer, loss=Trace_ELBO())
     print("Warning: using supervised=True in the model for supervised fitting, and feeding it simulated states as emissions.")
     # Run SVI
@@ -527,7 +534,7 @@ def main(**cfg):
     
     # First, check feasibility of the initialization
     # guide = AutoDelta(model, init_loc_fn=init_to_value(values={"beta": beta_init}))
-    guide = AutoMultivariateNormal(model, init_loc_fn=init_to_value(values={"beta": beta_init}))
+    guide = autoguide(model, init_loc_fn=init_to_value(values={"beta": beta_init}))
 
     # Run model in predictive mode
     print("Checking initialization predictive...")
@@ -691,6 +698,8 @@ if __name__ == "__main__":
     parser.add_argument("--epochs_per_step", type=int, default=200)
     parser.add_argument("--clip_norm", type=float, default=0.0)  # 0.0 for no clipping, or a float value to clip.
 
+    # SVI settings
+    parser.add_argument("--svi_guide", type=str, default="AutoDelta", choices=["AutoDelta", "AutoNormal", "AutoMultivariateNormal", "AutoLowRankMultivariateNormal"])
     # MCMC settings
     parser.add_argument("--nuts_warmup", type=int, default=200)
     parser.add_argument("--nuts_samples", type=int, default=1000)
