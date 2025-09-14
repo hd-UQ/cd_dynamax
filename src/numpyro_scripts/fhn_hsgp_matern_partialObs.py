@@ -538,24 +538,36 @@ def main(**cfg):
 
     # Forest plot
     for max_params in [10, 50, 200]:
-        fig = plot_forest(mcmc_samples, param_name="beta", max_params=max_params)
-        wandb.log({f"fig/supervised/hsgp_NUTS_forest_{max_params}": wandb.Image(fig)})
-        plt.close(fig)
+        try:
+            fig = plot_forest(mcmc_samples, param_name="beta", max_params=max_params)
+            wandb.log({f"fig/supervised/hsgp_NUTS_forest_{max_params}": wandb.Image(fig)})
+            plt.close(fig)
+        except Exception as e:
+            print(f"[plot_forest] Error plotting for max_params={max_params}: {e}")
 
         # Violin plots
-        fig = plot_violin(mcmc_samples, param_name="beta", max_params=max_params)
-        wandb.log({f"fig/supervised/hsgp_NUTS_violin_{max_params}": wandb.Image(fig)})
-        plt.close(fig)
+        try:
+            fig = plot_violin(mcmc_samples, param_name="beta", max_params=max_params)
+            wandb.log({f"fig/supervised/hsgp_NUTS_violin_{max_params}": wandb.Image(fig)})
+            plt.close(fig)
+        except Exception as e:
+            print(f"[plot_violin] Error plotting for max_params={max_params}: {e}")
 
         # Correlation heatmap
-        fig = plot_correlation_heatmap(mcmc_samples, param_name="beta", max_params=max_params)
-        wandb.log({f"fig/supervised/hsgp_NUTS_corr_{max_params}": wandb.Image(fig)})
-        plt.close(fig)
+        try:
+            fig = plot_correlation_heatmap(mcmc_samples, param_name="beta", max_params=max_params)
+            wandb.log({f"fig/supervised/hsgp_NUTS_corr_{max_params}": wandb.Image(fig)})
+            plt.close(fig)
+        except Exception as e:
+            print(f"[plot_correlation_heatmap] Error plotting for max_params={max_params}: {e}")
 
     # PCA scatter
-    fig = plot_pca_scatter(mcmc_samples, param_name="beta")
-    wandb.log({"fig/supervised/hsgp_NUTS_pca": wandb.Image(fig)})
-    plt.close(fig)
+    try:
+        fig = plot_pca_scatter(mcmc_samples, param_name="beta")
+        wandb.log({"fig/supervised/hsgp_NUTS_pca": wandb.Image(fig)})
+        plt.close(fig)
+    except Exception as e:
+        print(f"[plot_pca_scatter] Error plotting: {e}")
 
     ################
     # Now, fit the drift in filtered mode using SVI, then NUTS
@@ -708,24 +720,36 @@ def main(**cfg):
 
     # Forest plot
     for max_params in [10, 50, 200]:
-        fig = plot_forest(mcmc_samples, param_name="beta", max_params=max_params)
-        wandb.log({f"fig/filtered/hsgp_NUTS_forest_{max_params}": wandb.Image(fig)})
-        plt.close(fig)
+        try:
+            fig = plot_forest(mcmc_samples, param_name="beta", max_params=max_params)
+            wandb.log({f"fig/filtered/hsgp_NUTS_forest_{max_params}": wandb.Image(fig)})
+            plt.close(fig)
+        except Exception as e:
+            print(f"[plot_forest] Error plotting for max_params={max_params}: {e}")
 
         # Violin plots
-        fig = plot_violin(mcmc_samples, param_name="beta", max_params=max_params)
-        wandb.log({f"fig/filtered/hsgp_NUTS_violin_{max_params}": wandb.Image(fig)})
-        plt.close(fig)
+        try:
+            fig = plot_violin(mcmc_samples, param_name="beta", max_params=max_params)
+            wandb.log({f"fig/filtered/hsgp_NUTS_violin_{max_params}": wandb.Image(fig)})
+            plt.close(fig)
+        except Exception as e:
+            print(f"[plot_violin] Error plotting for max_params={max_params}: {e}")
 
         # Correlation heatmap
-        fig = plot_correlation_heatmap(mcmc_samples, param_name="beta", max_params=max_params)
-        wandb.log({f"fig/filtered/hsgp_NUTS_corr_{max_params}": wandb.Image(fig)})
-        plt.close(fig)
+        try:
+            fig = plot_correlation_heatmap(mcmc_samples, param_name="beta", max_params=max_params)
+            wandb.log({f"fig/filtered/hsgp_NUTS_corr_{max_params}": wandb.Image(fig)})
+            plt.close(fig)
+        except Exception as e:
+            print(f"[plot_correlation_heatmap] Error plotting for max_params={max_params}: {e}")
 
     # PCA scatter
-    fig = plot_pca_scatter(mcmc_samples, param_name="beta")
-    wandb.log({"fig/filtered/hsgp_NUTS_pca": wandb.Image(fig)})
-    plt.close(fig)
+    try:
+        fig = plot_pca_scatter(mcmc_samples, param_name="beta")
+        wandb.log({"fig/filtered/hsgp_NUTS_pca": wandb.Image(fig)})
+        plt.close(fig)
+    except Exception as e:
+        print(f"[plot_pca_scatter] Error plotting: {e}")
 
 
     print("Completed all tasks.")
