@@ -247,6 +247,175 @@ def svi_run_grad_jaxopt(
         state=None,
     )
 
+#------------------------
+# SVI Plot helpers
+#------------------------
+# ------------------------
+# Helpers (new plotting)
+# ------------------------
+### NEW: generic unrolling + scatter plotting by groups
+def _flatten_param(x):
+    """Return a 1D float array for any leaf (scalar/array)."""
+    x = jnp.asarray(x)
+    return x.reshape(-1)
+
+def plot_param_recovery(true_values, groups=None, title="Parameter recovery",
+                        guide=None, svi_result=None, mcmc=None, prng_key=None):
+    """
+    Generic parameter recovery plotter.
+
+    Modes:
+    - Variational (SVI): provide `guide` and `svi_result`.
+    - MCMC: provide `mcmc`.
+
+    Args:
+      true_values : dict of true parameter values
+      groups      : list of (group_name, [param_keys...]) to organize subplots
+      guide       : AutoGuide (for SVI mode)
+      svi_result  : result object from SVI.run (for SVI mode)
+      mcmc        : numpyro.infer.MCMC object (for MCMC mode)
+      prng_key    : optional jax.random.PRNGKey (used for sampling fallback)
+    """
+    if (guide is None or svi_result is None) and mcmc is None:
+        raise ValueError("Must provide either (guide + svi_result) or mcmc.")
+
+    if groups is None:
+        groups = [
+            ("weights", ["weights"]),
+            ("bias", ["bias"]),
+            ("noise", ["emission_sd", "diffusion_coeff"]),
+        ]
+
+    xs, ys, names, yerr_low, yerr_high = [], [], [], [], []
+
+    # --------------------------
+    # Case 1: SVI (variational)
+    # --------------------------
+    if guide is not None and svi_result is not None:
+        learned = guide.median(svi_result.params)
+
+        # Try quantiles
+        q_dict = None
+        try:
+            q_dict = guide.quantiles(svi_result.params, (0.05, 0.95))
+        except Exception:
+            q_dict = None
+
+        # Optionally fallback: sample posterior
+        sample_dict = None
+        if q_dict is None:
+            try:
+                if prng_key is None:
+                    prng_key = jax.random.PRNGKey(0)
+                samples = guide.sample_posterior(prng_key, svi_result.params, sample_shape=(200,))
+                sample_dict = {k: (v.mean(axis=0), v.std(axis=0)) for k, v in samples.items()}
+            except Exception:
+                sample_dict = None
+
+        def get_estimates(k, p_flat):
+            if q_dict is not None and k in q_dict:
+                q_low = _flatten_param(q_dict[k][0])
+                q_high = _flatten_param(q_dict[k][1])
+                return p_flat - q_low, q_high - p_flat
+            elif sample_dict is not None and k in sample_dict:
+                std_flat = _flatten_param(sample_dict[k][1])
+                return std_flat, std_flat
+            return None, None
+
+        extractor = lambda k: (learned[k], get_estimates)
+
+    # --------------------------
+    # Case 2: MCMC
+    # --------------------------
+    elif mcmc is not None:
+        samples = mcmc.get_samples()
+        def get_stats(k):
+            vals = samples[k]  # (num_samples, *shape)
+            median = jnp.median(vals, axis=0)
+            q_low = jnp.quantile(vals, 0.05, axis=0)
+            q_high = jnp.quantile(vals, 0.95, axis=0)
+            return median, (median - q_low, q_high - median)
+
+        extractor = lambda k: get_stats(k)
+
+    # --------------------------
+    # Collect data for plotting
+    # --------------------------
+    for gname, keys in groups:
+        true_vecs, pred_vecs, err_low_vecs, err_high_vecs = [], [], [], []
+        for k in keys:
+            if k in true_values:
+                t_flat = _flatten_param(true_values[k])
+
+                if guide is not None and svi_result is not None:
+                    learned_val = extractor(k)[0]
+                    p_flat = _flatten_param(learned_val)
+                    el, eh = extractor(k)[1](k, p_flat)
+                else:  # MCMC
+                    median, (el, eh) = extractor(k)
+                    p_flat = _flatten_param(median)
+                    el, eh = _flatten_param(el), _flatten_param(eh)
+
+                true_vecs.append(t_flat)
+                pred_vecs.append(p_flat)
+                if el is not None and eh is not None:
+                    err_low_vecs.append(el)
+                    err_high_vecs.append(eh)
+
+        if true_vecs:
+            xs.append(jnp.concatenate(true_vecs, axis=0))
+            ys.append(jnp.concatenate(pred_vecs, axis=0))
+            names.append(gname)
+
+            if err_low_vecs and err_high_vecs:
+                yerr_low.append(jnp.concatenate(err_low_vecs, axis=0))
+                yerr_high.append(jnp.concatenate(err_high_vecs, axis=0))
+            else:
+                yerr_low.append(None)
+                yerr_high.append(None)
+
+    # --------------------------
+    # Plot
+    # --------------------------
+    ncols = min(3, len(xs))
+    nrows = (len(xs) + ncols - 1) // ncols
+    fig, axes = plt.subplots(nrows, ncols, figsize=(5*ncols, 5*nrows))
+    if not isinstance(axes, np.ndarray):
+        axes = np.array([axes])
+    axes = axes.reshape(-1)
+
+    for i, (xg, yg, name) in enumerate(zip(xs, ys, names)):
+        ax = axes[i]
+        if yerr_low[i] is not None:
+            ax.errorbar(
+                xg, yg,
+                yerr=[yerr_low[i], yerr_high[i]],
+                fmt="o", ms=4, alpha=0.9, capsize=2
+            )
+        else:
+            ax.scatter(xg, yg, s=18, alpha=0.9)
+
+        lo = float(jnp.min(jnp.concatenate([xg, yg])))
+        hi = float(jnp.max(jnp.concatenate([xg, yg])))
+        pad = 0.05 * (hi - lo + 1e-9)
+        lo, hi = lo - pad, hi + pad
+        ax.plot([lo, hi], [lo, hi], linestyle="--", linewidth=1)
+        ax.set_xlim([lo, hi])
+        ax.set_ylim([lo, hi])
+        ax.set_title(f"{name} (learned vs true)")
+        ax.set_xlabel("True")
+        ax.set_ylabel("Learned")
+        ax.grid(True, alpha=0.3)
+
+    for j in range(i + 1, len(axes)):
+        axes[j].axis("off")
+
+    fig.suptitle(title)
+    fig.tight_layout()
+    return fig
+
+
+
 # ------------------------
 # MCMC Plot helpers
 # ------------------------
