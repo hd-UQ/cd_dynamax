@@ -40,12 +40,6 @@ def main(**cfg):
     run = wandb.init(config=cfg, project=cfg["project"], name=cfg["run_name"], dir=cfg["dir"])
     cfg = wandb.config
 
-    # --- Back-compat for emission_sd vs emission_cov ---
-    ### NEW: allow either emission_sd or emission_cov in cfg (favor sd if provided)
-    if getattr(cfg, "emission_sd", None) is None or cfg.emission_sd < 0:
-        # fallback from emission_cov (variance) if sd not specified
-        cfg.emission_sd = float(np.sqrt(cfg.emission_cov))
-
     # Global settings
     state_dim, emission_dim = cfg.state_dim, cfg.emission_dim
 
