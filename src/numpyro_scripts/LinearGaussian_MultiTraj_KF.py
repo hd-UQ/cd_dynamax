@@ -21,10 +21,10 @@ from numpyro.infer import (
 )
 from numpyro.infer.autoguide import AutoDiagonalNormal, AutoDelta, AutoMultivariateNormal, AutoLowRankMultivariateNormal
 from numpyro.infer import MCMC, NUTS
-from continuous_discrete_nonlinear_gaussian_ssm import (
-    cdnlgssm_filter, ContDiscreteNonlinearGaussianSSM, 
+from continuous_discrete_linear_gaussian_ssm import (
+    cdlgssm_filter, ContDiscreteLinearGaussianSSM, KFHyperParams
 )
-from numpyro_extension import build_params
+from numpyro_extension import build_params_linear as build_params
 from utils.diffrax_utils import adjust_rhs
 from utils.optimize_utils import make_optimizer
 from utils.simulation_utils import make_key_sequence
@@ -55,7 +55,7 @@ def main(**cfg):
         return A_stable
 
     # Build filter hyperparameters
-    FILTER_HYPERPARAMS = make_filter_hyperparams(cfg)
+    FILTER_HYPERPARAMS = KFHyperParams()
 
     adjust_rhs_kwargs = {'lower_bound': cfg.state_bound_low,
                         'upper_bound': cfg.state_bound_high,
@@ -115,31 +115,32 @@ def main(**cfg):
             lp = lp + dist.Uniform(cfg.diffusion_low, cfg.diffusion_high).log_prob(diffusion_coeff)
 
         # Build the model and its parameters
-        cdnlgssm = ContDiscreteNonlinearGaussianSSM(state_dim=state_dim, emission_dim=emission_dim)
+        cdlgssm = ContDiscreteLinearGaussianSSM(state_dim=state_dim, emission_dim=emission_dim)
         H = jnp.eye(emission_dim, state_dim)  # observe first "emission_dim" states
 
         ### NEW: use emission_sd^2 and diffusion_coeff * I
         params = build_params(
             state_dim=state_dim,
             emission_dim=emission_dim,
-            initial_mean=jnp.zeros(state_dim), 
-            initial_cov=cfg.initial_cov*jnp.eye(state_dim),
-            drift=drift,
-            diffusion_coeff=diffusion_coeff * jnp.eye(state_dim),
-            diffusion_cov=jnp.eye(state_dim),
-            emission_function=lambda x: H @ x,
-            emission_cov=(emission_sd**2) * jnp.eye(emission_dim),
+            x0_mean=jnp.zeros(state_dim), 
+            x0_cov=cfg.initial_cov*jnp.eye(state_dim),
+            F=weights_stable,
+            b=bias,
+            L=diffusion_coeff * jnp.eye(state_dim),
+            Qc=jnp.eye(state_dim),
+            H=H,
+            R=(emission_sd**2) * jnp.eye(emission_dim),
         )
 
         # Sample emissions if not provided
         if emissions is None:
             keys_ = jax.random.split(numpyro.prng_key(), cfg.N_trajectories)
             def _sample_one(k):
-                states, ems = cdnlgssm.sample(params=params,
+                states, ems = cdlgssm.sample(params=params,
                                               num_timesteps=T,
                                               key=k,
-                                              t_emissions=t_emissions,
-                                              transition_type="path")
+                                              t_emissions=t_emissions)
+                                            #   transition_type="path")
                 return states, ems
             states_B, ems_B = jax.vmap(_sample_one)(keys_)
             emissions = ems_B
@@ -151,7 +152,7 @@ def main(**cfg):
             assert emissions.ndim == 3 and emissions.shape[1] == T
 
         def _filter_one(ems_i):
-            out = cdnlgssm_filter(params=params,
+            out = cdlgssm_filter(params=params,
                                   emissions=ems_i,
                                   t_emissions=t_emissions,
                                   filter_hyperparams=FILTER_HYPERPARAMS)
@@ -393,7 +394,7 @@ if __name__ == "__main__":
     parser.add_argument("--cov_rescaling", type=float, default=1.0)
     
     # Wandb settings
-    parser.add_argument("--project", type=str, default="LinearGaussian_MultiTraj_example")
+    parser.add_argument("--project", type=str, default="LinearGaussian_MultiTraj_exampleKF")
     parser.add_argument("--run_name", type=str, default=None)
     parser.add_argument("--dir", type=str, default=None)
 

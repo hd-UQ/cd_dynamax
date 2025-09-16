@@ -9,4 +9,4 @@ from continuous_discrete_linear_gaussian_ssm.inference import cdlgssm_forecast
 from continuous_discrete_linear_gaussian_ssm.inference import cdlgssm_emissions
 from continuous_discrete_linear_gaussian_ssm.inference import cdlgssm_posterior_sample
 from continuous_discrete_linear_gaussian_ssm.inference import cdlgssm_joint_sample
-
+from continuous_discrete_linear_gaussian_ssm.inference import KFHyperParams
