@@ -124,12 +124,12 @@ def main(**cfg):
             emission_dim=emission_dim,
             x0_mean=jnp.zeros(state_dim), 
             x0_cov=cfg.initial_cov*jnp.eye(state_dim),
-            F=weights_stable,
-            b=bias,
-            L=diffusion_coeff * jnp.eye(state_dim),
-            Qc=jnp.eye(state_dim),
-            H=H,
-            R=(emission_sd**2) * jnp.eye(emission_dim),
+            dynamics_drift_weights=weights_stable,
+            dynamics_bias=bias,
+            diffusion_coeff=diffusion_coeff * jnp.eye(state_dim),
+            diffusion_cov=jnp.eye(state_dim),
+            emission_weights=H,
+            emission_cov=(emission_sd**2) * jnp.eye(emission_dim),
         )
 
         # Sample emissions if not provided
