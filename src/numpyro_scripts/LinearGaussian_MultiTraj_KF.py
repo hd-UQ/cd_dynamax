@@ -24,7 +24,7 @@ from numpyro.infer import MCMC, NUTS
 from continuous_discrete_linear_gaussian_ssm import (
     cdlgssm_filter, ContDiscreteLinearGaussianSSM, KFHyperParams
 )
-from numpyro_extension import build_params_linear as build_params
+from numpyro_extension import build_params_linear
 from utils.diffrax_utils import adjust_rhs
 from utils.optimize_utils import make_optimizer
 from utils.simulation_utils import make_key_sequence
@@ -119,7 +119,7 @@ def main(**cfg):
         H = jnp.eye(emission_dim, state_dim)  # observe first "emission_dim" states
 
         ### NEW: use emission_sd^2 and diffusion_coeff * I
-        params = build_params(
+        params = build_params_linear(
             state_dim=state_dim,
             emission_dim=emission_dim,
             x0_mean=jnp.zeros(state_dim), 
