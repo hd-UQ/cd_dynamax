@@ -56,14 +56,14 @@ All of these problems are deeply interconnected.
     - this is a design choice of ours, other alternatives are possible.
     - This marginalization is performed (approximately, in cases of non-linear dynamics) via filtering/smoothing algorithms.
 
-## Codebase status
+<!-- ## Codebase status
 
 - We are leveraging [dynamax](https://github.com/probml/dynamax) code
     - Currently, based on a local directory with [Dynamax release 0.1.5](https://github.com/probml/dynamax/releases/tag/0.1.5)
 
 - We have implemented [continuous-discrete linear and non-linear models](./src/README.md), along with filtering and smoothing algorithms.
     - If you are simulating data from a non-linear SDE, it is recommended to use [`model.sample(..., transition_type="path")`](./src/ssm_temissions.py#L208), which runs an SDE solver.
-        - [Default behavior](./src/ssm_temissions.py#L204) is to perform Gaussian approximations to the SDE.
+        - [Default behavior](./src/ssm_temissions.py#L204) is to perform Gaussian approximations to the SDE. -->
 
 <!-- - For comparison purposes, we provide example notebooks for linear continuous-discrete filtering/smoothing under regular and irregular sampling
     - [Tracking](./src/notebooks/linear/cdlgssm_tracking.ipynb)
@@ -81,14 +81,16 @@ In particular, we provide easy demonstrations for using `numpyro` to define prio
 
 - Learning drift functions from noisy, irregularly-sampled data:
     - Lorenz 63 system:
-        - Sparse dictionary learning (all 3 components observed): `python ./cd_dynamax/demos/l63_LaplaceDict.py --emission_dim 3`
-        - Partial observations (only 1st component): `python ./cd_dynamax/demos/l63_nn.py --emission_dim 1 --state_dim 3`
+        - Sparse dictionary learning (all 3 components observed): 
+            ```python ./cd_dynamax/demos/l63_LaplaceDict.py --emission_dim 3```
+        - Partial observations (only 1st component): 
+            ```python ./cd_dynamax/demos/l63_nn.py --emission_dim 1 --state_dim 3```
     - Lorenz 96 system:
-        - Sparse dictionary learning (5 components): `python ./cd_dynamax/demos/l96_LaplaceDict.py --emission_dim 5 --state_dim 5`
-        - Sparse dictionary learning (10 components): `python ./cd_dynamax/demos/l96_LaplaceDict.py --emission_dim 10 --state_dim 10 --N_particles 100`
+        - Sparse dictionary learning (5 components): ```python ./cd_dynamax/demos/l96_LaplaceDict.py --emission_dim 5 --state_dim 5```
+        - Sparse dictionary learning (10 components): ```python ./cd_dynamax/demos/l96_LaplaceDict.py --emission_dim 10 --state_dim 10 --N_particles 100```
 
     - Linear SDE:
-        - Learning a linear SDE from multiple i.i.d. noisy trajectories: `python ./cd_dynamax/demos/LinearGaussian_MultiTraj.py --emission_dim 5 --state_dim 5 --N_trajectories 30`
+        - Learning a linear SDE from multiple i.i.d. noisy trajectories: ```python ./cd_dynamax/demos/LinearGaussian_MultiTraj.py --emission_dim 5 --state_dim 5 --N_trajectories 30```
 
 
 ## Installation
