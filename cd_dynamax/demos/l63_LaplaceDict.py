@@ -1,33 +1,35 @@
-import sys
-sys.path.append("../")
-sys.path.append("../..")
-
-import numpy as np
 import jax
-# Make sure everything is 64bit (should prevent NaNs, but can be slow)
-# Best to set this before importing jax.numpy or numpyro
 jax.config.update("jax_enable_x64", True)
 import jax.numpy as jnp
 import matplotlib.pyplot as plt
 import numpyro
 import numpyro.distributions as dist
-from numpyro.infer import (
-    SVI,
-    Trace_ELBO,
-    init_to_value,
-    Predictive,
-)
-from numpyro.infer.autoguide import AutoDiagonalNormal, AutoDelta
-
-from continuous_discrete_nonlinear_gaussian_ssm import (
-    cdnlgssm_filter, ContDiscreteNonlinearGaussianSSM, 
-)
-from numpyro_extension import build_params
-from utils.diffrax_utils import adjust_rhs
-from utils.optimize_utils import make_optimizer
-from utils.simulation_utils import make_key_sequence
+from numpyro.infer import SVI, Trace_ELBO, init_to_value, Predictive
+from numpyro.infer.autoguide import AutoDelta
 import wandb
-from _utils import *
+
+# everything from your own package
+from cd_dynamax import (
+    ContDiscreteNonlinearGaussianSSM,
+    cdnlgssm_filter,
+    build_params,
+    adjust_rhs,
+    make_optimizer,
+    make_key_sequence,
+)
+
+from cd_dynamax.src.utils.demo_utils import (
+    build_exponents,
+    poly_drift,
+    get_or_sample,
+    make_filter_hyperparams,
+    sample_t_emissions,
+    plot_traj_kde,
+    plot_simulated_data,
+    plot_coeff_heatmaps,
+    plot_param_recovery
+)
+
 
 # ------------------------
 # Main training entrypoint
