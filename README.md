@@ -86,13 +86,21 @@ In particular, we provide easy demonstrations for using `numpyro` to define prio
             python ./cd_dynamax/demos/l63_LaplaceDict.py --emission_dim 3
             ```
         - Partial observations (only 1st component): 
-            ```python ./cd_dynamax/demos/l63_nn.py --emission_dim 1 --state_dim 3```
+            ```bash
+            python ./cd_dynamax/demos/l63_nn.py --emission_dim 1 --state_dim 3
+            ```
     - Lorenz 96 system:
-        - Sparse dictionary learning (5 components): ```python ./cd_dynamax/demos/l96_LaplaceDict.py --emission_dim 5 --state_dim 5```
-        - Sparse dictionary learning (10 components): ```python ./cd_dynamax/demos/l96_LaplaceDict.py --emission_dim 10 --state_dim 10 --N_particles 100```
+        - Sparse dictionary learning (5 components): ```bash
+        python ./cd_dynamax/demos/l96_LaplaceDict.py --emission_dim 5 --state_dim 5
+        ```
+        - Sparse dictionary learning (10 components): ```bash
+        python ./cd_dynamax/demos/l96_LaplaceDict.py --emission_dim 10 --state_dim 10 --N_particles 100
+        ```
 
     - Linear SDE:
-        - Learning a linear SDE from multiple i.i.d. noisy trajectories: ```python ./cd_dynamax/demos/LinearGaussian_MultiTraj.py --emission_dim 5 --state_dim 5 --N_trajectories 30```
+        - Learning a linear SDE from multiple i.i.d. noisy trajectories: ```bash
+        python ./cd_dynamax/demos/LinearGaussian_MultiTraj.py --emission_dim 5 --state_dim 5 --N_trajectories 30
+        ```
 
 
 ## Installation
