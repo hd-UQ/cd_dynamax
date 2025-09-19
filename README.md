@@ -82,7 +82,9 @@ In particular, we provide easy demonstrations for using `numpyro` to define prio
 - Learning drift functions from noisy, irregularly-sampled data:
     - Lorenz 63 system:
         - Sparse dictionary learning (all 3 components observed): 
-            ```bash python ./cd_dynamax/demos/l63_LaplaceDict.py --emission_dim 3```
+            ```bash
+            python ./cd_dynamax/demos/l63_LaplaceDict.py --emission_dim 3
+            ```
         - Partial observations (only 1st component): 
             ```python ./cd_dynamax/demos/l63_nn.py --emission_dim 1 --state_dim 3```
     - Lorenz 96 system:
