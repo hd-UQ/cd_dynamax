@@ -65,47 +65,83 @@ All of these problems are deeply interconnected.
     - If you are simulating data from a non-linear SDE, it is recommended to use [`model.sample(..., transition_type="path")`](./src/ssm_temissions.py#L208), which runs an SDE solver.
         - [Default behavior](./src/ssm_temissions.py#L204) is to perform Gaussian approximations to the SDE.
 
-- For comparison purposes, we provide example notebooks for linear continuous-discrete filtering/smoothing under regular and irregular sampling
+<!-- - For comparison purposes, we provide example notebooks for linear continuous-discrete filtering/smoothing under regular and irregular sampling
     - [Tracking](./src/notebooks/linear/cdlgssm_tracking.ipynb)
-    - [Parameter estimation](./src/notebooks/non_linear/cdnlgssm_hmc.ipynb) that marginalizes out un-observed dynamics via auto-differentiable filtering (MLE via SGD; uncertainty quantification via HMC)
+    - [Parameter estimation](./src/notebooks/non_linear/cdnlgssm_hmc.ipynb) that marginalizes out un-observed dynamics via auto-differentiable filtering (MLE via SGD; uncertainty quantification via HMC) -->
 
-- For more interesting continuous-discrete, nonlinear models, see our new [tutorials](./src/notebooks/tutorial) for examples of how to use the codebase.
+<!-- - For more interesting continuous-discrete, nonlinear models, see our new [tutorials](./src/notebooks/tutorial) for examples of how to use the codebase.
     - We provide a [tutorial REAMDE](./src/notebooks/tutorial/README.md) describing each of the tutorials
-    - Highlights include a [notebook for learning neural network based drift functions](./src/notebooks/tutorial/cdnlgssm_NeuralNetDrift_NUTS_initwithSGD_partialObs.ipynb) from partial, noisy, irregularly-spaced observations!
+    - Highlights include a [notebook for learning neural network based drift functions](./src/notebooks/tutorial/cdnlgssm_NeuralNetDrift_NUTS_initwithSGD_partialObs.ipynb) from partial, noisy, irregularly-spaced observations! -->
 
-## Conda environment
+## Demos
 
-- We provide a working conda environment
-    - with dependencies installed using the pip-based requirements file
+We provide a set of [demos](./cd_dynamax/demos) that showcase key functionality of `cd-dynamax`.  
+These scripts illustrate how to learn components of continuous-discrete SDEs from data.
+In particular, we provide easy demonstrations for using `numpyro` to define priors and perform parameter inference using HMC or SVI with likelihoods computed via continuous-discrete filtering in `cd_dynamax`. Demos include:
+
+- Learning drift functions from noisy, irregularly-sampled data:
+    - Lorenz 63 system:
+        - Sparse dictionary learning (all 3 components observed): `python ./cd_dynamax/demos/l63_LaplaceDict.py --emission_dim 3`
+        - Partial observations (only 1st component): `python ./cd_dynamax/demos/l63_nn.py --emission_dim 1 --state_dim 3`
+    - Lorenz 96 system:
+        - Sparse dictionary learning (5 components): `python ./cd_dynamax/demos/l96_LaplaceDict.py --emission_dim 5 --state_dim 5`
+        - Sparse dictionary learning (10 components): `python ./cd_dynamax/demos/l96_LaplaceDict.py --emission_dim 10 --state_dim 10 --N_particles 100`
+
+    - Linear SDE:
+        - Learning a linear SDE from multiple i.i.d. noisy trajectories: `python ./cd_dynamax/demos/LinearGaussian_MultiTraj.py --emission_dim 5 --state_dim 5 --N_trajectories 30`
+
+
+## Installation
+
+We support installation via **Conda** (recommended) or via a standard Python virtual environment.
+
+---
+
+### Option 1: Conda (recommended)
 
 ```bash
-# For CPU
-$ conda create --name hduq_nodynamax python=3.11.4
-$ conda activate hduq_nodynamax
-$ conda install pip
-$ pip install -r hduq_pip_nodynamax_requirements.txt
+# Create and activate a new environment with Python 3.11
+conda create -n cd_dynamax python=3.11
+conda activate cd_dynamax
 
-# For GPU
-$ conda create --name hduq_nodynamax_GPU python=3.11.4
-$ conda activate hduq_nodynamax_GPU
-$ conda install pip
-$ pip install -r hduq_pip_nodynamax_requirements.txt
-$ pip install --upgrade "jax[cuda12_pip]" -f https://storage.googleapis.com/jax-releases/jax_cuda_releases.html
-$ pip install jax==0.4.13 jaxlib==0.4.13+cuda12.cudnn89 -f https://storage.googleapis.com/jax-releases/jax_cuda_releases.html
+# Install your package in editable mode (so local changes are picked up)
+pip install -e .[dev]
 ```
 
-### In Ubuntu 22.04, with Nvidia and CUDA 12.6
+This installs the core dependencies listed in `pyproject.toml`, along with optional developer tools (`pytest`, etc.) if you use `[dev]`.
 
-Issues when running with GPU environment as above
+#### GPU support
+If you want GPU acceleration with JAX, you must install a CUDA-enabled `jaxlib` wheel.  
+Check the [JAX installation docs](https://jax.readthedocs.io/en/latest/installation.html#installation) for the exact commands for your system.  
+For example (CUDA 12):
 ```bash
-Jax plugin configuration error: Exception when calling jax_plugins.xla_cuda12.initialize()
-Traceback (most recent call last):
-  File "/home/iurteaga/miniconda3/envs/hduq_nodynamax_GPU/lib/python3.11/site-packages/jax/_src/xla_bridge.py", line 430, in discover_pjrt_plugins
-    plugin_module.initialize()
-  File "/home/iurteaga/miniconda3/envs/hduq_nodynamax_GPU/lib/python3.11/site-packages/jax_plugins/xla_cuda12/__init__.py", line 85, in initialize
-    options = xla_client.generate_pjrt_gpu_plugin_options()
-              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-AttributeError: module 'jaxlib.xla_client' has no attribute 'generate_pjrt_gpu_plugin_options'
-2024-10-17 12:25:22.684476: E external/xla/xla/stream_executor/cuda/cuda_dnn.cc:439] Could not create cudnn handle: CUDNN_STATUS_INTERNAL_ERROR
-2024-10-17 12:25:22.684508: E external/xla/xla/stream_executor/cuda/cuda_dnn.cc:443] Memory usage: 1897005056 bytes free, 8219262976 bytes total.
+pip install --upgrade "jax[cuda12_pip]" -f https://storage.googleapis.com/jax-releases/jax_cuda_releases.html
 ```
+
+---
+
+### Option 2: Python venv + pip
+
+```bash
+# Create and activate a virtual environment
+python -m venv .venv
+source .venv/bin/activate   # on macOS/Linux
+.venv\Scripts\activate      # on Windows
+
+# Upgrade pip
+pip install --upgrade pip
+
+# Install in editable mode
+pip install -e .[dev]
+```
+
+---
+
+### Notes
+
+- `pip install -e .` puts the repo in *editable mode*, so changes to source code are immediately available without reinstalling.
+- The `[dev]` extra installs additional developer tools (like `pytest`).
+- If you plan to use plotting features that rely on `graphviz`, make sure the system binary is installed:
+  - **macOS:** `brew install graphviz`  
+  - **Ubuntu/Debian:** `sudo apt install graphviz`  
+  - **Windows (conda):** `conda install graphviz`
