@@ -34,7 +34,8 @@ from cd_dynamax.src.utils.demo_utils import (
 # ------------------------
 def main(**cfg):
     # Initialize a new W&B run.
-    run = wandb.init(config=cfg, project=cfg["project"], name=cfg["run_name"], dir=cfg["dir"])
+    wandb_mode = "online" if cfg["online"] else "offline"
+    run = wandb.init(config=cfg, project=cfg["project"], name=cfg["run_name"], dir=cfg["dir"], mode=wandb_mode)
     cfg = wandb.config
 
     # Global settings
@@ -285,7 +286,7 @@ def main(**cfg):
 
     # Generate long sequences
     print("Generating long trajectory from learned model...")
-    long_t_emissions = jnp.arange(start=0.0, stop=100*cfg.T, step=cfg.dt).reshape(-1, 1)
+    long_t_emissions = jnp.arange(start=0.0, stop=cfg.T_long, step=cfg.dt).reshape(-1, 1)
     long_learned_data = predictive_learned(next(keys), t_emissions=long_t_emissions, **known_values)
     print("Generating long trajectory from true model...")
     long_true_data = Predictive(model, num_samples=1)(next(keys), t_emissions=long_t_emissions, **true_values)
@@ -356,6 +357,9 @@ if __name__ == "__main__":
     parser.add_argument("--N_trajectories", type=int, default=30)
     parser.add_argument("--emission_sd", type=float, default=1.0)
 
+    # Evaluation parameters
+    parser.add_argument("--T_long", type=int, default=300) # final time for long rollouts
+
     # Prior/bounds for learnable parameters
     parser.add_argument("--max_spectral_norm", type=float, default=200.0)
     parser.add_argument("--a", type=float, default=2.0)
@@ -392,7 +396,8 @@ if __name__ == "__main__":
     # Wandb settings
     parser.add_argument("--project", type=str, default="LinearGaussian_MultiTraj_example")
     parser.add_argument("--run_name", type=str, default=None)
-    parser.add_argument("--dir", type=str, default=None)
+    parser.add_argument("--dir", type=str, default="demo_outputs/LinearGaussian_MultiTraj")  # Allows you to custom-specify wandb directory (else uses default)
+    parser.add_argument("--online", type=int, default=0) # 0 for offline, 1 for online (need to configure wandb account for online)
 
     args = parser.parse_args()
     main(**vars(args))

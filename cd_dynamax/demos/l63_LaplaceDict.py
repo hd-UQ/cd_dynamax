@@ -35,7 +35,8 @@ from cd_dynamax.src.utils.demo_utils import (
 # ------------------------
 def main(**cfg):
     # Initialize a new W&B run.
-    run = wandb.init(config=cfg, project=cfg["project"], name=cfg["run_name"], dir=cfg["dir"])
+    wandb_mode = "online" if cfg["online"] else "offline"
+    run = wandb.init(config=cfg, project=cfg["project"], name=cfg["run_name"], dir=cfg["dir"], mode=wandb_mode)
     cfg = wandb.config
 
     # Global settings
@@ -137,6 +138,11 @@ def main(**cfg):
     # Extract emissions from the simulation data
     emissions_obs = sim_data["emissions"].squeeze(0)
 
+    # Plot the states and emissions for each trajectory
+    fig = plot_simulated_data(t=t_emissions, states=sim_data["states"].squeeze(0), emissions=emissions_obs)
+    wandb.log({f"figures/true_states_traj": wandb.Image(fig)})
+    plt.close(fig)
+
     # Log metrics
     wandb.log({
         "metrics/true/neg_log_prior": float(sim_data["neg_log_prior"].item()),
@@ -159,7 +165,7 @@ def main(**cfg):
     # Initialize at zero
     W_init = jnp.zeros_like(W_true)  # try zero initialization
     fig = plot_coeff_heatmaps(W_true, W_init, EXPONENTS)
-    wandb.log({"fig/W_true_vs_W_init": wandb.Image(fig)})
+    wandb.log({"figures/W_true_vs_W_init": wandb.Image(fig)})
     plt.close(fig)
 
     # Now run SVI for MAP inference!
@@ -185,13 +191,29 @@ def main(**cfg):
     # Log figure
     W_learned = guide.median(svi_result.params)["weights"]
     fig = plot_coeff_heatmaps(W_true, W_learned, EXPONENTS)
-    wandb.log({"fig/W_true_vs_W_learned": wandb.Image(fig)})
+    wandb.log({"figures/W_true_vs_W_learned": wandb.Image(fig)})
     plt.close(fig)
     print("W_true: ", W_true)
     print("W_learned: ", W_learned)
 
     # Log the mean absolute error in weights
     wandb.log({"metrics/learned/abs_err_weights_mean": float(jnp.abs(W_learned - W_true).mean())})
+
+    # Generate a long sequence of emissions from the learned and true models
+    print("Generating long trajectory from learned model...")
+    long_t_emissions = jnp.arange(start=0.0, stop=cfg.T_long, step=cfg.dt).reshape(-1, 1)
+    long_learned_data = predictive_learned(next(keys), t_emissions=long_t_emissions, **known_values) # no emissions provided here, so it will sample them
+    print("Generating long trajectory from true model...")
+    long_true_data = Predictive(model, num_samples=1)(next(keys), t_emissions=long_t_emissions, **true_values)
+    burnin_frac = 0.5
+    burnin_idx = int(burnin_frac * long_t_emissions.shape[0])
+    fig = plot_traj_kde({"Observed traj": long_true_data["emissions"].squeeze(0)[burnin_idx:], "Long learned traj": long_learned_data["emissions"].squeeze(0)[burnin_idx:]})
+    wandb.log({"figures/emissions_kde": wandb.Image(fig)})
+    plt.close(fig)
+
+    fig = plot_traj_kde({"True states": long_true_data["states"].squeeze(0)[burnin_idx:], "Learned states": long_learned_data["states"].squeeze(0)[burnin_idx:]})
+    wandb.log({"figures/states_kde": wandb.Image(fig)})
+    plt.close(fig)
 
     run.finish()
 
@@ -237,6 +259,9 @@ if __name__ == "__main__":
     parser.add_argument("--emission_dim", type=int, default=3) # observation dimension (default is to observe the first "emission_dim" states)
     parser.add_argument("--state_dim", type=int, choices=[3], default=3) # state dimension (only 3 is supported now)
     
+    # Evaluation parameters
+    parser.add_argument("--T_long", type=int, default=4000) # final time for long rollouts
+
     # Filtering algorithm hyperparameters
     parser.add_argument("--filter_type", type=str, default="EnKF", choices=["EnKF", "EKF", "UKF"])  # Type of filter to use
     parser.add_argument("--N_particles", type=int, default=25)  # Number of particles for EnKF
@@ -248,7 +273,8 @@ if __name__ == "__main__":
     # Wandb settings
     parser.add_argument("--project", type=str, default="l63_dict_laplace")
     parser.add_argument("--run_name", type=str, default=None) # Allows you to custom-specify wandb run name (else uses default)
-    parser.add_argument("--dir", type=str, default=None)  # Allows you to custom-specify wandb directory (else uses default)
+    parser.add_argument("--dir", type=str, default="demo_outputs/l63_LaplaceDict") # wandb logging directory
+    parser.add_argument("--online", type=int, default=0) # 0 for offline, 1 for online (need to configure wandb account for online)
 
     # Parse arguments
     args = parser.parse_args()

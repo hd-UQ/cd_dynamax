@@ -21,6 +21,7 @@ from cd_dynamax.src.utils.demo_utils import (
     make_bayesian_nn_drift,
     make_nn_init_dict,
     sample_t_emissions,
+    plot_simulated_data,
     plot_traj_kde,
 )
 
@@ -30,7 +31,8 @@ from cd_dynamax.src.utils.demo_utils import (
 # ------------------------
 def main(**cfg):
     # Initialize a new W&B run.
-    run = wandb.init(config=cfg, project=cfg["project"], name=cfg["run_name"], dir=cfg["dir"])
+    wandb_mode = "online" if cfg["online"] else "offline"
+    run = wandb.init(config=cfg, project=cfg["project"], name=cfg["run_name"], dir=cfg["dir"], mode=wandb_mode)
     cfg = wandb.config
 
     # Global settings
@@ -113,6 +115,11 @@ def main(**cfg):
     sim_data = Predictive(model, num_samples=1)(next(keys), t_emissions=t_emissions, **true_values)
     # Extract emissions from the simulation data
     emissions_obs = sim_data["emissions"].squeeze(0)
+
+    # Plot the states and emissions for each trajectory
+    fig = plot_simulated_data(t=t_emissions, states=sim_data["states"].squeeze(0), emissions=emissions_obs)
+    wandb.log({f"figures/true_states_traj": wandb.Image(fig)})
+    plt.close(fig)
 
     # Log metrics
     wandb.log({
@@ -203,6 +210,9 @@ if __name__ == "__main__":
     parser.add_argument("--emission_dim", type=int, default=3) # observation dimension (default is to observe the first "emission_dim" states)
     parser.add_argument("--state_dim", type=int, choices=[3], default=3) # state dimension (only 3 is supported now)
 
+    # Evaluation parameters
+    parser.add_argument("--T_long", type=int, default=4000) # final time for long rollouts
+
     # Filtering algorithm hyperparameters
     parser.add_argument("--filter_type", type=str, default="EnKF", choices=["EnKF", "EKF", "UKF"])  # Type of filter to use
     parser.add_argument("--N_particles", type=int, default=25)  # Number of particles for EnKF
@@ -214,7 +224,8 @@ if __name__ == "__main__":
     # Wandb settings
     parser.add_argument("--project", type=str, default="l63_nn")
     parser.add_argument("--run_name", type=str, default=None) # Allows you to custom-specify wandb run name (else uses default)
-    parser.add_argument("--dir", type=str, default=None)  # Allows you to custom-specify wandb directory (else uses default)
+    parser.add_argument("--dir", type=str, default="demo_outputs/l63_nn")  # Allows you to custom-specify wandb directory (else uses default)
+    parser.add_argument("--online", type=int, default=0) # 0 for offline, 1 for online (need to configure wandb account for online)
 
     # Parse arguments
     args = parser.parse_args()
