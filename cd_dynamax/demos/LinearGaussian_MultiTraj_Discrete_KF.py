@@ -98,7 +98,7 @@ def main(**cfg):
             lp = lp + dist.Uniform(cfg.diffusion_low, cfg.diffusion_high).log_prob(diffusion_coeff)
 
         # Build the model and its parameters
-        lgssm = LinearGaussianSSM(state_dim=state_dim, emission_dim=emission_dim)
+        lgssm = LinearGaussianSSM(state_dim=state_dim, emission_dim=emission_dim, input_dim=0)
         H = jnp.eye(emission_dim, state_dim)  # observe first "emission_dim" states
 
         ### NEW: use emission_sd^2 and diffusion_coeff * I
@@ -108,7 +108,10 @@ def main(**cfg):
             dynamics_weights=weights_stable,
             dynamics_bias=bias,
             dynamics_cov=diffusion_coeff * jnp.eye(state_dim),
+            # dynamics_input_weights: ParamSpec = None,
             emission_weights=H,
+            # emission_bias: ParamSpec = None,
+            # emission_input_weights: ParamSpec = None,
             emission_cov=(emission_sd**2) * jnp.eye(emission_dim),
         )
 
@@ -119,9 +122,8 @@ def main(**cfg):
                 states, ems = lgssm.sample(params=params,
                                               num_timesteps=T,
                                               key=k,
-                                            #   t_emissions=t_emissions
+                                              inputs=None,
                                               )
-                                            #   transition_type="path")
                 return states, ems
             states_B, ems_B = jax.vmap(_sample_one)(keys_)
             emissions = ems_B
@@ -134,10 +136,9 @@ def main(**cfg):
 
         def _filter_one(ems_i):
             out = lgssm.filter(params=params,
-                                  emissions=ems_i,
-                                #   t_emissions=t_emissions,
-                                #   filter_hyperparams=FILTER_HYPERPARAMS
-                                  )
+                                emissions=ems_i,
+                                inputs=None,
+                                )
             return out.marginal_loglik
 
         ll_B = jax.vmap(_filter_one)(emissions)   # (N,)

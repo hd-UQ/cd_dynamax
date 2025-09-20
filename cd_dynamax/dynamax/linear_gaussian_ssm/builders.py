@@ -24,7 +24,10 @@ def build_params(
     emission_dim: int,
     input_dim: int = 0, # no inputs is default assumption
 
-    # Dynamics: dx = F(t) x dt + B(t) u dt + b(t) dt + L(t) dW,  Qc(t) = cov(dW)
+    has_dynamics_bias: bool = False,
+    has_emissions_bias: bool = False,
+
+    # Dynamics: Ax + Bu + b + N(0,Q)
     dynamics_weights: ParamSpec = None,
     dynamics_input_weights: ParamSpec = None,
     dynamics_bias: ParamSpec = None,
@@ -72,11 +75,11 @@ def build_params(
     _x0_cov = jnp.eye(state_dim)
     _dynamics_weights = 0.99 * jnp.eye(state_dim)
     _dynamics_input_weights = jnp.zeros((state_dim, input_dim))
-    _dynamics_bias = jnp.zeros((state_dim,))
+    _dynamics_bias = jnp.zeros((state_dim,)) if has_dynamics_bias else None
     _dynamics_cov = 0.1 * jnp.eye(state_dim)
     _emission_weights = jnp.eye(emission_dim, state_dim)
     _emission_input_weights = jnp.zeros((emission_dim, input_dim))
-    _emission_bias = jnp.zeros((emission_dim,))
+    _emission_bias = jnp.zeros((emission_dim,)) if has_emissions_bias else None
     _emission_cov = 0.1 * jnp.eye(emission_dim)
 
     # Only use the values above if the user hasn't specified their own

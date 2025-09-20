@@ -90,6 +90,9 @@ class LinearGaussianSSM(SSM):
         return build_params(
             state_dim=self.state_dim, 
             emission_dim=self.emission_dim,
+            input_dim=self.input_dim,
+            has_dynamics_bias=self.has_dynamics_bias,
+            has_emissions_bias=self.has_emissions_bias,
             *args,
             **kwargs)
 
