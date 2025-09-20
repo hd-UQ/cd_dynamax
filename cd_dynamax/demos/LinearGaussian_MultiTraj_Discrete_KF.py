@@ -371,12 +371,6 @@ if __name__ == "__main__":
     parser.add_argument("--state_bound_high", type=float, default=1000.0)
     parser.add_argument("--derivative_clip_low", type=float, default=-2000)
     parser.add_argument("--derivative_clip_high", type=float, default=2000)
-
-    # Filtering algorithm hyperparameters
-    parser.add_argument("--filter_type", type=str, default="EKF", choices=["EnKF", "EKF", "UKF"])
-    parser.add_argument("--state_order", type=str, default="zeroth", choices=["discrete", "zeroth", "first", "second"])
-    parser.add_argument("--diffeqsolve_max_steps", type=int, default=100)
-    parser.add_argument("--cov_rescaling", type=float, default=1.0)
     
     # Wandb settings
     parser.add_argument("--project", type=str, default="LinearGaussian_MultiTraj_exampleKF")

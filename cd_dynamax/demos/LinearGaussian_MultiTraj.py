@@ -20,7 +20,6 @@ from cd_dynamax import (
 
 from cd_dynamax.src.utils.demo_utils import (
     get_or_sample,
-    make_filter_hyperparams,
     sample_t_emissions,
     plot_traj_kde,
     plot_simulated_data,
@@ -50,9 +49,6 @@ def main(**cfg):
                              A * (cfg.max_spectral_norm / spectral_norm),
                              A)
         return A_stable
-
-    # Build filter hyperparameters
-    FILTER_HYPERPARAMS = make_filter_hyperparams(cfg)
 
     adjust_rhs_kwargs = {'lower_bound': cfg.state_bound_low,
                         'upper_bound': cfg.state_bound_high,
@@ -149,7 +145,11 @@ def main(**cfg):
             out = cdnlgssm.filter(params=params,
                                   emissions=ems_i,
                                   t_emissions=t_emissions,
-                                  filter_hyperparams=FILTER_HYPERPARAMS)
+                                  filter_type=cfg.filter_type,
+                                  state_order=cfg.state_order,
+                                  diffeqsolve_max_steps=cfg.diffeqsolve_max_steps,
+                                  cov_rescaling=cfg.cov_rescaling,
+                                )
             return out.marginal_loglik
 
         ll_B = jax.vmap(_filter_one)(emissions)   # (N,)

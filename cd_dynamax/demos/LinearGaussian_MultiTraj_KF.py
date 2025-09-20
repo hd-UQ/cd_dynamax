@@ -13,7 +13,6 @@ import wandb
 # everything from your own package
 from cd_dynamax import (
     ContDiscreteLinearGaussianSSM,
-    KFHyperParams,
     adjust_rhs,
     make_key_sequence,
     make_optimizer
@@ -51,9 +50,6 @@ def main(**cfg):
                              A * (cfg.max_spectral_norm / spectral_norm),
                              A)
         return A_stable
-
-    # Build filter hyperparameters
-    FILTER_HYPERPARAMS = KFHyperParams()
 
     adjust_rhs_kwargs = {'lower_bound': cfg.state_bound_low,
                         'upper_bound': cfg.state_bound_high,
@@ -150,8 +146,7 @@ def main(**cfg):
         def _filter_one(ems_i):
             out = cdlgssm.filter(params=params,
                                   emissions=ems_i,
-                                  t_emissions=t_emissions,
-                                  filter_hyperparams=FILTER_HYPERPARAMS)
+                                  t_emissions=t_emissions)
             return out.marginal_loglik
 
         ll_B = jax.vmap(_filter_one)(emissions)   # (N,)
@@ -385,12 +380,6 @@ if __name__ == "__main__":
     parser.add_argument("--state_bound_high", type=float, default=1000.0)
     parser.add_argument("--derivative_clip_low", type=float, default=-2000)
     parser.add_argument("--derivative_clip_high", type=float, default=2000)
-
-    # Filtering algorithm hyperparameters
-    parser.add_argument("--filter_type", type=str, default="EKF", choices=["EnKF", "EKF", "UKF"])
-    parser.add_argument("--state_order", type=str, default="zeroth", choices=["discrete", "zeroth", "first", "second"])
-    parser.add_argument("--diffeqsolve_max_steps", type=int, default=100)
-    parser.add_argument("--cov_rescaling", type=float, default=1.0)
     
     # Wandb settings
     parser.add_argument("--project", type=str, default="LinearGaussian_MultiTraj_exampleKF")

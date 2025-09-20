@@ -16,7 +16,6 @@ from cd_dynamax import (
 )
 
 from cd_dynamax.src.utils.demo_utils import (
-    make_filter_hyperparams,
     make_bayesian_nn_drift,
     make_nn_init_dict,
     sample_t_emissions,
@@ -47,9 +46,6 @@ def main(**cfg):
             x[0] * (rho - x[2]) - x[1],
             x[0] * x[1] - beta * x[2]
         ])
-
-    # Build filter hyperparameters
-    FILTER_HYPERPARAMS = make_filter_hyperparams(cfg)
 
     # NumPyro model
     def model(t_emissions, emissions=None, **kwargs):
@@ -86,7 +82,14 @@ def main(**cfg):
             numpyro.deterministic("states", states); numpyro.deterministic("emissions", emissions)
 
         # Compute (approximate) marginal log likelihood via filtering
-        filtered = cdnlgssm.filter(params=params, emissions=emissions, t_emissions=t_emissions, filter_hyperparams=FILTER_HYPERPARAMS)
+        filtered = cdnlgssm.filter(params=params, emissions=emissions, t_emissions=t_emissions,
+                                    filter_type=cfg.filter_type,
+                                    state_order=cfg.state_order,
+                                    N_particles=cfg.N_particles,
+                                    diffeqsolve_max_steps=cfg.diffeqsolve_max_steps,
+                                    inflation_delta=cfg.inflation_delta,
+                                    cov_rescaling=cfg.cov_rescaling,
+                                )
         ll = filtered.marginal_loglik
 
         # Custom-compute and store the log prior (used only for diagnostics, not for learning)

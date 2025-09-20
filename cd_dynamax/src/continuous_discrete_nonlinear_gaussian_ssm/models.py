@@ -475,9 +475,89 @@ class ContDiscreteNonlinearGaussianSSM(SSM):
         )
         return filtered_posterior.marginal_loglik
     
-    def filter(self, *args, **kwargs):
-        return cdnlgssm_filter(*args, **kwargs)
-    
+    def filter(
+        self,
+        params,
+        emissions,
+        t_emissions=None,
+        inputs=None,
+        filter_type: str = "EnKF",
+        state_order: str = "first",
+        emission_order: str = "first",
+        N_particles: int = 25,
+        diffeqsolve_max_steps: int = 100,
+        dt0: float = 1e-2,
+        inflation_delta: float = 0.0,
+        cov_rescaling: float = 1.0,
+        dt_average: float = 1e-2,
+        num_iter: int = 1,
+        output_fields=None,
+        key=jr.PRNGKey(0),
+        diffeqsolve_kwargs: Optional[dict] = {},
+        extra_filter_kwargs: Optional[dict] = {},
+    ):
+        """High-level filtering interface.
+
+        Args:
+            filter_type: Which filter to run ("EKF", "EnKF", "UKF").
+            state_order: Order of Taylor expansion for dynamics.
+            emission_order: Order of Taylor expansion for emissions (EKF only).
+            N_particles: Number of particles (for EnKF only).
+            diffeqsolve_max_steps: Max steps for ODE solver between observations.
+            dt0: Initial step size for ODE/SDE solver (default is fixed step size).
+            inflation_delta: EnKF covariance inflation (ignored by EKF/UKF).
+            cov_rescaling: Rescale state covariance by this factor after each update (inflation delta is better for accurate likelihoods)
+            dt_average: [Only for state_order="Discrete"] Average step size to determine constant state noise cov.
+            diffeqsolve_kwargs: Extra kwargs for the ODE solver
+                (e.g., {"solver": diffrax.Heun(), "dt0": 1e-2}).
+            filter_kwargs: Extra kwargs specific to the chosen filter
+                (e.g., {"emission_order": "zeroth"} for EKF).
+        """
+
+        diffeqsolve_settings = {"max_steps": diffeqsolve_max_steps,
+                                "dt0": dt0,
+                                **diffeqsolve_kwargs}
+
+        common_args = {
+            "state_order": state_order,
+            "diffeqsolve_settings": diffeqsolve_settings,
+            "dt_average": dt_average,
+            "cov_rescaling": cov_rescaling,
+            "diffeqsolve_settings": diffeqsolve_settings,
+        }
+        
+        if filter_type == "EKF":
+            filter_hyperparams = EKFHyperParams(
+                emission_order=emission_order,
+                **common_args,
+                **extra_filter_kwargs,
+            )
+        elif filter_type == "EnKF":
+            filter_hyperparams = EnKFHyperParams(
+                N_particles=N_particles,
+                inflation_delta=inflation_delta,
+                **common_args,
+                **extra_filter_kwargs,
+            )
+        elif filter_type == "UKF":
+            filter_hyperparams = UKFHyperParams(
+                **common_args,
+                **extra_filter_kwargs,
+            )
+        else:
+            raise ValueError(f"Unknown filter type: {filter_type}")
+
+        return cdnlgssm_filter(
+            params=params,
+            emissions=emissions,
+            t_emissions=t_emissions,
+            filter_hyperparams=filter_hyperparams,
+            inputs=inputs,
+            num_iter=num_iter,
+            output_fields=output_fields,
+            key=key,
+        )
+
     def smoother(self, *args, **kwargs):
         return cdnlgssm_smoother(*args, **kwargs)
 

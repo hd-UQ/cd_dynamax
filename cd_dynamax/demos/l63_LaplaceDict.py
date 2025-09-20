@@ -20,7 +20,6 @@ from cd_dynamax.src.utils.demo_utils import (
     build_exponents,
     poly_drift,
     get_or_sample,
-    make_filter_hyperparams,
     sample_t_emissions,
     plot_traj_kde,
     plot_simulated_data,
@@ -57,9 +56,6 @@ def main(**cfg):
     W_true = W_true.at[0, i_x].set(-10.0).at[0, i_y].set(+10.0)
     W_true = W_true.at[1, i_x].set(28.0).at[1, i_xz].set(-1.0).at[1, i_y].set(-1.0)
     W_true = W_true.at[2, i_xy].set(+1.0).at[2, i_z].set(-8.0/3.0)
-
-    # Build filter hyperparameters
-    FILTER_HYPERPARAMS = make_filter_hyperparams(cfg)
 
     # NumPyro model
     def model(t_emissions, emissions=None, **kwargs):
@@ -99,7 +95,14 @@ def main(**cfg):
             numpyro.deterministic("states", states); numpyro.deterministic("emissions", emissions)
 
         # Compute (approximate) marginal log likelihood via filtering
-        filtered = cdnlgssm.filter(params=params, emissions=emissions, t_emissions=t_emissions, filter_hyperparams=FILTER_HYPERPARAMS)
+        filtered = cdnlgssm.filter(params=params, emissions=emissions, t_emissions=t_emissions,
+                                    filter_type=cfg.filter_type,
+                                    state_order=cfg.state_order,
+                                    N_particles=cfg.N_particles,
+                                    diffeqsolve_max_steps=cfg.diffeqsolve_max_steps,
+                                    inflation_delta=cfg.inflation_delta,
+                                    cov_rescaling=cfg.cov_rescaling,
+                                )
         ll = filtered.marginal_loglik
 
         # Custom-compute and store the log prior (used only for diagnostics, not for learning)

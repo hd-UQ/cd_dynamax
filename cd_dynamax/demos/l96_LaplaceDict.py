@@ -22,7 +22,6 @@ from cd_dynamax.src.utils.demo_utils import (
     build_exponents,
     poly_drift,
     get_or_sample,
-    make_filter_hyperparams,
     sample_t_emissions,
     plot_traj_kde,
     plot_simulated_data,
@@ -81,7 +80,14 @@ def main(**cfg):
     print("W_true: ", W_true)
 
     # Build filter hyperparameters
-    FILTER_HYPERPARAMS = make_filter_hyperparams(cfg)
+    filter_kwargs = {
+        "filter_type": cfg.filter_type,
+        "state_order": cfg.state_order,
+        "N_particles": cfg.N_particles,
+        "diffeqsolve_max_steps": cfg.diffeqsolve_max_steps,
+        "inflation_delta": cfg.inflation_delta,
+        "cov_rescaling": cfg.cov_rescaling,
+    }       
 
     # NumPyro model
     def model(t_emissions, emissions=None, store_filtered=False, store_grad=False, **kwargs):
@@ -108,7 +114,7 @@ def main(**cfg):
             numpyro.deterministic("states", states); numpyro.deterministic("emissions", emissions)
 
         # Compute (approximate) marginal log likelihood via filtering
-        filtered = cdnlgssm.filter(params=params, emissions=emissions, t_emissions=t_emissions, filter_hyperparams=FILTER_HYPERPARAMS)
+        filtered = cdnlgssm.filter(params=params, emissions=emissions, t_emissions=t_emissions, **filter_kwargs)
         ll = filtered.marginal_loglik
         
         if store_filtered:
@@ -140,9 +146,7 @@ def main(**cfg):
         # Optionally store gradients (for diagnostics)
         if store_grad:
             grad_w = jax.grad(lambda w: cdnlgssm.filter(
-                params=build_params(
-                    state_dim=state_dim,
-                    emission_dim=emission_dim,
+                params=cdnlgssm.build_params(
                     initial_mean=jnp.zeros(state_dim), 
                     initial_cov=cfg.initial_cov*jnp.eye(state_dim),
                     drift=lambda x: adjust_rhs(x, poly_drift(x, w, exponents)),
@@ -153,7 +157,7 @@ def main(**cfg):
                 ),
                 emissions=emissions,
                 t_emissions=t_emissions,
-                filter_hyperparams=FILTER_HYPERPARAMS
+                **filter_kwargs
             ).marginal_loglik)(weights)
             numpyro.deterministic("grad_neg_log_likelihood_w", grad_w)
     
