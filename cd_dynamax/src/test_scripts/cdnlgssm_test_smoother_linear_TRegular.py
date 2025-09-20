@@ -1,16 +1,18 @@
 # Imports
-import sys
 import jax.numpy as jnp
 import jax.random as jr
 
-# Make sure main paths are added
-sys.path.append("../")
-sys.path.append("../..")
-
 # Our codebase
-from continuous_discrete_linear_gaussian_ssm import ContDiscreteLinearGaussianSSM
-from continuous_discrete_nonlinear_gaussian_ssm import ContDiscreteNonlinearGaussianSSM
-from utils.test_utils import compare, compare_structs
+from cd_dynamax import (
+    ContDiscreteLinearGaussianSSM,
+    ContDiscreteNonlinearGaussianSSM,
+    cdlgssm_smoother,
+    cdnlgssm_smoother,
+    KFHyperParams,
+    EKFHyperParams,
+)
+    
+from cd_dynamax.src.utils.test_utils import compare, compare_structs
 
 # JAX device check
 print("************* Checking JAX device *************")
@@ -53,7 +55,7 @@ cd_model = ContDiscreteLinearGaussianSSM(
     # has_emissions_bias = False,
 )
 # Initialize, controlling what is learned
-from continuous_discrete_linear_gaussian_ssm.models import *
+from cd_dynamax.src.continuous_discrete_linear_gaussian_ssm.models import *
 cd_params, cd_param_props = cd_model.initialize(
     key1,
     ## Initial
@@ -121,9 +123,7 @@ compare(cd_num_timesteps_emissions, cd_emissions)
 
 ########### Now make non-linear models, assuming linearity ########
 print("************* Continuous-Discrete Non-linear GSSM *************")
-from continuous_discrete_nonlinear_gaussian_ssm.models import *
-from continuous_discrete_nonlinear_gaussian_ssm import cdnlgssm_smoother
-from continuous_discrete_nonlinear_gaussian_ssm import EKFHyperParams
+from cd_dynamax.src.continuous_discrete_nonlinear_gaussian_ssm.models import *
 
 # Model def
 inputs = None  # Not interested in inputs for now
@@ -192,7 +192,6 @@ for dynamics_approx_order in [1., 2.]:
 
     print(f"**********************************")
     print("Continuous-Discrete time linear smoothing comparisons")
-    from continuous_discrete_linear_gaussian_ssm.inference import cdlgssm_smoother
     for smoother_type in ["cd_smoother_1", "cd_smoother_2"]:
         # We set dt_final=1 so that predicted mean and covariance at the end of sequence match those of discrete filtering
         kf_hyperparams=KFHyperParams(dt_final = 1.)

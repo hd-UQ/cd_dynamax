@@ -1,18 +1,9 @@
 # Imports
-import sys
 import jax.numpy as jnp
 import jax.random as jr
 
-# Make sure main paths are added
-sys.path.append("../")
-sys.path.append("../..")
-
-# Local dynamax
-from cd_dynamax.dynamax.linear_gaussian_ssm import LinearGaussianSSM
-
-# Our codebase
-from continuous_discrete_linear_gaussian_ssm import ContDiscreteLinearGaussianSSM
-from utils.test_utils import compare, compare_structs
+from cd_dynamax import ContDiscreteLinearGaussianSSM, LinearGaussianSSM
+from cd_dynamax.src.utils.test_utils import compare, compare_structs
 
 # JAX device check
 print("************* Checking JAX device *************")
@@ -83,7 +74,7 @@ cd_model = ContDiscreteLinearGaussianSSM(
 )
 
 # Initialize, controlling what is learned
-from continuous_discrete_linear_gaussian_ssm.models import *
+from cd_dynamax.src.continuous_discrete_linear_gaussian_ssm.models import *
 cd_params, cd_param_props = cd_model.initialize(
     key_init,
     ## Initial
@@ -157,7 +148,7 @@ compare(d_states, cd_states)
 print("\tChecking emissions...")
 compare(d_emissions, cd_emissions)
 
-from continuous_discrete_linear_gaussian_ssm.inference import cdlgssm_smoother, KFHyperParams
+from cd_dynamax.src.continuous_discrete_linear_gaussian_ssm.inference import cdlgssm_smoother, KFHyperParams
 # We set dt_final=1 so that predicted mean and covariance at the end of sequence match those of discrete filtering
 kf_hyperparams=KFHyperParams(dt_final = 1.)
 

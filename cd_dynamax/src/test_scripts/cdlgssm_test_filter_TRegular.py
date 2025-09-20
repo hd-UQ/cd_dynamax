@@ -1,19 +1,10 @@
 # Imports
 import pdb
-import sys
 import jax.numpy as jnp
 import jax.random as jr
 
-# Make sure main paths are added
-sys.path.append("../")
-sys.path.append("../..")
-
-# Local dynamax
-from cd_dynamax.dynamax.linear_gaussian_ssm import LinearGaussianSSM
-
-# Our codebase
-from continuous_discrete_linear_gaussian_ssm import ContDiscreteLinearGaussianSSM
-from utils.test_utils import compare, compare_structs
+from cd_dynamax import ContDiscreteLinearGaussianSSM, LinearGaussianSSM
+from cd_dynamax.src.utils.test_utils import compare, compare_structs
 
 # JAX device check
 print("************* Checking JAX device *************")
@@ -106,7 +97,7 @@ cd_model = ContDiscreteLinearGaussianSSM(
 )
 
 # Initialize, controlling what is learned
-from continuous_discrete_linear_gaussian_ssm.models import *
+from cd_dynamax.src.continuous_discrete_linear_gaussian_ssm.models import *
 cd_params, cd_param_props = cd_model.initialize(
     key_init,
     ## Initial
@@ -224,7 +215,7 @@ print("\tChecking emissions...")
 compare(d_emissions, cd_emissions)
 
 print("Continuous-Discrete time filtering: pre-fit")
-from continuous_discrete_linear_gaussian_ssm.inference import cdlgssm_filter, KFHyperParams
+from cd_dynamax import cdlgssm_filter, KFHyperParams
 # We set dt_final=1 so that predicted mean and covariance at the end of sequence match those of discrete filtering
 kf_hyperparams=KFHyperParams(dt_final = 1.)
 # Define CD linear filter
@@ -315,7 +306,7 @@ t_forecast_emissions = jnp.arange(NUM_TIMESTEPS, NUM_TIMESTEPS + FORECAST_TIMEST
 init_time = t_emissions[-1]
 
 # Run forecast on forecasting time points
-from continuous_discrete_linear_gaussian_ssm.inference import cdlgssm_forecast
+from cd_dynamax import cdlgssm_forecast
 # Forecasting randomness
 key_forecast = jr.split(key_sample)[0]
 
@@ -381,7 +372,7 @@ for n_state in jnp.arange(STATE_DIM):
     plt.show()
 
 # Compute emissions from forecasted states
-from continuous_discrete_linear_gaussian_ssm.inference import cdlgssm_emissions
+from cd_dynamax import cdlgssm_emissions
 cd_point_emissions_forecasted_means, cd_point_emissions_forecasted_covariances = cdlgssm_emissions(
     params=cd_params,
     t_states=t_forecast_emissions,

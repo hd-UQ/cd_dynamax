@@ -1,17 +1,10 @@
 # Imports
 import pdb
-import sys
 import jax.numpy as jnp
 import jax.random as jr
 
-# Make sure main paths are added
-sys.path.append("../")
-sys.path.append("../..")
-
-# Our codebase
-from continuous_discrete_linear_gaussian_ssm import ContDiscreteLinearGaussianSSM
-from continuous_discrete_nonlinear_gaussian_ssm import ContDiscreteNonlinearGaussianSSM
-from utils.test_utils import compare, compare_structs
+from cd_dynamax import ContDiscreteLinearGaussianSSM, ContDiscreteNonlinearGaussianSSM
+from cd_dynamax.src.utils.test_utils import compare, compare_structs
 
 # JAX device check
 print("************* Checking JAX device *************")
@@ -54,7 +47,7 @@ cd_model = ContDiscreteLinearGaussianSSM(
     has_emissions_bias = True,
 )
 # Initialize, controlling what is learned
-from continuous_discrete_linear_gaussian_ssm.models import *
+from cd_dynamax.src.continuous_discrete_linear_gaussian_ssm.models import *
 cd_params, cd_param_props = cd_model.initialize(
     key1,
     ## Initial
@@ -132,7 +125,7 @@ print("\tChecking emissions...")
 compare(cd_num_timesteps_emissions, cd_emissions)
 
 print("Continuous-Discrete time filtering: pre-fit")
-from continuous_discrete_linear_gaussian_ssm.inference import cdlgssm_filter, KFHyperParams
+from cd_dynamax.src.continuous_discrete_linear_gaussian_ssm.inference import cdlgssm_filter, KFHyperParams
 # We set dt_final=1 so that predicted mean and covariance at the end of sequence match those of discrete filtering
 kf_hyperparams=KFHyperParams(dt_final = 1.)
 # Define CD linear filter
@@ -166,9 +159,8 @@ cd_sgd_fitted_filtered_posterior = cdlgssm_filter(
 
 ########### Now make non-linear models, assuming linearity ########
 print("************* Continuous-Discrete Non-linear GSSM *************")
-from continuous_discrete_nonlinear_gaussian_ssm.models import *
-from continuous_discrete_nonlinear_gaussian_ssm import cdnlgssm_filter
-from continuous_discrete_nonlinear_gaussian_ssm import EKFHyperParams
+from cd_dynamax.src.continuous_discrete_nonlinear_gaussian_ssm.models import *
+from cd_dynamax import cdnlgssm_filter, EKFHyperParams
 
 # Model def
 inputs = None  # Not interested in inputs for now
@@ -395,8 +387,7 @@ for dynamics_approx_order in [1., 2.]:
 print("All EKF and CDNLGSSM model tests passed!")
 
 ######## Continuous-discrete Unscented Kalman Filter
-# from continuous_discrete_nonlinear_gaussian_ssm import unscented_kalman_filter as cd_ukf
-from continuous_discrete_nonlinear_gaussian_ssm import UKFHyperParams
+from cd_dynamax import UKFHyperParams
 
 # Run First order ekf with the non-linear model and data from the first-order CDNLGSSM model
 print(f"**********************************")
@@ -419,8 +410,7 @@ compare_structs(cd_ukf_post, cd_filtered_posterior)
 print("UKF tests passed.")
 
 ######## Continuous-discrete Ensemble Kalman Filter
-# from continuous_discrete_nonlinear_gaussian_ssm import ensemble_kalman_filter as cd_enkf
-from continuous_discrete_nonlinear_gaussian_ssm import EnKFHyperParams
+from cd_dynamax import EnKFHyperParams
 
 # Run First order ekf with the non-linear model and data from the first-order CDNLGSSM model
 print(f"**********************************")
@@ -473,7 +463,7 @@ t_forecast_emissions = jnp.arange(NUM_TIMESTEPS, NUM_TIMESTEPS + FORECAST_TIMEST
 init_time = t_emissions[-1]
 
 # Run forecast on forecasting time points
-from continuous_discrete_nonlinear_gaussian_ssm.models import cdnlgssm_forecast
+from cd_dynamax import cdnlgssm_forecast
 
 # Forecasting randomness
 key_past, key_forecast = jr.split(jr.PRNGKey(0))
@@ -543,7 +533,7 @@ for n_state in jnp.arange(STATE_DIM):
     plt.show()
 
 # Compute emissions from forecasted states
-from continuous_discrete_nonlinear_gaussian_ssm.models import cdnlgssm_emissions
+from cd_dynamax import cdnlgssm_emissions
 cd_ekf_point_emissions_forecasted_means, cd_ekf_point_emissions_forecasted_covariances = cdnlgssm_emissions(
     params=cdnl_params,
     t_states=t_forecast_emissions,
@@ -661,7 +651,7 @@ for n_state in jnp.arange(STATE_DIM):
     plt.show()
 
 # Compute emissions from forecasted states
-from continuous_discrete_nonlinear_gaussian_ssm.models import cdnlgssm_emissions
+from cd_dynamax import cdnlgssm_emissions
 cd_ukf_point_emissions_forecasted_means, cd_ukf_point_emissions_forecasted_covariances = cdnlgssm_emissions(
     params=cdnl_params,
     t_states=t_forecast_emissions,
@@ -779,7 +769,7 @@ for n_state in jnp.arange(STATE_DIM):
     plt.show()
 
 # Compute emissions from forecasted states
-from continuous_discrete_nonlinear_gaussian_ssm.models import cdnlgssm_emissions
+from cd_dynamax import cdnlgssm_emissions
 cd_enkf_point_emissions_forecasted_means, cd_enkf_point_emissions_forecasted_covariances = cdnlgssm_emissions(
     params=cdnl_params,
     t_states=t_forecast_emissions,
