@@ -10,10 +10,8 @@ import numpyro.distributions as dist
 from numpyro.infer.autoguide import AutoDiagonalNormal, AutoDelta, AutoMultivariateNormal, AutoLowRankMultivariateNormal
 import wandb
 
-# everything from your own package
-from cd_dynamax import LinearGaussianSSM
-
 from cd_dynamax import (
+    LinearGaussianSSM,
     make_key_sequence,
     make_optimizer
 )
