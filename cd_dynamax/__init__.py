@@ -26,6 +26,9 @@ from .src.continuous_discrete_linear_gaussian_ssm import (
     KFHyperParams,
 )
 
+# Discrete-Discrete Linear SSM
+from .dynamax.linear_gaussian_ssm import LinearGaussianSSM
+
 # Shared pieces
 from .src.ssm_temissions import SSM, Prior
 
@@ -38,6 +41,7 @@ __all__ = [
     # Models
     "ContDiscreteNonlinearGaussianSSM",
     "ContDiscreteLinearGaussianSSM",
+    "LinearGaussianSSM",
     # Params
     "ParamsCDNLGSSM",
     "ParamsCDLGSSM",

@@ -22,6 +22,7 @@ from ..utils.distributions import NormalInverseWishart as NIW
 from ..utils.distributions import mniw_posterior_update, niw_posterior_update
 from ..utils.utils import pytree_stack, psd_solve
 
+from .builders import build_params
 class SuffStatsLGSSM(Protocol):
     """A :class:`NamedTuple` with sufficient statistics for LGSSM parameter estimation."""
     pass
@@ -84,6 +85,13 @@ class LinearGaussianSSM(SSM):
     @property
     def inputs_shape(self):
         return (self.input_dim,) if self.input_dim > 0 else None
+
+    def build_params(self, *args, **kwargs):
+        return build_params(
+            state_dim=self.state_dim, 
+            emission_dim=self.emission_dim,
+            *args,
+            **kwargs)
 
     def initialize(
         self,
