@@ -13,7 +13,6 @@ import wandb
 # everything from your own package
 from cd_dynamax import (
     ContDiscreteNonlinearGaussianSSM,
-    cdnlgssm_filter,
     build_params,
     adjust_rhs,
     make_optimizer,
@@ -149,7 +148,7 @@ def main(**cfg):
             assert emissions.ndim == 3 and emissions.shape[1] == T
 
         def _filter_one(ems_i):
-            out = cdnlgssm_filter(params=params,
+            out = cdnlgssm.filter(params=params,
                                   emissions=ems_i,
                                   t_emissions=t_emissions,
                                   filter_hyperparams=FILTER_HYPERPARAMS)

@@ -14,7 +14,6 @@ import wandb
 from cd_dynamax import (
     ContDiscreteLinearGaussianSSM,
     KFHyperParams,
-    cdlgssm_filter,
     build_params_linear,
     adjust_rhs,
     make_key_sequence,
@@ -151,7 +150,7 @@ def main(**cfg):
             assert emissions.ndim == 3 and emissions.shape[1] == T
 
         def _filter_one(ems_i):
-            out = cdlgssm_filter(params=params,
+            out = cdlgssm.filter(params=params,
                                   emissions=ems_i,
                                   t_emissions=t_emissions,
                                   filter_hyperparams=FILTER_HYPERPARAMS)

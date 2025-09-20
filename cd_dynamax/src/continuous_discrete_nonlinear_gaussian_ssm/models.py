@@ -472,6 +472,12 @@ class ContDiscreteNonlinearGaussianSSM(SSM):
             key=key
         )
         return filtered_posterior.marginal_loglik
+    
+    def filter(self, *args, **kwargs):
+        return cdnlgssm_filter(*args, **kwargs)
+    
+    def smoother(self, *args, **kwargs):
+        return cdnlgssm_smoother(*args, **kwargs)
 
 def cdnlgssm_joint_sample(
     params: ParamsCDNLGSSM,

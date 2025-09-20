@@ -11,7 +11,6 @@ import wandb
 # everything from your own package
 from cd_dynamax import (
     ContDiscreteNonlinearGaussianSSM,
-    cdnlgssm_filter,
     build_params,
     adjust_rhs,
     make_optimizer,
@@ -102,7 +101,7 @@ def main(**cfg):
             numpyro.deterministic("states", states); numpyro.deterministic("emissions", emissions)
 
         # Compute (approximate) marginal log likelihood via filtering
-        filtered = cdnlgssm_filter(params=params, emissions=emissions, t_emissions=t_emissions, filter_hyperparams=FILTER_HYPERPARAMS)
+        filtered = cdnlgssm.filter(params=params, emissions=emissions, t_emissions=t_emissions, filter_hyperparams=FILTER_HYPERPARAMS)
         ll = filtered.marginal_loglik
 
         # Custom-compute and store the log prior (used only for diagnostics, not for learning)
