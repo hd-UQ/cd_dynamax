@@ -18,30 +18,24 @@ import jax.random as jr
 from typing import Union
 from jaxtyping import Float, Array
 
-# Additional, custom codebase
-sys.path.append("../")
-sys.path.append("../..")
-
 # Import dynamax
 from cd_dynamax.dynamax.parameters import ParameterProperties
 
 # Our own custom src codebase
 # continuous-discrete nonlinear Gaussian SSM codebase
-from continuous_discrete_nonlinear_gaussian_ssm import ContDiscreteNonlinearGaussianSSM
-from continuous_discrete_nonlinear_gaussian_ssm import cdnlgssm_filter
+from cd_dynamax import ContDiscreteNonlinearGaussianSSM, cdnlgssm_filter
 # Load models
-from continuous_discrete_nonlinear_gaussian_ssm.models import *
+from cd_dynamax.src.continuous_discrete_nonlinear_gaussian_ssm.models import *
 
 # Plotting
 import matplotlib
 import matplotlib.pyplot as plt
 import matplotlib.colors
 # Our own custom plotting codebase
+
 # Useful utility functions
-from utils.plotting_utils import *
-sys.path.append("../notebooks/tutorial")
-from simulation_utils import *
-from lorenz_plotting import *
+from .plotting_utils import *
+from .simulation_utils import *
 
 
 # JAX device check

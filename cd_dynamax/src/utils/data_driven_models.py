@@ -1,14 +1,10 @@
-import sys
-sys.path.append("..")
-sys.path.append("../..")
-sys.path.append("../../..")
 from typing import NamedTuple, Union, List, Callable
 from jaxtyping import Array, Float
 import jax.numpy as jnp
 from cd_dynamax.dynamax.parameters import ParameterProperties
 import itertools
 from itertools import product
-from utils.diffrax_utils import adjust_rhs
+from .diffrax_utils import adjust_rhs
 from flax import linen as nn
 
 class LearnableNN_TwoLayerGeLU(NamedTuple):

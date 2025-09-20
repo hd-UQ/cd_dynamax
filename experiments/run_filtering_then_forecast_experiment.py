@@ -3,13 +3,10 @@ from configparser import ConfigParser
 import pickle
 
 # CD-NLGSSM imports
-import sys
-sys.path.append('..')
-sys.path.append('../src')
 from data_generator import generate_data_from_config
-from utils.experiment_utils import *
-from utils.simulation_utils import filter_and_forecast
-from continuous_discrete_nonlinear_gaussian_ssm.cdnlgssm_utils import update_params
+from cd_dynamax.src.utils.experiment_utils import *
+from cd_dynamax.src.utils.simulation_utils import filter_and_forecast
+from cd_dynamax.src.continuous_discrete_nonlinear_gaussian_ssm.cdnlgssm_utils import update_params
 
 def build_results_dir(data_config_file, model_config_file, filter_config_file, output_dir):
     '''Builds the results directory path based on configuration file names.'''

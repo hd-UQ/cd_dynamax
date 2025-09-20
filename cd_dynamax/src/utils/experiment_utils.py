@@ -1,16 +1,12 @@
-import sys
-
-# Additional, custom codebase
-sys.path.append("../")
 
 # CD-Nonlinear Gaussian models
-from continuous_discrete_nonlinear_gaussian_ssm import ContDiscreteNonlinearGaussianSSM
-from continuous_discrete_nonlinear_gaussian_ssm.models import *
+from cd_dynamax import ContDiscreteNonlinearGaussianSSM
+from cd_dynamax.src.continuous_discrete_nonlinear_gaussian_ssm.models import *
 
 # Useful utility functions
-from utils.simulation_utils import *
-from utils.physics_based_models import *
-from utils.data_driven_models import *
+from .simulation_utils import *
+from .physics_based_models import *
+from .data_driven_models import *
 
 from cd_dynamax.dynamax.parameters import ParameterProperties
 
@@ -75,7 +71,6 @@ def mcmc_config_to_dict(mcmc_config):
     return mcmc_config_dict
 
 # Create CD-NLGSSM model from configuration files
-from continuous_discrete_nonlinear_gaussian_ssm.models import ContDiscreteNonlinearGaussianSSM
 def create_cdnlgssm_model_from_config(
         true_model_config_file: str = None,
         config = None,

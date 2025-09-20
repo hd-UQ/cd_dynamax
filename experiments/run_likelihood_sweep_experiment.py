@@ -6,10 +6,7 @@ import pickle
 import equinox as eqx
 
 # CD-NLGSSM imports
-import sys
-sys.path.append('..')
-sys.path.append('../src')
-from utils.experiment_utils import *
+from cd_dynamax.src.utils.experiment_utils import *
 from data_generator import generate_data_from_config
 
 def build_results_dir(data_config_file, model_config_file, filter_config_file, sweep_config_file, output_dir):

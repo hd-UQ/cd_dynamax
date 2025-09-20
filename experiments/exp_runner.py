@@ -6,10 +6,7 @@ import optax
 import pickle
 
 # CD-NLGSSM imports
-import sys
-sys.path.append('..')
-sys.path.append('../src')
-from utils.experiment_utils import *
+from cd_dynamax.src.utils.experiment_utils import *
 from data_generator import generate_data_from_config
 
 def run_exp(
