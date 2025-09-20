@@ -380,7 +380,7 @@ if __name__ == "__main__":
     # Wandb settings
     parser.add_argument("--project", type=str, default="LinearGaussian_MultiTraj_exampleKF")
     parser.add_argument("--run_name", type=str, default=None)
-    parser.add_argument("--dir", type=str, default="demo_outputs/LinearGaussian_MultiTraj_KF")  # Allows you to custom-specify wandb directory (else uses default)
+    parser.add_argument("--dir", type=str, default="demo_outputs/LinearGaussian_MultiTraj_Discrete_KF")  # Allows you to custom-specify wandb directory (else uses default)
     parser.add_argument("--online", type=int, default=0) # 0 for offline, 1 for online (need to configure wandb account for online)
 
     args = parser.parse_args()
