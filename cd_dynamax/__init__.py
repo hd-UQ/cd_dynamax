@@ -11,7 +11,6 @@ from .src.continuous_discrete_nonlinear_gaussian_ssm import (
     EKFHyperParams,
     UKFHyperParams,
     EnKFHyperParams,
-    build_params,
 )
 
 # Linear SSM
@@ -25,7 +24,6 @@ from .src.continuous_discrete_linear_gaussian_ssm import (
     cdlgssm_posterior_sample,
     cdlgssm_joint_sample,
     KFHyperParams,
-    build_params_linear,
 )
 
 # Shared pieces
@@ -51,7 +49,6 @@ __all__ = [
     "EKFHyperParams",
     "UKFHyperParams",
     "EnKFHyperParams",
-    "build_params",
     # Linear algos
     "cdlgssm_filter",
     "cdlgssm_smoother",
@@ -60,7 +57,6 @@ __all__ = [
     "cdlgssm_posterior_sample",
     "cdlgssm_joint_sample",
     "KFHyperParams",
-    "build_params_linear",
     # SSM/emissions
     "SSM",
     "Prior",

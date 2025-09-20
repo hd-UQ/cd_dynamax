@@ -39,6 +39,8 @@ from .inference_ukf import UKFHyperParams, unscented_kalman_filter, forecast_uns
 from ..utils.diffrax_utils import diffeqsolve
 # Debugging utilities
 from ..utils.debug_utils import *
+
+from .builders import build_params
 DEBUG = False
 
 # Auxiliary function to process inputs ---from dynamax
@@ -479,6 +481,13 @@ class ContDiscreteNonlinearGaussianSSM(SSM):
     def smoother(self, *args, **kwargs):
         return cdnlgssm_smoother(*args, **kwargs)
 
+    def build_params(self, drift, **kwargs):
+        return build_params(
+            state_dim=self.state_dim, 
+            emission_dim=self.emission_dim,
+            drift=drift,
+            **kwargs)
+    
 def cdnlgssm_joint_sample(
     params: ParamsCDNLGSSM,
     key: PRNGKey,

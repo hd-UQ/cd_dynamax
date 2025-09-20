@@ -13,7 +13,6 @@ import wandb
 # everything from your own package
 from cd_dynamax import (
     ContDiscreteNonlinearGaussianSSM,
-    build_params,
     adjust_rhs,
     make_optimizer,
     make_key_sequence,
@@ -117,9 +116,7 @@ def main(**cfg):
         H = jnp.eye(emission_dim, state_dim)  # observe first "emission_dim" states
 
         ### NEW: use emission_sd^2 and diffusion_coeff * I
-        params = build_params(
-            state_dim=state_dim,
-            emission_dim=emission_dim,
+        params = cdnlgssm.build_params(
             initial_mean=jnp.zeros(state_dim), 
             initial_cov=cfg.initial_cov*jnp.eye(state_dim),
             drift=drift,

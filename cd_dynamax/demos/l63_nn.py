@@ -10,7 +10,6 @@ import wandb
 # everything from your own package
 from cd_dynamax import (
     ContDiscreteNonlinearGaussianSSM,
-    build_params,
     adjust_rhs,
     make_optimizer,
     make_key_sequence,
@@ -72,9 +71,7 @@ def main(**cfg):
         # Build the model and its parameters
         cdnlgssm = ContDiscreteNonlinearGaussianSSM(state_dim=state_dim, emission_dim=emission_dim)
         H = jnp.eye(emission_dim, state_dim)
-        params = build_params(
-            state_dim=state_dim,
-            emission_dim=emission_dim,
+        params = cdnlgssm.build_params(
             initial_mean=jnp.zeros(state_dim), 
             initial_cov=cfg.initial_cov*jnp.eye(state_dim), # warning: choosing it too small, even if "true", can lead to numerical issues with the filter.
             drift=drift,  # including **kwargs allows passing known params during predictive calls.

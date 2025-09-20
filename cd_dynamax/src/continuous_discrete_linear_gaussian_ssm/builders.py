@@ -13,7 +13,7 @@ MaybeCallable = Optional[Callable[[float], ArrayLike]]
 ParamSpec = Union[ArrayLike, Callable[[float], ArrayLike], None]
 
 
-def build_params_linear(
+def build_params(
     *,
     # Required model sizes
     state_dim: int,
@@ -73,8 +73,8 @@ def build_params_linear(
     dynamics_input_weights = jnp.zeros((state_dim, input_dim)) if dynamics_input_weights is None else dynamics_input_weights # input-to-state
     dynamics_bias = jnp.zeros(state_dim) if dynamics_bias is None else dynamics_bias # state bias
 
-    diffusion_coeff = jnp.eye(D) if diffusion_coeff is None else diffusion_coeff
-    diffusion_cov = jnp.eye(D) if diffusion_cov is None else diffusion_cov
+    diffusion_coeff = jnp.eye(state_dim) if diffusion_coeff is None else diffusion_coeff
+    diffusion_cov = jnp.eye(state_dim) if diffusion_cov is None else diffusion_cov
 
     # Emissions
     emission_weights = jnp.eye(emission_dim, state_dim) if emission_weights is None else emission_weights

@@ -8,7 +8,6 @@ from .continuous_discrete_nonlinear_gaussian_ssm import (
     EKFHyperParams,
     UKFHyperParams,
     EnKFHyperParams,
-    build_params
 )
 
 from .continuous_discrete_linear_gaussian_ssm import (
@@ -21,7 +20,6 @@ from .continuous_discrete_linear_gaussian_ssm import (
     cdlgssm_posterior_sample,
     cdlgssm_joint_sample,
     KFHyperParams,
-    build_params_linear,
 )
 
 from .ssm_temissions import SSM, Prior
@@ -57,7 +55,4 @@ __all__ = [
     # Linear filtering Hyperparams (typically don't need to use these directly, can rely on default KFHyperParams)
     "KFHyperParams",
 
-    ### Builders (wrappers around Params classes) ###
-    "build_params_linear",
-    "build_params",
 ]

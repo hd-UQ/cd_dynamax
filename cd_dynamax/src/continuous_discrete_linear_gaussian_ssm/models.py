@@ -41,6 +41,8 @@ from .inference import compute_pushforward
 # Debug utilities
 from ..utils.debug_utils import psd
 
+from .builders import build_params
+
 class SuffStatsCDLGSSM(Protocol):
     """A :class:`NamedTuple` with sufficient statistics for CDLGSSM parameter estimation."""
     pass
@@ -114,6 +116,12 @@ class ContDiscreteLinearGaussianSSM(SSM):
     def diffeqsolve_settings(self):
         return self._diffeqsolve_settings
 
+    def build_params(self, *args, **kwargs):
+        return build_params(
+            state_dim=self.state_dim, 
+            emission_dim=self.emission_dim,
+            *args, **kwargs)
+        
     # SSM methods
     # Define default set of CD-LGSSM parameters, with all learnable parameters set to False
     def _default_cdlgssm_params(self) -> dict:
