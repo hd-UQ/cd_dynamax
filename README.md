@@ -13,7 +13,7 @@ We move towards this goal by introducing the following flexible mathematical set
 
 We assume there exists a (possibly unknown) stochastic dynamical system of form
 
-$$dx(t) = f(x(t),t) + L(x(t),t) dw(t)$$
+$$dx(t) = f(x(t),t)dt + L(x(t),t) dw(t)$$
 
 where $x \in \mathbb{R}^{d_x}$, $x(0) \sim \mathcal{N}(\mu_0, \Sigma_0)$, $f$ a possibly time-dependent drift function, $L$ a possibly state and/or time-dependent diffusion coefficient, and $dw$ is the derivative of a $d_x$-dimensional Brownian motion with a covariance $Q$.
 
@@ -100,10 +100,30 @@ In particular, we provide easy demonstrations for using `numpyro` to define prio
         ```
 
     - Linear SDE:
-        - Learning a linear SDE from multiple i.i.d. noisy trajectories: 
+        - Learning a linear SDE from multiple i.i.d. noisy trajectories. In this setting, all trajectories are assumed to come from the *same* underlying linear system.  
+
         ```bash
         python ./cd_dynamax/demos/LinearGaussian_MultiTraj.py --emission_dim 5 --state_dim 5 --N_trajectories 30
         ```
+        - Hierarchical learning of linear SDEs from multiple noisy trajectories
+            Here, we assume each trajectory comes from a different, yet similar, linear SDE.  
+            The dynamics for trajectory *i* are modeled as:
+            $$
+            dx_i(t) \;=\; A \big(x_i(t) - b_i\big)\,dt \;+\; L\,dw_i(t),
+            $$
+            where:
+            - \(A\) is a shared dynamics matrix across all trajectories,  
+            - \(b_i\) is an individual-specific bias drawn from a population distribution,  
+            - \(L\) controls diffusion,  
+            - \(w_i(t)\) are independent Wiener processes.  
+
+            This hierarchical setup enables joint inference of:
+            - global population parameters (shared dynamics and distribution of biases), and  
+            - individual-level parameters (patient/trajectory-specific biases).  
+            ```bash
+            python ./cd_dynamax/demos/LinearGaussian_Hierarchical_MultiTraj.py --emission_dim 5 --state_dim 5 --N_trajectories 30
+            ```
+
 
 
 ## Installation
