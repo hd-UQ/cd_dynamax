@@ -328,7 +328,7 @@ if __name__ == "__main__":
     parser.add_argument("--seed", type=int, default=0)
 
     # SVI settings [This is the fast optimization part of the script]
-    parser.add_argument("--svi_guide", type=str, default="AutoDelta", choices=["AutoDelta", "AutoNormal", "AutoMultivariateNormal", "AutoLowRankMultivariateNormal"])
+    parser.add_argument("--svi_guide", type=str, default="AutoMultivariateNormal", choices=["AutoDelta", "AutoNormal", "AutoMultivariateNormal", "AutoLowRankMultivariateNormal"])
 
     # MCMC settings 
     # [This is the slow part of the script---skip it until SVI is giving reasonable answers.
@@ -394,7 +394,7 @@ if __name__ == "__main__":
     parser.add_argument("--cov_rescaling", type=float, default=1.0)
     
     # Wandb settings
-    parser.add_argument("--project", type=str, default="LinearGaussian_MultiTraj_example")
+    parser.add_argument("--project", type=str, default="LinearGaussian_MultiTraj")
     parser.add_argument("--run_name", type=str, default=None)
     parser.add_argument("--dir", type=str, default="demo_outputs/LinearGaussian_MultiTraj")  # Allows you to custom-specify wandb directory (else uses default)
     parser.add_argument("--online", type=int, default=0) # 0 for offline, 1 for online (need to configure wandb account for online)
