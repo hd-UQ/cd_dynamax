@@ -1,5 +1,5 @@
 ## 1) Lorenz–63 via polynomial dictionary + Laplace prior  
-**File:** `demos/l63_LaplaceDict.py`  
+**File:** `l63_LaplaceDict.py`  
 **Goal:** Learn a sparse polynomial drift for L63 from a single trajectory.
 
 ### Generative model
@@ -31,8 +31,38 @@ $$
 
 ---
 
-## 2) Lorenz–96 via polynomial dictionary + Laplace prior  
-**File:** `demos/L96_LaplaceDict.py`  
+## 2) Lorenz–63 with Neural Network Drift (L63\_NN)
+
+We replace the polynomial dictionary drift with a Bayesian neural network drift, trained via MAP with an `AutoDelta` guide.  
+The true system is the classical Lorenz–63:
+
+$$
+\begin{aligned}
+dx_1 &= \sigma (x_2 - x_1)\,dt + L\,dw_1(t) \\
+dx_2 &= (x_1(\rho - x_3) - x_2)\,dt + L\,dw_2(t) \\
+dx_3 &= (x_1 x_2 - \beta x_3)\,dt + L\,dw_3(t) \\
+y_k &\sim \mathcal{N}(H x(t_k), I) \\
+L &= \sigma_{\text{dyn}} I
+\end{aligned}
+$$
+
+### Priors
+
+$$
+\begin{aligned}
+\text{NN weights, biases} &\sim \text{Uniform}(-s, s) \\
+\sigma_{\text{dyn}} &\sim \text{Uniform}(\ell_{\text{dyn}}, u_{\text{dyn}}) \\
+x(0) &\sim \mathcal{N}(0, \Sigma_0)
+\end{aligned}
+$$
+
+- Inference is done via SVI with an `AutoDelta` guide (MAP).  
+- Filtering uses the Ensemble Kalman Filter (EnKF).  
+- This script demonstrates hybrid modeling: replacing mechanistic drift with a neural network approximation.
+
+
+## 3) Lorenz–96 via polynomial dictionary + Laplace prior  
+**File:** `l96_LaplaceDict.py`  
 **Goal:** Learn a sparse polynomial drift for L96 from a single trajectory.
 
 ### Generative model
@@ -64,8 +94,8 @@ $$
 
 ---
 
-## 3) Linear SDE from multiple i.i.d. trajectories  
-**File:** `demos/LinearGaussian_MultiTraj.py`  
+## 4) Linear SDE from multiple i.i.d. trajectories  
+**File:** `LinearGaussian_MultiTraj_KF.py`
 **Goal:** Learn a single linear drift matrix from many repeated noisy experiments.
 
 ### Generative model
@@ -93,8 +123,8 @@ $$
 
 ---
 
-## 4) Hierarchical learning of linear SDEs  
-**File:** `demos/LinearGaussian_MultiTraj_Hier.py`  
+## 5) Hierarchical learning of linear SDEs  
+**File:** `LinearGaussian_MultiTraj_KF_Hierarchical.py`  
 **Goal:** Model heterogeneity across trajectories by giving each one its own bias term $b_i$.
 
 ### Generative model
