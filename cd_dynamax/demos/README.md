@@ -31,18 +31,16 @@ $$
 
 ---
 
-## 2) Lorenz–63 with Neural Network Drift (L63\_NN)
+## 2) Lorenz–63 with Neural Network Drift
 
-We replace the polynomial dictionary drift with a Bayesian neural network drift, trained via MAP with an `AutoDelta` guide.  
-The true system is the classical Lorenz–63:
+## Lorenz–63 with Neural Network Drift (L63\_NN)
+
+We approximate the Lorenz–63 dynamics with a Bayesian neural network drift \(F_{\text{NN}}\), trained via MAP with an `AutoDelta` guide.
 
 $$
 \begin{aligned}
-dx_1 &= \sigma (x_2 - x_1)\,dt + L\,dw_1(t) \\
-dx_2 &= (x_1(\rho - x_3) - x_2)\,dt + L\,dw_2(t) \\
-dx_3 &= (x_1 x_2 - \beta x_3)\,dt + L\,dw_3(t) \\
-y_k &\sim \mathcal{N}(H x(t_k), I) \\
-L &= \sigma_{\text{dyn}} I
+dx(t) &= F_{\text{NN}}(x(t))\,dt + L\,dw(t), \quad L = \sigma_{\text{dyn}} I \\
+y_k &\sim \mathcal{N}(H x(t_k), I)
 \end{aligned}
 $$
 
@@ -58,7 +56,6 @@ $$
 
 - Inference is done via SVI with an `AutoDelta` guide (MAP).  
 - Filtering uses the Ensemble Kalman Filter (EnKF).  
-- This script demonstrates hybrid modeling: replacing mechanistic drift with a neural network approximation.
 
 
 ## 3) Lorenz–96 via polynomial dictionary + Laplace prior  
