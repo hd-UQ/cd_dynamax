@@ -4,7 +4,7 @@ import jax.numpy as jnp
 import jax.random as jr
 import matplotlib.pyplot as plt
 import numpyro
-from numpyro.infer import SVI, Trace_ELBO, init_to_value, Predictive
+from numpyro.infer import SVI, Trace_ELBO, init_to_value, init_to_median, Predictive
 from numpyro.infer import MCMC, NUTS
 import numpyro.distributions as dist
 from numpyro.infer.autoguide import AutoDiagonalNormal, AutoDelta, AutoMultivariateNormal, AutoLowRankMultivariateNormal
@@ -214,23 +214,8 @@ def main(**cfg):
     )
 
     # Allows you to choose different guides from config
-    autoguide = {
-        "AutoDelta": AutoDelta,
-        "AutoNormal": AutoDiagonalNormal,
-        "AutoMultivariateNormal": AutoMultivariateNormal,
-        "AutoLowRankMultivariateNormal": AutoLowRankMultivariateNormal,
-    }[cfg.svi_guide]
-
-    # Initialize at conservative values (only for params we learn)
-    init_dict = {
-        "weights": -0.1 * jnp.eye(state_dim),
-        "bias": jnp.ones(state_dim),
-        ### NEW: initial guesses for noise params (if being learned)
-        "emission_sd": jnp.array(cfg.emission_sd_init),
-        "diffusion_coeff": jnp.array(cfg.diffusion_init),
-    }
-    init_values_dict = {key: value for key, value in init_dict.items() if key in cfg.learnables}
-    guide = autoguide(model, init_loc_fn=init_to_value(values=init_values_dict))
+    autoguide = eval(cfg.svi_guide)
+    guide = autoguide(model, init_loc_fn=init_to_median)
     svi = SVI(model, guide, optimizer, loss=Trace_ELBO())
     svi_result = svi.run(next(keys), num_steps=cfg.num_epochs, t_emissions=t_emissions, emissions=emissions_obs, **known_values)
 
@@ -316,7 +301,7 @@ if __name__ == "__main__":
     parser.add_argument("--seed", type=int, default=0)
 
     # SVI settings [This is the fast optimization part of the script]
-    parser.add_argument("--svi_guide", type=str, default="AutoMultivariateNormal", choices=["AutoDelta", "AutoNormal", "AutoMultivariateNormal", "AutoLowRankMultivariateNormal"])
+    parser.add_argument("--svi_guide", type=str, default="AutoMultivariateNormal", choices=["AutoDelta", "AutoDiagonalNormal", "AutoMultivariateNormal", "AutoLowRankMultivariateNormal"])
 
     # MCMC settings 
     # [This is the slow part of the script---skip it until SVI is giving reasonable answers.

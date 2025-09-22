@@ -4,7 +4,7 @@ import jax.numpy as jnp
 import jax.random as jr
 import matplotlib.pyplot as plt
 import numpyro
-from numpyro.infer import SVI, Trace_ELBO, init_to_value, Predictive
+from numpyro.infer import SVI, Trace_ELBO, init_to_value, init_to_median, Predictive
 from numpyro.infer import MCMC, NUTS
 import numpyro.distributions as dist
 from numpyro.infer.autoguide import AutoDiagonalNormal, AutoDelta, AutoMultivariateNormal, AutoLowRankMultivariateNormal
@@ -268,24 +268,9 @@ def main(**cfg):
         clip_norm=cfg.clip_norm if cfg.clip_norm > 0.0 else None,
     )
 
-    autoguide = {
-        "AutoDelta": AutoDelta,
-        "AutoNormal": AutoDiagonalNormal,
-        "AutoMultivariateNormal": AutoMultivariateNormal,
-        "AutoLowRankMultivariateNormal": AutoLowRankMultivariateNormal,
-    }[cfg.svi_guide]
-
-    # Initialize only parameters we might “guide-init” (weights/noise typically)
-    init_dict = {
-        "weights": -0.1 * jnp.eye(state_dim),
-        "mu": jnp.full((state_dim,), cfg.m_mu),
-        "sigma": jnp.full((state_dim,), cfg.m_sigma + 2*cfg.s_sigma), # init to 2*sigma above mean
-        "biases": jnp.full((cfg.N_trajectories, state_dim), cfg.m_mu),
-        "emission_sd": jnp.array(cfg.emission_sd_init),
-        "diffusion_coeff": jnp.array(cfg.diffusion_init),
-    }
-    init_values_dict = {key: value for key, value in init_dict.items() if key in cfg.learnables}
-    guide = autoguide(model, init_loc_fn=init_to_value(values=init_values_dict))
+    # Allows you to choose different guides from config
+    autoguide = eval(cfg.svi_guide)
+    guide = autoguide(model, init_loc_fn=init_to_median)
     svi = SVI(model, guide, optimizer, loss=Trace_ELBO())
     svi_result = svi.run(next(keys),
                          num_steps=cfg.num_epochs,
@@ -390,8 +375,7 @@ if __name__ == "__main__":
     parser.add_argument("--seed", type=int, default=0)
 
     # SVI settings
-    parser.add_argument("--svi_guide", type=str, default="AutoMultivariateNormal",
-                        choices=["AutoDelta", "AutoNormal", "AutoMultivariateNormal", "AutoLowRankMultivariateNormal"])
+    parser.add_argument("--svi_guide", type=str, default="AutoMultivariateNormal", choices=["AutoDelta", "AutoDiagonalNormal", "AutoMultivariateNormal", "AutoLowRankMultivariateNormal"])
 
     # Which parameters to learn
     parser.add_argument("--learnables", type=str, nargs="+",
