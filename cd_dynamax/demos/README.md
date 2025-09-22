@@ -10,7 +10,7 @@ With weights $W\in\mathbb{R}^{3\times P}$:
 $$
 \begin{aligned}
 \text{Drift:} &\quad f_W(x) = W \Phi(x) \\
-\text{Dynamics:} &\quad dx = f_W(x)\,dt + L dw(t), \quad L = \sigma_{\text{dyn}} I \\
+\text{Dynamics:} &\quad dx = f_W(x)\,dt + \sigma_{\text{dyn}} dw(t)\\
 \text{Obs:} &\quad y_k \sim \mathcal{N}(x(t_k), \sigma_{\text{obs}}^2 I)
 \end{aligned}
 $$
@@ -43,7 +43,7 @@ With weights $W\in\mathbb{R}^{D\times P}$:
 $$
 \begin{aligned}
 \text{Drift:} &\quad f_W(x) = W \Phi(x) \\
-\text{Dynamics:} &\quad dx = f_W(x)\,dt + L dw(t), \quad L = \sigma_{\text{dyn}} I \\
+\text{Dynamics:} &\quad dx = f_W(x)\,dt + \sigma_{\text{dyn}} dw(t)\\
 \text{Obs:} &\quad y_k \sim \mathcal{N}(x(t_k), \sigma_{\text{obs}}^2 I)
 \end{aligned}
 $$
@@ -71,7 +71,7 @@ $$
 ### Generative model
 $$
 \begin{aligned}
-dx(t) &= A x(t)\,dt + L dw(t), \quad L = \sigma_{\text{dyn}} I \\
+dx(t) &= A x(t)\,dt + \sigma_{\text{dyn}} dw(t)\\
 y_k &\sim \mathcal{N}(H x(t_k), \sigma_{\text{obs}}^2 I)
 \end{aligned}
 $$
@@ -101,8 +101,7 @@ For trajectory $i$:
 
 $$
 \begin{aligned}
-dx_i(t) &= A (x_i(t) - b_i)\, dt + L\, dw_i(t) \\
-L &= \sigma_{\text{dyn}} I \\
+dx_i(t) &= A (x_i(t) - b_i)\, dt + \sigma_{\text{dyn}} dw_i(t) \\
 y_{i,k} &\sim \mathcal{N}(H x_i(t_k), \sigma_{\text{obs}}^2 I)
 \end{aligned}
 $$
