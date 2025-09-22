@@ -39,7 +39,7 @@ We approximate the Lorenz–63 dynamics with a Bayesian neural network drift \(F
 
 $$
 \begin{aligned}
-dx(t) &= F_{\text{NN}}(x(t))\,dt + L\,dw(t), \quad L = \sigma_{\text{dyn}} I \\
+dx(t) &= F_{\text{NN}}(x)\,dt + L\,dw(t), \quad L = \sigma_{\text{dyn}} I \\
 y_k &\sim \mathcal{N}(H x(t_k), I)
 \end{aligned}
 $$
