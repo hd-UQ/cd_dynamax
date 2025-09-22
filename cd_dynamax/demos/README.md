@@ -10,16 +10,18 @@ With weights $W\in\mathbb{R}^{3\times P}$:
 $$
 \begin{aligned}
 \text{Drift:} &\quad f_W(x) = W \Phi(x) \\
-\text{Dynamics:} &\quad dx = f_W(x)\,dt + L\,dw(t), \quad L = \sigma I \\
+\text{Dynamics:} &\quad dx = f_W(x)\,dt + L dw(t), \quad L = \sigma_{\text{dyn}} I \\
 \text{Obs:} &\quad y_k \sim \mathcal{N}(x(t_k), \sigma_{\text{obs}}^2 I)
 \end{aligned}
 $$
 
 ### Priors
 $$
-W_{ij} \sim \text{Laplace}(0 \ \lambda) \\
-\sigma \sim \text{Uniform}(\sigma_{\min} \ \sigma_{\max}) \\
-\sigma_{\text{obs}} \sim \text{Uniform}(\sigma_{\text{obs,min}} \ \sigma_{\text{obs,max}})
+\begin{aligned}
+W_{ij} &\sim \text{Laplace}(0,\lambda) \\
+\sigma_{\text{dyn}} &\sim \text{Uniform}(\sigma_{\text{dyn,min}}, \sigma_{\text{dyn,max}}) \\
+\sigma_{\text{obs}} &\sim \text{Uniform}(\sigma_{\text{obs,min}}, \sigma_{\text{obs,max}})
+\end{aligned}
 $$
 
 ### Inference
@@ -45,16 +47,18 @@ With weights $W\in\mathbb{R}^{D\times P}$:
 $$
 \begin{aligned}
 \text{Drift:} &\quad f_W(x) = W \Phi(x) \\
-\text{Dynamics:} &\quad dx = f_W(x)\,dt + L\,dw(t), \quad L = \sigma I \\
+\text{Dynamics:} &\quad dx = f_W(x)\,dt + L dw(t), \quad L = \sigma_{\text{dyn}} I \\
 \text{Obs:} &\quad y_k \sim \mathcal{N}(x(t_k), \sigma_{\text{obs}}^2 I)
 \end{aligned}
 $$
 
 ### Priors
 $$
-W_{ij} \sim \text{Laplace}(0 \ \lambda) \\
-\sigma \sim \text{Uniform}(\sigma_{\min} \ \sigma_{\max}) \\
-\sigma_{\text{obs}} \sim \text{Uniform}(\sigma_{\text{obs,min}} \ \sigma_{\text{obs,max}})
+\begin{aligned}
+W_{ij} &\sim \text{Laplace}(0,\lambda) \\
+\sigma_{\text{dyn}} &\sim \text{Uniform}(\sigma_{\text{dyn,min}}, \sigma_{\text{dyn,max}}) \\
+\sigma_{\text{obs}} &\sim \text{Uniform}(\sigma_{\text{obs,min}}, \sigma_{\text{obs,max}})
+\end{aligned}
 $$
 
 ### Inference
@@ -74,15 +78,19 @@ python ./cd_dynamax/demos/L96_LaplaceDict.py --poly_degree 2 --num_epochs 2000
 
 ### Generative model
 $$
-dx(t) = A x(t)\,dt + L\,dw(t), \quad L = \sigma I \\
-y_k \sim \mathcal{N}(H x(t_k), \sigma_{\text{obs}}^2 I)
+\begin{aligned}
+dx(t) &= A x(t)\,dt + L dw(t), \quad L = \sigma_{\text{dyn}} I \\
+y_k &\sim \mathcal{N}(H x(t_k), \sigma_{\text{obs}}^2 I)
+\end{aligned}
 $$
 
 ### Priors
 $$
-A_{ij} \sim \text{Uniform}(-a \ a) \\
-\sigma \sim \text{Uniform}(\sigma_{\min} \ \sigma_{\max}) \\
-\sigma_{\text{obs}} \sim \text{Uniform}(\sigma_{\text{obs,min}} \ \sigma_{\text{obs,max}})
+\begin{aligned}
+A_{ij} &\sim \text{Uniform}(-a,a) \\
+\sigma_{\text{dyn}} &\sim \text{Uniform}(\sigma_{\text{dyn,min}}, \sigma_{\text{dyn,max}}) \\
+\sigma_{\text{obs}} &\sim \text{Uniform}(\sigma_{\text{obs,min}}, \sigma_{\text{obs,max}})
+\end{aligned}
 $$
 
 ### Inference
@@ -103,21 +111,25 @@ python ./cd_dynamax/demos/LinearGaussian_MultiTraj.py --emission_dim 5 --state_d
 ### Generative model
 For trajectory $i$:
 $$
-dx_i(t) = A (x_i(t) - b_i)\,dt + L\,dw_i(t), \quad L = \sigma I \\
-y_{i,k} \sim \mathcal{N}(H x_i(t_k), \sigma_{\text{obs}}^2 I)
+\begin{aligned}
+dx_i(t) &= A (x_i(t) - b_i)\,dt + L dw_i(t), \quad L = \sigma_{\text{dyn}} I \\
+y_{i,k} &\sim \mathcal{N}(H x_i(t_k), \sigma_{\text{obs}}^2 I)
+\end{aligned}
 $$
 
-Hierarchical priors on biases:
+### Hierarchical priors on biases
 $$
-\mu_d \sim \text{TruncNormal}(m_\mu \ s_\mu \ \text{low}=\epsilon) \\
-\sigma_d \sim \text{TruncNormal}(m_\sigma \ s_\sigma \ \text{low}=\epsilon) \\
-b_i \sim \text{TruncNormal}(\mu \ \sigma \ \text{low}=\epsilon)
+\begin{aligned}
+\mu_d &\sim \text{TruncNormal}(m_\mu, s_\mu; \text{low}=\epsilon) \\
+\sigma_d &\sim \text{TruncNormal}(m_\sigma, s_\sigma; \text{low}=\epsilon) \\
+b_i &\sim \text{TruncNormal}(\mu, \sigma; \text{low}=\epsilon)
+\end{aligned}
 $$
 
 ### Inference
 - Filtering likelihood: **Kalman filter**  
 - Inference: **SVI** with AutoMVN over global params and individual $b_i$  
-- Supports Empirical Bayes: first fit population-level $(\mu \ \sigma)$ then refit individuals  
+- Supports Empirical Bayes: first fit population-level $(\mu,\sigma)$ then refit individuals  
 
 ### Example
 ```bash
