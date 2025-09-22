@@ -108,7 +108,9 @@ In particular, we provide easy demonstrations for using `numpyro` to define prio
         - Hierarchical learning of linear SDEs from multiple noisy trajectories
             Here, we assume each trajectory comes from a different, yet similar, linear SDE.  
             The dynamics for trajectory *i* are modeled as:
-            $$dx_i(t) \;=\; A \big(x_i(t) - b_i\big)\,dt \;+\; L\,dw_i(t),$$
+
+            $$dx_i(t) = A \big(x_i(t) - b_i\big)dt + Ldw_i(t),$$
+
             where:
             - $A$ is a shared dynamics matrix across all trajectories,  
             - $b_i$ is an individual-specific bias drawn from a population distribution,  
