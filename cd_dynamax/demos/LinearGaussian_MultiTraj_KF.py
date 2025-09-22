@@ -196,7 +196,10 @@ def main(**cfg):
     emissions_obs = sim_data["emissions"].squeeze(0)
 
     # Plot the states and emissions for each trajectory
-    for i in range(cfg.N_trajectories):
+    n_plotted_traj = min(cfg.N_trajectories, 5)
+    if cfg.N_trajectories > 5:
+        print(f"Plotting the first {n_plotted_traj} of {cfg.N_trajectories} trajectories...")
+    for i in range(n_plotted_traj):
         fig = plot_simulated_data(t=t_emissions, states=sim_data["states"].squeeze(0)[i], emissions=emissions_obs[i])
         wandb.log({f"figures/true_states_traj{i}": wandb.Image(fig)})
         plt.close(fig)
@@ -356,7 +359,7 @@ if __name__ == "__main__":
 
     # Prior/bounds for learnable parameters
     parser.add_argument("--max_spectral_norm", type=float, default=200.0)
-    parser.add_argument("--a", type=float, default=2.0)
+    parser.add_argument("--a", type=float, default=3.0)
     parser.add_argument("--b_low", type=float, default=0.1)
     parser.add_argument("--b_high", type=float, default=10.0)
 
