@@ -54,8 +54,9 @@ x(0) &\sim \mathcal{N}(0, \Sigma_0)
 \end{aligned}
 $$
 
-- Inference is done via SVI with an `AutoDelta` guide (MAP).  
-- Filtering uses the Ensemble Kalman Filter (EnKF).  
+### Inference
+- Filtering likelihood: **EnKF**  
+- Inference: **MAP** via SVI with `AutoDelta`.  
 
 
 ## 3) Lorenz–96 via polynomial dictionary + Laplace prior  
