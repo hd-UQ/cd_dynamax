@@ -105,24 +105,10 @@ In particular, we provide easy demonstrations for using `numpyro` to define prio
         ```bash
         python ./cd_dynamax/demos/LinearGaussian_MultiTraj.py --emission_dim 5 --state_dim 5 --N_trajectories 30
         ```
-        - Hierarchical learning of linear SDEs from multiple noisy trajectories
-            Here, we assume each trajectory comes from a different, yet similar, linear SDE.  
-            The dynamics for trajectory *i* are modeled as:
-
-            $$dx_i(t) = A \big(x_i(t) - b_i\big)dt + Ldw_i(t),$$
-
-            where:
-            - $A$ is a shared dynamics matrix across all trajectories,  
-            - $b_i$ is an individual-specific bias drawn from a population distribution,  
-            - $L$ controls diffusion,  
-            - $w_i(t)$ are i.i.d. Wiener processes.  
-
-            This hierarchical setup enables joint inference of:
-            - global population parameters (shared dynamics and distribution of biases), and  
-            - individual-level parameters (patient/trajectory-specific biases).  
-            ```bash
-            python ./cd_dynamax/demos/LinearGaussian_MultiTraj_KF_Hierarchical.py --emission_dim 5 --state_dim 5 --N_trajectories 30
-            ```
+        - Hierarchical learning of linear SDEs from multiple noisy trajectories. Here, we assume each trajectory comes from a different, yet similar, linear SDE.  
+        ```bash
+        python ./cd_dynamax/demos/LinearGaussian_MultiTraj_KF_Hierarchical.py --emission_dim 5 --state_dim 5 --N_trajectories 30
+        ```
 
 
 
