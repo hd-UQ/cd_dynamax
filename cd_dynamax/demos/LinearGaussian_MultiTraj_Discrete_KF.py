@@ -368,12 +368,6 @@ if __name__ == "__main__":
     parser.add_argument("--learnables", type=str, nargs="+",
                         default=["weights", "bias", "emission_sd", "diffusion_coeff"]) 
     # Default is to learn everything; you can also do any subset, e.g. ["weights", "bias"], or ["emission_sd", "diffusion_coeff"], etc.
-
-    # Drift RHS constraints
-    parser.add_argument("--state_bound_low", type=float, default=-1000.0)
-    parser.add_argument("--state_bound_high", type=float, default=1000.0)
-    parser.add_argument("--derivative_clip_low", type=float, default=-2000)
-    parser.add_argument("--derivative_clip_high", type=float, default=2000)
     
     # Wandb settings
     parser.add_argument("--project", type=str, default="LinearGaussian_MultiTraj_Discrete_KF")

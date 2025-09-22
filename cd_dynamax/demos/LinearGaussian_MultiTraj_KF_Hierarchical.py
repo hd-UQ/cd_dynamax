@@ -429,12 +429,6 @@ if __name__ == "__main__":
     parser.add_argument("--max_spectral_norm", type=float, default=200.0)
     parser.add_argument("--a", type=float, default=3.0)
 
-    # Drift RHS constraints
-    parser.add_argument("--state_bound_low", type=float, default=-1000.0)
-    parser.add_argument("--state_bound_high", type=float, default=1000.0)
-    parser.add_argument("--derivative_clip_low", type=float, default=-2000)
-    parser.add_argument("--derivative_clip_high", type=float, default=2000)
-
     # Wandb settings
     parser.add_argument("--project", type=str, default="LinearGaussian_MultiTraj_KF_HierTN")
     parser.add_argument("--run_name", type=str, default=None)

@@ -50,11 +50,6 @@ def main(**cfg):
                              A * (cfg.max_spectral_norm / spectral_norm),
                              A)
         return A_stable
-
-    adjust_rhs_kwargs = {'lower_bound': cfg.state_bound_low,
-                        'upper_bound': cfg.state_bound_high,
-                        'lower_bound_derivative': cfg.derivative_clip_low,
-                        'upper_bound_derivative': cfg.derivative_clip_high}
                          
     # NumPyro model
     def model(t_emissions, emissions=None, **kwargs):
@@ -92,10 +87,6 @@ def main(**cfg):
 
         # stabilize weights for drift
         weights_stable = stabliize(weights)
-
-        # Build the drift function
-        drift_base = lambda x: weights_stable @ (x - bias)
-        drift = lambda x: adjust_rhs(x, drift_base(x), **adjust_rhs_kwargs)
 
         # Accumulate log-priors for diagnostics
         lp = 0.0
@@ -377,12 +368,6 @@ if __name__ == "__main__":
     parser.add_argument("--learnables", type=str, nargs="+",
                         default=["weights", "bias", "emission_sd", "diffusion_coeff"]) 
     # Default is to learn everything; you can also do any subset, e.g. ["weights", "bias"], or ["emission_sd", "diffusion_coeff"], etc.
-
-    # Drift RHS constraints
-    parser.add_argument("--state_bound_low", type=float, default=-1000.0)
-    parser.add_argument("--state_bound_high", type=float, default=1000.0)
-    parser.add_argument("--derivative_clip_low", type=float, default=-2000)
-    parser.add_argument("--derivative_clip_high", type=float, default=2000)
     
     # Wandb settings
     parser.add_argument("--project", type=str, default="LinearGaussian_MultiTraj_KF")
