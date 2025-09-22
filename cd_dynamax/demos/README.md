@@ -98,9 +98,11 @@ $$
 
 ### Generative model
 For trajectory $i$:
+
 $$
 \begin{aligned}
-dx_i(t) &= A (x_i(t) - b_i)\,dt + L dw_i(t), \quad L = \sigma_{\text{dyn}} I \\
+dx_i(t) &= A (x_i(t) - b_i)\, dt + L\, dw_i(t) \\
+L &= \sigma_{\text{dyn}} I \\
 y_{i,k} &\sim \mathcal{N}(H x_i(t_k), \sigma_{\text{obs}}^2 I)
 \end{aligned}
 $$
