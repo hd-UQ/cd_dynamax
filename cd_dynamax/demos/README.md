@@ -71,7 +71,7 @@ $$
 ### Generative model
 $$
 \begin{aligned}
-dx(t) &= A x(t)\,dt + \sigma_{\text{dyn}} dw(t)\\
+dx(t) &= A (x(t) - b)\,dt + \sigma_{\text{dyn}} dw(t)\\
 y_k &\sim \mathcal{N}(H x(t_k), \sigma_{\text{obs}}^2 I)
 \end{aligned}
 $$
@@ -80,6 +80,7 @@ $$
 $$
 \begin{aligned}
 A_{ij} &\sim \text{Uniform}(-a,a) \\
+b_i &\sim \text{Uniform}(-b_{\text{max}}, b_{\text{max}}) \\
 x(0) &\sim \mathcal{N}(0,\sigma_{x0}^2 I) \\
 \sigma_{\text{dyn}} &\sim \text{Uniform}(\sigma_{\text{dyn,min}}, \sigma_{\text{dyn,max}}) \\
 \sigma_{\text{obs}} &\sim \text{Uniform}(\sigma_{\text{obs,min}}, \sigma_{\text{obs,max}})
