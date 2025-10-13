@@ -1,14 +1,11 @@
 import jax.numpy as jnp
 
-# cd-dynamax Prior
-from ssm_temissions import Prior
-# cd-dynamax parameter classes
-from continuous_discrete_nonlinear_gaussian_ssm.cdnlgssm_utils import ParamsCDNLGSSM
+from cd_dynamax import Prior, ParamsCDNLGSSM
 
 # Import actual distributions to use by priors
 from tensorflow_probability.substrates.jax.distributions import MultivariateNormalFullCovariance as MVN
 
-from utils.physics_based_models import LearnableLorenz63_Drift
+from cd_dynamax.src.utils.physics_based_models import LearnableLorenz63_Drift
 
 # An example prior definition for CDNLGSSM dynamics drift: prior over Lorenz63 drift parameters
 class CDNLGSSM_Prior(Prior):
