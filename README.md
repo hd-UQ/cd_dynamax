@@ -75,8 +75,12 @@ All of these problems are deeply interconnected.
 
 ## Demos
 
-We provide a set of [demos](./cd_dynamax/demos) that showcase key functionality of `cd-dynamax`.  
+### Numpyro-based API
+
+We provide a set of [demos](./cd_dynamax/demos) that showcase key functionality of `cd-dynamax`, by interacting with the core-functionalities via `numpyro`.
+
 These scripts illustrate how to learn components of continuous-discrete SDEs from data.
+
 In particular, we provide easy demonstrations for using `numpyro` to define priors and perform parameter inference using HMC or SVI with likelihoods computed via continuous-discrete filtering in `cd_dynamax`. Demos include:
 
 - Learning drift functions from noisy, irregularly-sampled data:
@@ -109,9 +113,6 @@ In particular, we provide easy demonstrations for using `numpyro` to define prio
         ```bash
         python ./cd_dynamax/demos/LinearGaussian_MultiTraj_KF_Hierarchical.py --emission_dim 5 --state_dim 5 --N_trajectories 30
         ```
-
-
-
 ## Installation
 
 We support installation via **Conda** (recommended) or via a standard Python virtual environment.
@@ -161,8 +162,14 @@ pip install -e .[dev]
 ### Notes
 
 - `pip install -e .` puts the repo in *editable mode*, so changes to source code are immediately available without reinstalling.
-- The `[dev]` extra installs additional developer tools (like `pytest`).
+
 - If you plan to use plotting features that rely on `graphviz`, make sure the system binary is installed:
   - **macOS:** `brew install graphviz`  
   - **Ubuntu/Debian:** `sudo apt install graphviz`  
   - **Windows (conda):** `conda install graphviz`
+  
+- The `[dev]` extra installs additional developer tools (like `pytest`).
+    - Once your environment is installed, you can run automated tests:
+    ```bash
+    pytest
+    ```
