@@ -325,12 +325,12 @@ def ensemble_kalman_filter(
 
         # Build carry and output states
         carry = (ll_cum, pred_x_ens)
-        outputs = {
-            # TODO: if interested, save filtered/predicted particles here.
-            "filtered_means": filtered_mean,
-            "filtered_covariances": filtered_cov,
-            "predicted_means": pred_mean,
-            "predicted_covariances": pred_cov,
+        # EnKF extras
+        posterior_extras = {
+            # Filtered/predicted particles here.
+            "x_ens_filtered": filtered_x_ens,
+            "x_ens_predicted": pred_x_ens,
+            # Other diagnostics
             "loglik_step": cond_dict['loglik_step'],
             "S": cond_dict["S"],
             "K": cond_dict["K"],
@@ -339,8 +339,16 @@ def ensemble_kalman_filter(
             "min_eig_S": cond_dict["min_eig_S"],
             "cond_S": cond_dict["cond_S"],
             "cond_K": jnp.linalg.cond(cond_dict["K"]),
-            "x_ens_filtered": filtered_x_ens,
-            "x_ens_predicted": pred_x_ens,
+        }
+        # Posterior output
+        outputs = {
+            # Default outputs
+            "filtered_means": filtered_mean,
+            "filtered_covariances": filtered_cov,
+            "predicted_means": pred_mean,
+            "predicted_covariances": pred_cov,
+            # Extras
+            "posterior_extras": posterior_extras
         }
         outputs = {key: val for key, val in outputs.items() if key in output_fields}
         return carry, outputs

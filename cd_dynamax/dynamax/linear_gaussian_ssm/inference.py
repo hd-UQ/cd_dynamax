@@ -117,21 +117,14 @@ class PosteriorGSSMFiltered(NamedTuple):
     :param filtered_covariances: array of filtered covariances $\mathrm{Cov}[z_t \mid y_{1:t}, u_{1:t}]$
 
     """
+    # Default attributes
     marginal_loglik: Union[Scalar, Float[Array, "ntime"]]
     filtered_means: Optional[Float[Array, "ntime state_dim"]] = None
     filtered_covariances: Optional[Float[Array, "ntime state_dim state_dim"]] = None
     predicted_means: Optional[Float[Array, "ntime state_dim"]] = None
     predicted_covariances: Optional[Float[Array, "ntime state_dim state_dim"]] = None
-    x_ens_filtered: Optional[Float[Array, "ntime n_particles state_dim"]] = None
-    x_ens_predicted: Optional[Float[Array, "ntime n_particles state_dim"]] = None
-    S: Optional[Float[Array, "ntime emission_dim emission_dim"]] = None
-    K: Optional[Float[Array, "ntime state_dim emission_dim"]] = None
-    innovation: Optional[Float[Array, "ntime emission_dim"]] = None
-    nis: Optional[Float[Array, "ntime"]] = None
-    min_eig_S: Optional[Float[Array, "ntime"]] = None
-    cond_S: Optional[Float[Array, "ntime"]] = None
-    cond_K: Optional[Float[Array, "ntime"]] = None
-    loglik_step: Union[Scalar, Float[Array, "ntime"]] = None
+    # Additional extras
+    posterior_extras: Optional[dict] = None
 
 class PosteriorGSSMSmoothed(NamedTuple):
     r"""Marginals of the Gaussian filtering and smoothing posterior.
