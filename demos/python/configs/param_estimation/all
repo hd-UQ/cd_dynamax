@@ -1,0 +1,32 @@
+[sgd]
+optimizer: optax.adam(1e-3)
+batch_size: 1
+num_epochs: 50
+shuffle: False
+return_param_history: False
+return_grad_history: False
+key: 0
+
+[scipy]
+method: Nelder-Mead,
+maxiter: 5000
+return_param_history: False
+
+[mcmc]
+#type: additive_step_random_walk
+#parameters: {'proposal': blackjax.mcmc.random_walk.normal(0.1)}
+#type: rmh
+#parameters: {'proposal': blackjax.mcmc.random_walk.normal(0.1 * jnp.eye(3))}
+#parameters: {'proposal': lambda key, x: x + blackjax.mcmc.random_walk.normal(0.1 * jnp.eye(3))}
+#n_samples: 100
+#warmup_samples: 10
+#verbose: True
+#key: 0
+
+# [mcmc]
+type: nuts
+n_samples: 100
+warmup_samples: 10
+parameters: {}
+verbose: True
+key: 0

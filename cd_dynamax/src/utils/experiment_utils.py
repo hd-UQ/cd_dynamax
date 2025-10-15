@@ -1,3 +1,6 @@
+# System imports
+import os
+from configparser import ConfigParser
 
 # CD-Nonlinear Gaussian models
 from cd_dynamax import ContDiscreteNonlinearGaussianSSM
@@ -49,6 +52,47 @@ def generate_t_emissions(
 
     return len(t_emissions), t_emissions
 
+
+### Python script utilities
+# Useful auxiliary functions for the python scripts
+# Build results directory based on config file names
+def build_results_dir(
+        data_config_file,
+        model_config_file,
+        filter_config_file,
+        output_dir
+    ):
+    '''
+        Builds the results directory path based on configuration file names.
+        
+        Joins the names of the config files, omitting their directory and extensions.
+    '''
+    return os.path.join(
+        output_dir,
+        os.path.basename(data_config_file).split('.')[0],
+        os.path.basename(model_config_file).split('.')[0],
+        os.path.basename(filter_config_file).split('.')[0]
+    )
+
+# Override ConfigParser with a dictionary of overrides
+def override_config(
+        cfg: ConfigParser,
+        overrides: dict | None
+    ) -> ConfigParser:
+    if overrides is not None and isinstance(overrides, dict):    
+        for k, v in overrides.items():
+            if "." in k:
+                sect, opt = k.split(".", 1)
+            else:
+                raise ValueError(f"Override key {k} must be of the form 'section.option'")
+            # Set the option in the configuration
+            if sect not in cfg:
+                cfg.add_section(sect)
+            cfg[sect][opt] = str(v)
+    
+    return cfg
+
+# Convert MCMC configuration from config file to dictionary
 def mcmc_config_to_dict(mcmc_config):
     """
     Convert MCMC configuration from a config file to a dictionary.
@@ -73,20 +117,19 @@ def mcmc_config_to_dict(mcmc_config):
 # Create CD-NLGSSM model from configuration files
 def create_cdnlgssm_model_from_config(
         true_model_config_file: str = None,
-        config = None,
+        overrides = None,
     ) -> Tuple[ContDiscreteNonlinearGaussianSSM, ParamsCDNLGSSM, ParameterProperties]:
     r"""Create CD-NLGSSM model from configuration files
 
     Args:
         :param true_model_config_file: path to the model configuration file
+        :param overrides: dictionary of overrides to apply to the configuration file
     Returns:
         :return: Tuple of CD-NLGSSM model, parameters and properties
     """
     # Load the model configuration file
-    # If config is None, create a new ConfigParser object
-    if config is None:
-        config = ConfigParser()
-        config.read(true_model_config_file)
+    config = ConfigParser()
+    config.read(true_model_config_file)
 
     # The model section contains
     '''
@@ -96,9 +139,15 @@ def create_cdnlgssm_model_from_config(
     emission_dim: 3
     solver_config_file: "lorenz63_solver.py"
     '''
-    
     if config.get('model', 'class_name') != "CDNLGSSM":
         raise ValueError(f"Unknown model class name: {config.get('model', 'class_name')}")
+    
+    # Apply overrides if provided
+    if overrides is not None:
+        config = override_config(
+            cfg=config,
+            overrides=overrides
+        )
     
     # Create the model
     state_dim = config.getint('model', 'state_dim')
@@ -147,12 +196,14 @@ def create_cdnlgssm_model_from_config(
     return true_model, true_model_params, true_model_props
 
 def solver_settings_from_config(
-        config_file: str
+        config_file: str,
+        overrides = None,
     ) -> dict:
     r"""Load solver settings from a configuration file
 
     Args:
         :param config_file: path to the configuration file
+        :param overrides: dictionary of overrides to apply to the configuration file
 
     Returns:
         :return: dictionary of solver settings
@@ -164,7 +215,14 @@ def solver_settings_from_config(
     solver_config = ConfigParser()
     solver_config.read(config_file)
     
+    # Apply overrides if provided
+    if overrides is not None:
+        solver_config = override_config(
+            cfg=solver_config,
+            overrides=overrides
+        )
 
+    # Extract the solver settings into a dictionary
     diffeqsolve_settings = {}
     diffeqsolve_settings['solver'] = eval(
         solver_config.get('diffeqsolve_settings', 'solver', fallback='None')
@@ -181,12 +239,15 @@ def solver_settings_from_config(
 
     return diffeqsolve_settings
 
+# Create CD-NLGSSM filter from configuration file
 def create_cdnlgssm_filter_from_config(
         filter_config_file: str,
+        overrides = None,
     ) -> NamedTuple:
     r"""Create CD-NLGSSM filter from configuration file
     Args:
         :param filter_config_file: path to the filter configuration file
+        :param overrides: dictionary of overrides to apply to the configuration file
     Returns:
         :return: NamedTuple of filter settings
     """
@@ -195,6 +256,13 @@ def create_cdnlgssm_filter_from_config(
     filter_config = ConfigParser()
     filter_config.optionxform = str  # Preserve case sensitivity (needed for "N_particles")
     filter_config.read(filter_config_file)
+
+    # Apply overrides if provided
+    if overrides is not None:
+        filter_config = override_config(
+            cfg=filter_config,
+            overrides=overrides
+        )
 
     # The filter type is specified as a section within the configuration file
     # The section name is the filter type, e.g. EKF, UKF, EnKF
