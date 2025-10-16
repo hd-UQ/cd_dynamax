@@ -1,3 +1,4 @@
+import os
 import jax
 jax.config.update("jax_enable_x64", True)
 import jax.numpy as jnp
@@ -5,7 +6,6 @@ import matplotlib.pyplot as plt
 import numpyro
 from numpyro.infer import SVI, Trace_ELBO, init_to_value, Predictive
 from numpyro.infer.autoguide import AutoDelta
-import wandb
 
 # everything from your own package
 from cd_dynamax import (
@@ -21,17 +21,17 @@ from cd_dynamax.src.utils.demo_utils import (
     sample_t_emissions,
     plot_simulated_data,
     plot_traj_kde,
+    plot_loss_curve
 )
 
 
 # ------------------------
 # Main training entrypoint
 # ------------------------
-def main(**cfg):
-    # Initialize a new W&B run.
-    wandb_mode = "online" if cfg["online"] else "offline"
-    run = wandb.init(config=cfg, project=cfg["project"], name=cfg["run_name"], dir=cfg["dir"], mode=wandb_mode)
-    cfg = wandb.config
+def main(cfg):
+
+    # Make output directory
+    os.makedirs(cfg.dir, exist_ok=True)
 
     # Global settings
     state_dim, emission_dim = cfg.state_dim, cfg.emission_dim
@@ -118,17 +118,13 @@ def main(**cfg):
 
     # Plot the states and emissions for each trajectory
     fig = plot_simulated_data(t=t_emissions, states=sim_data["states"].squeeze(0), emissions=emissions_obs)
-    wandb.log({f"figures/true_states_traj": wandb.Image(fig)})
+    fig.savefig(os.path.join(cfg.dir, "true_states_and_emissions.png"))
     plt.close(fig)
 
     # Log metrics
-    wandb.log({
-        "metrics/true/neg_log_prior": float(sim_data["neg_log_prior"].item()),
-        "metrics/true/neg_log_lik": float(sim_data["neg_log_likelihood"].item()),
-        "metrics/true/neg_log_joint": float(sim_data["neg_log_joint"].item()),
-    })
-    # Print the neg-log-likelihood values
-    print(f"True model's neg_log_likelihood from filtering: {float(sim_data['neg_log_likelihood'].item())}")
+    neg_log_names = ["neg_log_prior", "neg_log_likelihood", "neg_log_joint"]
+    for name in neg_log_names:
+        print(f"True model's {name} from filtering: {float(sim_data[name].item())}")
 
     # SVI
     optimizer = make_optimizer(
@@ -147,21 +143,17 @@ def main(**cfg):
     svi = SVI(model, guide, optimizer, loss=Trace_ELBO())
     svi_result = svi.run(next(keys), num_steps=cfg.num_epochs, t_emissions=t_emissions, emissions=emissions_obs, **known_values)
 
-    # Log training curve
-    # Loss curve uses "epoch" as its x-axis
-    wandb.define_metric("svi/loss", step_metric="epoch")
-    for step, loss in enumerate(svi_result.losses):
-        wandb.log({"epoch": step, "svi/loss": float(loss)})
+    # Plot training curve
+    fig = plot_loss_curve(svi_result.losses)
+    fig.savefig(os.path.join(cfg.dir, "svi_loss_curve.png"))
+    plt.close(fig)
 
     # Log posterior predictive
     predictive_learned = Predictive(model, guide=guide, params=guide.median(svi_result.params), num_samples=1)
     learned_data = predictive_learned(next(keys), t_emissions=t_emissions, emissions=emissions_obs, **known_values)
     # Log metrics
-    wandb.log({
-        "metrics/learned/neg_log_prior": float(learned_data["neg_log_prior"].item()),
-        "metrics/learned/neg_log_lik": float(learned_data["neg_log_likelihood"].item()),
-        "metrics/learned/neg_log_joint": float(learned_data["neg_log_joint"].item()),
-    })
+    for name in neg_log_names:
+        print(f"Learned model's {name} from filtering: {float(learned_data[name].item())}")
 
     # Generate a long sequence of emissions from the learned and true models
     print("Generating long trajectory from learned model...")
@@ -172,16 +164,12 @@ def main(**cfg):
     burnin_frac = 0.5
     burnin_idx = int(burnin_frac * long_t_emissions.shape[0])
     fig = plot_traj_kde({"Observed traj": long_true_data["emissions"].squeeze(0)[burnin_idx:], "Long learned traj": long_learned_data["emissions"].squeeze(0)[burnin_idx:]})
-    wandb.log({"figures/emissions_kde": wandb.Image(fig)})
+    fig.savefig(os.path.join(cfg.dir, "emissions_kde.png"))
     plt.close(fig)
 
     fig = plot_traj_kde({"True states": long_true_data["states"].squeeze(0)[burnin_idx:], "Learned states": long_learned_data["states"].squeeze(0)[burnin_idx:]})
-    wandb.log({"figures/states_kde": wandb.Image(fig)})
+    fig.savefig(os.path.join(cfg.dir, "states_kde.png"))
     plt.close(fig)
-
-
-    # Finish the W&B run
-    run.finish()
 
 
 if __name__ == "__main__":
@@ -221,14 +209,10 @@ if __name__ == "__main__":
     parser.add_argument("--cov_rescaling", type=float, default=1.0)  # Covariance rescaling factor for EnKF
     parser.add_argument("--inflation_delta", type=float, default=0.0)  # Inflation delta for EnKF
     
-    # Wandb settings
-    parser.add_argument("--project", type=str, default="l63_nn")
-    parser.add_argument("--run_name", type=str, default=None) # Allows you to custom-specify wandb run name (else uses default)
-    parser.add_argument("--dir", type=str, default="demo_outputs/l63_nn")  # Allows you to custom-specify wandb directory (else uses default)
-    parser.add_argument("--online", type=int, default=0) # 0 for offline, 1 for online (need to configure wandb account for online)
+    # Output settings
+    parser.add_argument("--dir", type=str, default="demo_outputs/l63_nn")
 
     # Parse arguments
     args = parser.parse_args()
-    
 
-    main(**vars(args))
+    main(args)
