@@ -226,17 +226,8 @@ def ensemble_kalman_filter(
         "filtered_covariances",
         "predicted_means",
         "predicted_covariances",
-        "loglik_step",
         "marginal_loglik",
-        "S",
-        "K",
-        "innovation",
-        "nis",
-        "min_eig_S",
-        "cond_S",
-        "cond_K",
-        "x_ens_filtered",
-        "x_ens_predicted",
+        "posterior_extras",
     ],
     key: PRNGKey=jr.PRNGKey(0)
 ) -> PosteriorGSSMFiltered:
