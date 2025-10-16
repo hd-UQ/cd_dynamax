@@ -280,7 +280,7 @@ def main(cfg):
     init_data = init_predictive(next(keys), t_emissions=t_emissions, emissions=emissions_obs, weights=W_init, store_filtered=True)
 
     if cfg.log_filtering:
-        # Log a bunch of these trajectories to wandb
+        # Log filtering trajectories
         fig = plot_particle_diagnostics(
             t_emissions=t_emissions.squeeze(),
             x_ens_filtered=init_data["x_ens_filtered"][0],   # shape (T, N, D)
