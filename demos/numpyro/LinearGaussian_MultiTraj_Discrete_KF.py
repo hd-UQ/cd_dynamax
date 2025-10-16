@@ -1,3 +1,4 @@
+import os
 import jax
 jax.config.update("jax_enable_x64", True)
 import jax.numpy as jnp
@@ -8,7 +9,6 @@ from numpyro.infer import SVI, Trace_ELBO, init_to_value, init_to_median, Predic
 from numpyro.infer import MCMC, NUTS
 import numpyro.distributions as dist
 from numpyro.infer.autoguide import AutoDiagonalNormal, AutoDelta, AutoMultivariateNormal, AutoLowRankMultivariateNormal
-import wandb
 
 from cd_dynamax import (
     LinearGaussianSSM,
@@ -22,18 +22,18 @@ from cd_dynamax.src.utils.demo_utils import (
     plot_traj_kde,
     plot_simulated_data,
     plot_coeff_heatmaps,
-    plot_param_recovery
+    plot_param_recovery,
+    plot_loss_curve,
 )
 
 
 # ------------------------
 # Main training entrypoint
 # ------------------------
-def main(**cfg):
-    # Initialize a new W&B run.
-    wandb_mode = "online" if cfg["online"] else "offline"
-    run = wandb.init(config=cfg, project=cfg["project"], name=cfg["run_name"], dir=cfg["dir"], mode=wandb_mode)
-    cfg = wandb.config
+def main(cfg):
+
+    # Make output directory
+    os.makedirs(cfg.dir, exist_ok=True)
 
     # Global settings
     state_dim, emission_dim = cfg.state_dim, cfg.emission_dim
@@ -192,16 +192,13 @@ def main(**cfg):
         print(f"Plotting the first {n_plotted_traj} of {cfg.N_trajectories} trajectories...")
     for i in range(n_plotted_traj):
         fig = plot_simulated_data(t=t_emissions, states=sim_data["states"].squeeze(0)[i], emissions=emissions_obs[i])
-        wandb.log({f"figures/true_states_traj{i}": wandb.Image(fig)})
+        fig.savefig(os.path.join(cfg.dir, f"true_states_traj{i}.png"))
         plt.close(fig)
 
     # Log metrics
-    wandb.log({
-        "metrics/true/neg_log_prior": float(sim_data["neg_log_prior"].item()),
-        "metrics/true/neg_log_lik": float(sim_data["neg_log_likelihood"].item()),
-        "metrics/true/neg_log_joint": float(sim_data["neg_log_joint"].item()),
-    })
-    print(f"True model's neg_log_likelihood from filtering: {float(sim_data['neg_log_likelihood'].item())}")
+    neg_log_names = ["neg_log_prior", "neg_log_likelihood", "neg_log_joint"]
+    for name in neg_log_names:
+        print(f"True model's {name} from filtering: {float(sim_data[name].item())}")
 
     # SVI
     optimizer = make_optimizer(
@@ -220,22 +217,22 @@ def main(**cfg):
     svi_result = svi.run(next(keys), num_steps=cfg.num_epochs, t_emissions=t_emissions, emissions=emissions_obs, **known_values)
 
     # Log training curve
-    wandb.define_metric("svi/loss", step_metric="epoch")
-    for step, loss in enumerate(svi_result.losses):
-        wandb.log({"epoch": step, "svi/loss": float(loss)})
+    fig = plot_loss_curve(svi_result.losses)
+    fig.savefig(os.path.join(cfg.dir, "svi_loss_curve.png"))
+    plt.close(fig)
 
     # Keep the weights heatmaps (as requested)
     if "weights" in cfg.learnables:
         weights_learned = guide.median(svi_result.params)["weights"]
         fig = plot_coeff_heatmaps(weights_true, weights_learned)
-        wandb.log({"figures/A_heatmaps": wandb.Image(fig)})
+        fig.savefig(os.path.join(cfg.dir, "weights_heatmaps.png"))
         plt.close(fig)
 
     # Optional: bias heatmap (still handy)
     if "bias" in cfg.learnables:
         bias_learned = guide.median(svi_result.params)["bias"]
         fig = plot_coeff_heatmaps(bias_true.reshape(-1,1), bias_learned.reshape(-1,1))
-        wandb.log({"figures/bias_heatmaps": wandb.Image(fig)})
+        fig.savefig(os.path.join(cfg.dir, "bias_heatmaps.png"))
         plt.close(fig)
 
     ### NEW: param recovery scatter plots (weights / bias / noise)
@@ -245,17 +242,14 @@ def main(**cfg):
         ("noise", ["emission_sd", "diffusion_coeff"]),
     ]
     fig = plot_param_recovery(true_values, guide=guide, svi_result=svi_result, groups=scatter_groups, title="SVI: learned vs true")
-    wandb.log({"figures/param_recovery_svi": wandb.Image(fig)})
+    fig.savefig(os.path.join(cfg.dir, "param_recovery_svi.png"))
     plt.close(fig)
     
     # Posterior predictive with learned params
     predictive_learned = Predictive(model, guide=guide, params=guide.median(svi_result.params), num_samples=1)
     learned_data = predictive_learned(next(keys), t_emissions=t_emissions, emissions=emissions_obs, **known_values)
-    wandb.log({
-        "metrics/learned/neg_log_prior": float(learned_data["neg_log_prior"].item()),
-        "metrics/learned/neg_log_lik": float(learned_data["neg_log_likelihood"].item()),
-        "metrics/learned/neg_log_joint": float(learned_data["neg_log_joint"].item()),
-    })
+    for name in neg_log_names:
+        print(f"Learned model's {name} from filtering: {float(learned_data[name].item())}")
 
     # Generate long sequences
     print("Generating long trajectory from learned model...")
@@ -267,11 +261,11 @@ def main(**cfg):
     burnin_idx = int(burnin_frac * long_t_emissions.shape[0])
     idx_traj = 0
     fig = plot_traj_kde({"Observed traj": long_true_data["emissions"].squeeze(0)[idx_traj, burnin_idx:], "Long learned traj": long_learned_data["emissions"].squeeze(0)[idx_traj, burnin_idx:]})
-    wandb.log({"figures/emissions_kde": wandb.Image(fig)})
+    fig.savefig(os.path.join(cfg.dir, "long_traj_emissions_kde.png"))
     plt.close(fig)
 
     fig = plot_traj_kde({"True states": long_true_data["states"].squeeze(0)[idx_traj, burnin_idx:], "Learned states": long_learned_data["states"].squeeze(0)[idx_traj, burnin_idx:]})
-    wandb.log({"figures/states_kde": wandb.Image(fig)})
+    fig.savefig(os.path.join(cfg.dir, "long_traj_states_kde.png"))
     plt.close(fig)
 
 
@@ -287,11 +281,10 @@ def main(**cfg):
         print(mcmc.print_summary())
 
         fig = plot_param_recovery(true_values, mcmc=mcmc, groups=scatter_groups, title="MCMC: learned vs true")
-        wandb.log({"figures/param_recovery_mcmc": wandb.Image(fig)})
+        fig.savefig(os.path.join(cfg.dir, "param_recovery_mcmc.png"))
         plt.close(fig)
 
     print("Completed!")
-    run.finish()
 
 
 if __name__ == "__main__":
@@ -354,11 +347,8 @@ if __name__ == "__main__":
                         default=["weights", "bias", "emission_sd", "diffusion_coeff"]) 
     # Default is to learn everything; you can also do any subset, e.g. ["weights", "bias"], or ["emission_sd", "diffusion_coeff"], etc.
     
-    # Wandb settings
-    parser.add_argument("--project", type=str, default="LinearGaussian_MultiTraj_Discrete_KF")
-    parser.add_argument("--run_name", type=str, default=None)
-    parser.add_argument("--dir", type=str, default="demo_outputs/LinearGaussian_MultiTraj_Discrete_KF")  # Allows you to custom-specify wandb directory (else uses default)
-    parser.add_argument("--online", type=int, default=0) # 0 for offline, 1 for online (need to configure wandb account for online)
+    # Output settings
+    parser.add_argument("--dir", type=str, default="demo_outputs/LinearGaussian_MultiTraj_Discrete_KF")
 
     args = parser.parse_args()
-    main(**vars(args))
+    main(args)

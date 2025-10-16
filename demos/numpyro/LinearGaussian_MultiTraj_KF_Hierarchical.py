@@ -1,3 +1,4 @@
+import os
 import jax
 jax.config.update("jax_enable_x64", True)
 import jax.numpy as jnp
@@ -8,7 +9,6 @@ from numpyro.infer import SVI, Trace_ELBO, init_to_value, init_to_median, Predic
 from numpyro.infer import MCMC, NUTS
 import numpyro.distributions as dist
 from numpyro.infer.autoguide import AutoDiagonalNormal, AutoDelta, AutoMultivariateNormal, AutoLowRankMultivariateNormal
-import wandb
 
 # everything from your own package
 from cd_dynamax import (
@@ -23,17 +23,17 @@ from cd_dynamax.src.utils.demo_utils import (
     plot_traj_kde,
     plot_simulated_data,
     plot_coeff_heatmaps,
-    plot_param_recovery
+    plot_param_recovery,
+    plot_loss_curve,
 )
 
 # ------------------------
 # Main training entrypoint
 # ------------------------
-def main(**cfg):
-    # Initialize a new W&B run.
-    wandb_mode = "online" if cfg["online"] else "offline"
-    run = wandb.init(config=cfg, project=cfg["project"], name=cfg["run_name"], dir=cfg["dir"], mode=wandb_mode)
-    cfg = wandb.config
+def main(cfg):
+
+    # Make output directory
+    os.makedirs(cfg.dir, exist_ok=True)
 
     # Global settings
     state_dim, emission_dim = cfg.state_dim, cfg.emission_dim
@@ -241,16 +241,13 @@ def main(**cfg):
         print(f"Plotting the first {n_plotted_traj} of {cfg.N_trajectories} trajectories...")
     for i in range(n_plotted_traj):
         fig = plot_simulated_data(t=t_emissions, states=states_true[i], emissions=emissions_obs[i])
-        wandb.log({f"figures/true_states_traj{i}": wandb.Image(fig)})
+        fig.savefig(os.path.join(cfg.dir, f"true_states_traj{i}.png"))
         plt.close(fig)
 
     # Log metrics
-    wandb.log({
-        "metrics/true/neg_log_prior": float(sim_data["neg_log_prior"].item()),
-        "metrics/true/neg_log_lik": float(sim_data["neg_log_likelihood"].item()),
-        "metrics/true/neg_log_joint": float(sim_data["neg_log_joint"].item()),
-    })
-    print(f"True model's neg_log_likelihood from filtering: {float(sim_data['neg_log_likelihood'].item())}")
+    neg_log_names = ["neg_log_prior", "neg_log_likelihood", "neg_log_joint"]
+    for name in neg_log_names:
+        print(f"True model's {name} from filtering: {float(sim_data[name].item())}")
 
     # ----------------
     # SVI (fit model)
@@ -278,10 +275,10 @@ def main(**cfg):
                          emissions=emissions_obs,
                          **known_values)
 
-    # Training curve
-    wandb.define_metric("svi/loss", step_metric="epoch")
-    for step, loss in enumerate(svi_result.losses):
-        wandb.log({"epoch": step, "svi/loss": float(loss)})
+    # Log training curve
+    fig = plot_loss_curve(svi_result.losses)
+    fig.savefig(os.path.join(cfg.dir, "svi_loss_curve.png"))
+    plt.close(fig)
 
     # ----------------
     # Plots / recovery
@@ -290,18 +287,18 @@ def main(**cfg):
     weights_learned = guide.median(svi_result.params).get("weights", None)
     if weights_learned is not None:
         fig = plot_coeff_heatmaps(weights_true, weights_learned)
-        wandb.log({"figures/A_heatmaps": wandb.Image(fig)})
+        fig.savefig(os.path.join(cfg.dir, "weights_heatmaps.png"))
         plt.close(fig)
 
     # Population mu and sigma heatmaps (treat as column vectors)
     learned = guide.median(svi_result.params)
     if "mu" in learned:
         fig = plot_coeff_heatmaps(mu_true.reshape(-1, 1), learned["mu"].reshape(-1, 1))
-        wandb.log({"figures/mu_heatmaps": wandb.Image(fig)})
+        fig.savefig(os.path.join(cfg.dir, "mu_heatmaps.png"))
         plt.close(fig)
     if "sigma" in learned:
         fig = plot_coeff_heatmaps(sigma_true.reshape(-1, 1), learned["sigma"].reshape(-1, 1))
-        wandb.log({"figures/sigma_heatmaps": wandb.Image(fig)})
+        fig.savefig(os.path.join(cfg.dir, "sigma_heatmaps.png"))
         plt.close(fig)
 
     # Param recovery scatter groups
@@ -314,18 +311,14 @@ def main(**cfg):
     ]
     fig = plot_param_recovery(true_values, guide=guide, svi_result=svi_result,
                               groups=scatter_groups)
-    wandb.log({"figures/param_recovery_svi": wandb.Image(fig)})
+    fig.savefig(os.path.join(cfg.dir, "param_recovery_svi.png"))
     plt.close(fig)
 
     # Posterior predictive at learned medians (optional diagnostics)
     predictive_learned = Predictive(model, guide=guide, params=learned, num_samples=1)
     learned_data = predictive_learned(next(keys), t_emissions=t_emissions, emissions=emissions_obs, **known_values)
-    wandb.log({
-        "metrics/learned/neg_log_prior": float(learned_data["neg_log_prior"].item()),
-        "metrics/learned/neg_log_lik": float(learned_data["neg_log_likelihood"].item()),
-        "metrics/learned/neg_log_joint": float(learned_data["neg_log_joint"].item()),
-    })
-
+    for name in neg_log_names:
+        print(f"Learned model's {name} from filtering: {float(learned_data[name].item())}")
 
     # Long rollouts for a single trajectory index
     print("Generating long trajectory from learned model...")
@@ -341,14 +334,14 @@ def main(**cfg):
         "Observed traj": long_true_data["emissions"].squeeze(0)[idx_traj, burnin_idx:],
         "Long learned traj": long_learned_data["emissions"].squeeze(0)[idx_traj, burnin_idx:]
     })
-    wandb.log({"figures/emissions_kde": wandb.Image(fig)})
+    fig.savefig(os.path.join(cfg.dir, "long_traj_emissions_kde.png"))
     plt.close(fig)
 
     fig = plot_traj_kde({
         "True states": long_true_data["states"].squeeze(0)[idx_traj, burnin_idx:],
         "Learned states": long_learned_data["states"].squeeze(0)[idx_traj, burnin_idx:]
     })
-    wandb.log({"figures/states_kde": wandb.Image(fig)})
+    fig.savefig(os.path.join(cfg.dir, "long_traj_states_kde.png"))
     plt.close(fig)
 
     # Optional: NUTS
@@ -361,11 +354,10 @@ def main(**cfg):
         print(mcmc.print_summary())
 
         fig = plot_param_recovery(true_values, mcmc=mcmc, groups=scatter_groups)
-        wandb.log({"figures/param_recovery_mcmc": wandb.Image(fig)})
+        fig.savefig(os.path.join(cfg.dir, "param_recovery_mcmc.png"))
         plt.close(fig)
 
     print("Completed!")
-    run.finish()
 
 
 if __name__ == "__main__":
@@ -413,11 +405,8 @@ if __name__ == "__main__":
     parser.add_argument("--max_spectral_norm", type=float, default=200.0)
     parser.add_argument("--a", type=float, default=3.0)
 
-    # Wandb settings
-    parser.add_argument("--project", type=str, default="LinearGaussian_MultiTraj_KF_HierTN")
-    parser.add_argument("--run_name", type=str, default=None)
+    # Output settings
     parser.add_argument("--dir", type=str, default="demo_outputs/LinearGaussian_MultiTraj_KF_HierTN")
-    parser.add_argument("--online", type=int, default=0)
 
     # --- NEW: Hyperprior controls for hierarchical biases ---
     parser.add_argument("--m_mu", type=float, default=2.5)     # mean for mu_d TN
@@ -435,4 +424,4 @@ if __name__ == "__main__":
     parser.add_argument("--diffusion_init", type=float, default=10.0)
 
     args = parser.parse_args()
-    main(**vars(args))
+    main(args)
