@@ -33,7 +33,6 @@ dependencies = [
     "orbax-checkpoint>=0.9",
     "etils>=1.5",
     "dm-tree>=0.1.8",
-    "wandb>=0.17",
     "graphviz",
 ]
 
