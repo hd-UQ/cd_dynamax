@@ -883,6 +883,29 @@ def plot_traj_kde(
     fig.tight_layout(rect=[0, 0, 0.80, 0.96] if title else [0, 0, 0.80, 0.98])
     return fig
 
+def plot_loss_curve(loss_values, loss_label="ELBO Loss", baseline_value=None, baseline_label="Baseline", figsize=(8,5), title="SVI Loss Curve"):
+    """
+    Plot loss values over iterations.
+    
+    Args:
+        loss_values: (num_iters,) array of loss values
+        figsize: tuple, figure size
+        title: str, plot title
+    
+    Returns:
+        matplotlib Figure
+    """
+    fig, ax = plt.subplots(figsize=figsize)
+    ax.plot(loss_values, color="tab:blue", linewidth=2.0, label=loss_label)
+    if baseline_value is not None:
+        # dotted horizontal line
+        ax.axhline(baseline_value, color="tab:orange", linestyle=":", linewidth=2.0, label=baseline_label)
+        ax.legend()
+    ax.set_xlabel("Iteration")
+    ax.set_ylabel("Loss")
+    ax.set_title(title)
+    ax.grid(True, linestyle="--", alpha=0.3)
+    return fig
 
 def plot_simulated_data(t=None, states=None, emissions=None):
     """
