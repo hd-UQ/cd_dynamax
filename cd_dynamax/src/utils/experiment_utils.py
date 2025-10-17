@@ -57,22 +57,42 @@ def generate_t_emissions(
 # Useful auxiliary functions for the python scripts
 # Build results directory based on config file names
 def build_results_dir(
+        output_dir,
         data_config_file,
         model_config_file,
         filter_config_file,
-        output_dir
+        overrides=None
     ):
     '''
         Builds the results directory path based on configuration file names.
         
         Joins the names of the config files, omitting their directory and extensions.
     '''
-    return os.path.join(
+    os.makedirs(output_dir, exist_ok=True)
+
+    # Default subdirectory names
+    data_subdir = os.path.basename(data_config_file).split('.')[0]
+    model_subdir = os.path.basename(model_config_file).split('.')[0]
+    filter_subdir = os.path.basename(filter_config_file).split('.')[0]
+
+    # Preallocate list for data overrides
+    data_override_parts = []
+    # Process overrides to create a unique subdirectory if needed
+    if overrides is not None and len(overrides) > 0:
+        # data_config_file overrides
+        for k, v in overrides.items():
+            if 'data_generation.' in k:
+                # Remove data_generation. prefix and append the value
+                data_override_parts.append(f"{k.replace('data_generation.', 'data')}_{str(v).replace('/', '_')}")
+
+    # Join all parts to form the results directory path
+    results_dir = os.path.join(
         output_dir,
-        os.path.basename(data_config_file).split('.')[0],
-        os.path.basename(model_config_file).split('.')[0],
-        os.path.basename(filter_config_file).split('.')[0]
+        data_subdir + ("_" + "_".join(data_override_parts) if data_override_parts else ""),
+        model_subdir,
+        filter_subdir
     )
+    return results_dir
 
 # Override ConfigParser with a dictionary of overrides
 def override_config(
