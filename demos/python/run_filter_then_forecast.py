@@ -64,7 +64,7 @@ def run_filter_then_forecast(
     )
 
     # Figure-out the filtering/smoothing settings from config
-    filter_hyperparams, _ = create_cdnlgssm_filter_from_config(
+    filter_hyperparams, filter_info = create_cdnlgssm_filter_from_config(
         filter_config_file,
         overrides=overrides
     )
@@ -79,7 +79,10 @@ def run_filter_then_forecast(
 
     # Run filtering and forecasting, for each key in ftf_keys
     for ftf_key in ftf_keys if isinstance(ftf_keys, (list)) else [ftf_keys]:
-        print(f"Running filtering from T={T0} up to T={T_filter_end} and forecasting up to T={T_forecast_end} (with ftf_key={ftf_key}).")
+        print("Running filtering with {filter_name} from T={T0} up to T={T_filter_end} and forecasting up to T={T_forecast_end} (with ftf_key={ftf_key}).".format(
+            filter_name = filter_info['name'] if filter_info is not None and 'name' in filter_info else "the specified filter",
+            T0=T0, T_filter_end=T_filter_end, T_forecast_end=T_forecast_end, ftf_key=ftf_key
+        ))
         filtered, forecasted, start_idx_filter, stop_idx_filter, start_idx_forecast, stop_idx_forecast = filter_and_forecast(
             model_params=params,
             filter_hyperparams=filter_hyperparams,

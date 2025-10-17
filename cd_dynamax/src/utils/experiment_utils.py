@@ -73,8 +73,10 @@ def build_results_dir(
     # Default subdirectory names
     data_subdir = os.path.basename(data_config_file).split('.')[0]
     model_subdir = os.path.basename(model_config_file).split('.')[0]
-    filter_subdir = os.path.basename(filter_config_file).split('.')[0]
-
+    if filter_config_file is not None:
+        filter_subdir = os.path.basename(filter_config_file).split('.')[0]
+    else:
+        filter_subdir = ""
     # Preallocate list for data overrides
     data_override_parts = []
     # Process overrides to create a unique subdirectory if needed
