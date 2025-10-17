@@ -119,6 +119,7 @@ def plot_filter_then_forecast_state_results(
         data,
         results,
         results_file,
+        filter_info,
         plot_uncertainty: bool = True,
         plot_observations: bool = True,
         plot_mse: bool = False,
@@ -284,7 +285,9 @@ def plot_filter_then_forecast_state_results(
     )
 
     fig.suptitle(
-        "Filter-then-Forecast on States (vertical line = forecast start)",
+        "{} Filter-then-Forecast on States (vertical line = forecast start)".format(
+            filter_info['name'] if filter_info is not None and 'name' in filter_info else ""
+        ),
         fontsize=10
     )
 
@@ -310,6 +313,7 @@ def plot_filter_then_forecast_state_emission_results(
         data,
         results,
         results_file,
+        filter_info,
         plot_uncertainty: bool = True,
         plot_observations: bool = True,
         true_state_style = {'color': 'black', 'linestyle': '-', 'linewidth': 1.5},
@@ -501,7 +505,9 @@ def plot_filter_then_forecast_state_emission_results(
     )
 
     fig.suptitle(
-        "Filter-then-Forecast on States and Emissions (vertical line = forecast start time)",
+        "{} Filter-then-Forecast on States (vertical line = forecast start)".format(
+            filter_info['name'] if filter_info is not None and 'name' in filter_info else ""
+        ),
         fontsize=8
     )
 

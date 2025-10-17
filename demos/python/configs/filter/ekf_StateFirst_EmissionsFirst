@@ -5,3 +5,7 @@ emission_order: first
 smooth_order: first
 cov_rescaling: 1.0
 diffeqsolve_settings_file: configs/solver/dt1e-2_maxSteps1e2
+
+[filter_info]
+name=EKF (1st order)
+desc=Extended Kalman Filter with first order approximation to state and emission functions

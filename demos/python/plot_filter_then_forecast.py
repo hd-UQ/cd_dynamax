@@ -66,14 +66,8 @@ def plot_filter_then_forecast(
         overrides=overrides,
     )
 
-    # Create and initialize the CD-NLGSSM model from the model config file
-    model, params, props = create_cdnlgssm_model_from_config(
-        model_config_file,
-        overrides=overrides,
-    )
-
     # Figure-out the filtering/smoothing settings from config
-    filter_hyperparams = create_cdnlgssm_filter_from_config(
+    filter_hyperparams, filter_info = create_cdnlgssm_filter_from_config(
         filter_config_file,
         overrides=overrides
     )
@@ -88,7 +82,7 @@ def plot_filter_then_forecast(
 
     # Run filtering and forecasting, for each key in ftf_keys
     for ftf_key in ftf_keys if isinstance(ftf_keys, (list)) else [ftf_keys]:
-        print(f"Loading filtering from T={T0} up to T={T_filter_end} and forecasting up to T={T_forecast_end} (with ftf_key={ftf_key}) results...")
+        print(f"Loading {filter_info['name']} filtering from T={T0} up to T={T_filter_end} and forecasting up to T={T_forecast_end} (with ftf_key={ftf_key}) results...")
 
         # Load the results
         results_file = os.path.join(results_dir, 'results_ftfkey{}.pkl'.format(ftf_key))
@@ -103,9 +97,10 @@ def plot_filter_then_forecast(
             data=data,
             results=results,
             results_file=results_file,
-            plot_uncertainty = True,
-            plot_observations = True,
-            plot_mse = True,
+            filter_info=filter_info,
+            plot_uncertainty=True,
+            plot_observations=True,
+            plot_mse=True,
         )
 
         # Plot the filtering and forecasting state and emission results
@@ -113,6 +108,7 @@ def plot_filter_then_forecast(
             data=data,
             results=results,
             results_file=results_file,
+            filter_info=filter_info,
             plot_uncertainty=True,
             plot_observations=True,
         )

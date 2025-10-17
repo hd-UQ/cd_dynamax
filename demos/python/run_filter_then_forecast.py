@@ -64,7 +64,7 @@ def run_filter_then_forecast(
     )
 
     # Figure-out the filtering/smoothing settings from config
-    filter_hyperparams = create_cdnlgssm_filter_from_config(
+    filter_hyperparams, _ = create_cdnlgssm_filter_from_config(
         filter_config_file,
         overrides=overrides
     )

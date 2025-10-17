@@ -311,5 +311,13 @@ def create_cdnlgssm_filter_from_config(
 
     filter_hyperparams = eval(filter_class_str)(**hyperparam_dict)
 
-    return filter_hyperparams
+    # Also process filter_info section if present
+    filter_info = None
+    if filter_config.has_section('filter_info'):
+        filter_info = {}
+        for k, v in filter_config.items('filter_info'):
+            filter_info[k] = str(v)
+    
+    # return both hyperparams and filter_info
+    return filter_hyperparams, filter_info
 
