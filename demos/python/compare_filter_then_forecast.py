@@ -70,30 +70,30 @@ def compare_filter_then_forecast(
     T_forecast_end = data['t_emissions'][-1]
     T_filter_end = T0 + T_filter * (T_forecast_end - T0)
 
-    # Loop over each filter configuration file to compare results
-    all_filter_results = list([None] * len(filter_config_files))
-    all_filter_info = list([None] * len(filter_config_files))
-    for filter_idx, filter_config_file in enumerate(filter_config_files):
-        print(f"Processing filter configuration: {filter_config_file}")
-        # Figure-out the filtering/smoothing settings from config
-        _, all_filter_info[filter_idx] = create_cdnlgssm_filter_from_config(
-            filter_config_file,
-            overrides=overrides
-        )
+    # Set the key(s) for filtering and forecasting
+    ftf_keys = [data_key + 10] if ftf_key is None else ftf_key  # i.e. 10 more than data_key or given ftf_key
 
-        filter_results_dir = os.path.join(results_dir, os.path.basename(filter_config_file).split('.')[0])
-        if not os.path.exists(filter_results_dir):
-            print("Warning: Filter results directory does not exist at:", filter_results_dir)
-            print("Please run the filtering and forecasting experiment first to generate results for this filter.")
-            continue
+    # Run filtering and forecasting, for each key in ftf_keys
+    for ftf_key in ftf_keys if isinstance(ftf_keys, (list)) else [ftf_keys]:
+        # Loop over each filter configuration file to compare results
+        all_filter_results = list([None] * len(filter_config_files))
+        all_filter_info = list([None] * len(filter_config_files))
+        for filter_idx, filter_config_file in enumerate(filter_config_files):
+            
+            print(f"Processing filter configuration: {filter_config_file}")
+            # Figure-out the filtering/smoothing settings from config
+            _, all_filter_info[filter_idx] = create_cdnlgssm_filter_from_config(
+                filter_config_file,
+                overrides=overrides
+            )
 
-        # Set the key(s) for filtering and forecasting
-        ftf_keys = [data_key + 10] if ftf_key is None else ftf_key  # i.e. 10 more than data_key or given ftf_key
+            filter_results_dir = os.path.join(results_dir, os.path.basename(filter_config_file).split('.')[0])
+            if not os.path.exists(filter_results_dir):
+                print("Warning: Filter results directory does not exist at:", filter_results_dir)
+                print("Please run the filtering and forecasting experiment first to generate results for this filter.")
+                continue
 
-        # Run filtering and forecasting, for each key in ftf_keys
-        for ftf_key in ftf_keys if isinstance(ftf_keys, (list)) else [ftf_keys]:
             print(f"Loading {all_filter_info[filter_idx]['name']} filtering from T={T0} up to T={T_filter_end} and forecasting up to T={T_forecast_end} (with ftf_key={ftf_key}) results...")
-
             # Load the results
             filter_results_file = os.path.join(filter_results_dir, 'results_ftfkey{}.pkl'.format(ftf_key))
             with open(filter_results_file, 'rb') as f:
@@ -102,28 +102,28 @@ def compare_filter_then_forecast(
             # Print a message indicating the completion of the experiment
             print("Results loaded from:", filter_results_file)
 
-    # Compare the filtering and forecasting state results, along with their MSE
-    # TODO: need to check what to do with multiple ftf_keys
-    # Set results_file to results_dir for saving plots
-    plot_results_dir = os.path.join(results_dir, 'figures')
-    os.makedirs(plot_results_dir, exist_ok=True)
-    plot_file = os.path.join(
-            plot_results_dir,
-            'compare_filter_then_forecast_states_ftfkey{}.png'.format(
-            ftf_key ## to be fixed for multiple ftf_keys
+        # Compare the filtering and forecasting state results, along with their MSE
+        # Set results_file to results_dir for saving plots
+        plot_results_dir = os.path.join(results_dir, 'figures')
+        os.makedirs(plot_results_dir, exist_ok=True)
+        plot_file = os.path.join(
+                plot_results_dir,
+                'compare_filter_then_forecast_states_ftfkey{}.png'.format(
+                ftf_key ## to be fixed for multiple ftf_keys
+            )
         )
-    )
 
-    compare_filter_then_forecast_state_results(
-        data=data,
-        all_filter_results=all_filter_results,
-        all_filter_info=all_filter_info,
-        plot_filename=plot_file,
-        plot_uncertainty=True,
-        plot_observations=True,
-        plot_mse=True,
-        plot_dpi=300,
-    )
+        # Call the comparison plotting function
+        compare_filter_then_forecast_state_results(
+            data=data,
+            all_filter_results=all_filter_results,
+            all_filter_info=all_filter_info,
+            plot_filename=plot_file,
+            plot_uncertainty=True,
+            plot_observations=True,
+            plot_mse=True,
+            plot_dpi=300,
+        )
 
     import pdb; pdb.set_trace()
 
@@ -140,7 +140,7 @@ if __name__ == "__main__":
     parser.add_argument('--enforce_twin_experiment', type=bool, default=False,
                         help='If True, will enforce the twin experiment setup (default: False). Done by resetting the true_model_config_file in the data_config_file = model_config_file.')
     # Allow user to specify multiple filter config files or "all"
-    parser.add_argument('--filter_config_file', nargs='+', default='all', 
+    parser.add_argument('--filter_config_file', nargs='+', default=['all'], 
                         help='Filter configuration file: (default: set to "all" to compare all available filters)'
                         )
     parser.add_argument('--output_dir', type=str, default='results/filter_then_forecast',
