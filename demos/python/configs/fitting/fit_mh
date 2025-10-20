@@ -1,0 +1,7 @@
+[mcmc]
+type: rmh
+parameters: {'proposal': "blackjax.mcmc.random_walk.normal(0.1 * jnp.eye(3))"}
+n_samples: 100
+warmup_samples: 10
+verbose: True
+key: 0

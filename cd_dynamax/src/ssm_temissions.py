@@ -789,7 +789,7 @@ class SSM(ABC):
         inputs: Optional[Union[Float[Array, "num_timesteps input_dim"],
                             Float[Array, "num_batches num_timesteps input_dim"]]]=None,
         method: str = "Nelder-Mead",
-        maxiter: int = 5000,
+        options: dict = {"maxiter": 5000},
         return_param_history: bool = False
     ) -> Tuple[ParameterSet, Float[Array, "niter"], Optional[ParameterSet]]:
         """
@@ -862,7 +862,7 @@ class SSM(ABC):
                         flat_init,
                         method=method,
                         callback=callback,
-                        options={"maxiter": maxiter})
+                        options=options)
 
         # Final fitted parameters (combine fixed + learned)
         unc_params_fitted = unravel_fn(result.x)
@@ -906,8 +906,8 @@ class SSM(ABC):
         filter_hyperparams: Optional[Any]=None,
         inputs: Optional[Union[Float[Array, "num_timesteps input_dim"],
                                Float[Array, "num_batches num_timesteps input_dim"]]]=None,
-        method: str = "Nelder-Mead",
-        maxiter: int = 5000,
+        method: str = "nelder-mead",
+        options: dict = {"maxiter": 100},
     ) -> Tuple[ParameterSet, Float[Array, "niter"]]:
         r"""Compute parameter MLE/ MAP estimate using SciPy-based Nelder–Mead (or chosen method).
 
@@ -964,7 +964,7 @@ class SSM(ABC):
             return -lp / batch_emissions.size
 
         # Run Nelder-Mead optimization
-        solver = ScipyMinimize(fun=_loss_fn, method=method, maxiter=maxiter)
+        solver = ScipyMinimize(fun=_loss_fn, method=method, options=options)
         solver.implicit_diff = False
         result = solver.run(init_params=initial_unc_params_trainable)
 
@@ -1124,7 +1124,7 @@ class SSM(ABC):
                 # MH algo, with proposal in mcmc_algorithm['parameters']['proposal']
                 mh = mcmc_algo(
                     _logprob,
-                    mcmc_algorithm['parameters']['proposal']
+                    eval(mcmc_algorithm['parameters']['proposal'])
                 )
 
                 # MH sampling kernel step

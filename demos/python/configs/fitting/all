@@ -23,7 +23,7 @@ return_param_history: False
 #verbose: True
 #key: 0
 
-# [mcmc]
+[mcmc]
 type: nuts
 n_samples: 100
 warmup_samples: 10

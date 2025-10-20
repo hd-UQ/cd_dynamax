@@ -1,0 +1,4 @@
+[scipy]
+method: nelder-mead
+options: {maxiter: 100}
+return_param_history: False

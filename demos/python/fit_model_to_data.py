@@ -9,116 +9,186 @@ import pickle
 from cd_dynamax.src.utils.experiment_utils import *
 from data_generator import generate_data_from_config
 
-def run_exp(
+def fit_model_to_data(
     data_config_file,
     model_config_file,
     filter_config_file,
-    param_est_config_file,
+    fit_config_file,
     output_dir,
+    fit_key=None,
+    overrides={},
 ):
-    # Figure out the directory structure
-    # Join the four names of the file,
-    # omitting their directory and extensions
-    # into a saving directory path
-    results_dir = os.path.join(
+    # Figure out and build the directory structure
+    results_dir = build_results_dir(
         output_dir,
-        os.path.basename(data_config_file).split('.')[0],
-        os.path.basename(model_config_file).split('.')[0],
-        os.path.basename(filter_config_file).split('.')[0],
-        os.path.basename(param_est_config_file,).split('.')[0]
+        data_config_file,
+        model_config_file,
+        filter_config_file,
+        overrides=overrides,
     )
-    os.makedirs(results_dir, exist_ok=True)
 
-    ## Load data from file (or generate it if needed)--- [DATA CONFIG FILE]
-    data, data_key = generate_data_from_config(data_config_file)
+    # And add fit_config_file info
+    results_dir = os.path.join(results_dir, os.path.splitext(os.path.basename(fit_config_file))[0])
+    # Create the results directory if it doesn't exist
+    os.makedirs(results_dir, exist_ok=True)
+    print("Results directory created at:", results_dir)
+
+    # Generate or load data
+    data, data_key = generate_data_from_config(
+        data_config_file=data_config_file,
+        data_save_file=None,
+        overrides=overrides,
+    )
 
     # Create and initialize the CD-NLGSSM model from the model config file
-    model, params, props = create_cdnlgssm_model_from_config(model_config_file)
+    model, params, props = create_cdnlgssm_model_from_config(
+        model_config_file,
+        overrides=overrides,
+    )
 
     # Figure-out the filtering/smoothing settings from config
-    filter_hyperparams = create_cdnlgssm_filter_from_config(filter_config_file)
+    filter_hyperparams, filter_info = create_cdnlgssm_filter_from_config(
+        filter_config_file,
+        overrides=overrides
+    )
 
     ## Run series of inferences based on inference config --- [INFERENCE CONFIG FILE]
     config = ConfigParser()
-    config.read(param_est_config_file,)
+    config.read(fit_config_file)
 
     # For each optimization method specified in the config
     optim_configs = config.sections()
 
     # Run SGD for parameter estimation
     if 'sgd' in optim_configs:
+        # SGD configuration
         sgd_config = config['sgd']
-        
-        # SGD MAP estimation via cd-dynamax model
-        return_param_history = sgd_config.getboolean('return_param_history', False)
-        return_grad_history = sgd_config.getboolean('return_grad_history', False)
-        fit_results = model.fit_sgd(
-            initial_params = params,
-            props=props,
-            emissions=data['emissions'],
-            t_emissions=data['t_emissions'],
-            filter_hyperparams=filter_hyperparams,
-            inputs=None,
-            optimizer=eval(
-                sgd_config.get('optimizer', 'optax.adam(1e-3)')
-            ),
-            batch_size = sgd_config.getint('batch_size', 1),
-            num_epochs = sgd_config.getint('num_epochs', 50),
-            shuffle = sgd_config.getboolean('shuffle', False),
-            return_param_history = return_param_history,
-            return_grad_history = return_grad_history,
-            key = jr.PRNGKey(sgd_config.getint('key', 0))
-        )
-        print("SGD MAP estimation complete.")
 
-        # Reformat the results into a dictionary
-        sgd_results={
-            'params_fitted': fit_results[0],
-            'loss_history': fit_results[1],
-            'params_history': None,
-            'grad_history': None,
-        }
-        if return_param_history and return_grad_history:
-            sgd_results['params_history'] = fit_results[2]
-            sgd_results['grad_history'] = fit_results[3]
-        elif return_param_history:
-            sgd_results['params_history'] = fit_results[2]
-        elif return_grad_history:
-            sgd_results['grad_history'] = fit_results[2]
+        # If fit_keys are provided
+        fit_keys = fit_key if fit_key is not None else [sgd_config.getint('key', 0)]
+        # Iterate over the fit_key list
+        for idx, key in enumerate(fit_keys):
+            print(f"Running SGD MAP estimation with fit_key: {key} (Index {idx + 1} of {len(fit_keys)})")
 
-        # Save the results
-        with open(os.path.join(results_dir, 'sgd_results.pkl'), 'wb') as f:
-            pickle.dump(sgd_results, f)
+            # SGD MAP estimation via cd-dynamax model
+            return_param_history = sgd_config.getboolean('return_param_history', False)
+            return_grad_history = sgd_config.getboolean('return_grad_history', False)
+            fit_results = model.fit_sgd(
+                initial_params = params,
+                props=props,
+                emissions=data['emissions'],
+                t_emissions=data['t_emissions'],
+                filter_hyperparams=filter_hyperparams,
+                inputs=None,
+                optimizer=eval(
+                    sgd_config.get('optimizer', 'optax.adam(1e-3)')
+                ),
+                batch_size = sgd_config.getint('batch_size', 1),
+                num_epochs = sgd_config.getint('num_epochs', 50),
+                shuffle = sgd_config.getboolean('shuffle', False),
+                return_param_history = return_param_history,
+                return_grad_history = return_grad_history,
+                key = jr.PRNGKey(key)
+            )
+            print("SGD MAP estimation complete for fit_key:", key)
+
+            # Reformat the results into a dictionary
+            sgd_results={
+                'params_fitted': fit_results[0],
+                'loss_history': fit_results[1],
+                'params_history': None,
+                'grad_history': None,
+            }
+            if return_param_history and return_grad_history:
+                sgd_results['params_history'] = fit_results[2]
+                sgd_results['grad_history'] = fit_results[3]
+            elif return_param_history:
+                sgd_results['params_history'] = fit_results[2]
+            elif return_grad_history:
+                sgd_results['grad_history'] = fit_results[2]
+
+            # Save the results, for each fit_key separately
+            with open(os.path.join(results_dir, f'sgd_model_fit_fitkey{key}.pkl'), 'wb') as f:
+                pickle.dump(sgd_results, f)
 
     # Run MCMC for parameter estimation
     if 'mcmc' in optim_configs:
         mcmc_config = config['mcmc']
         
-        # MCMC MAP estimation via cd-dynamax model
-        mcmc_result = model.fit_mcmc(
-            initial_params=sgd_results['params_fitted'] if 'sgd' in optim_configs else params,
-            props=props,
-            emissions=data['emissions'],
-            t_emissions=data['t_emissions'],
-            filter_hyperparams=filter_hyperparams,
-            inputs=None,
-            mcmc_algorithm=mcmc_config_to_dict(mcmc_config),
-            verbose=mcmc_config.getboolean('verbose', True),
-            key=jr.PRNGKey(mcmc_config.getint('key', 0))
-        )
-        print("MCMC MAP estimation complete")
+        # If fit_keys are provided
+        fit_keys = fit_key if fit_key is not None else [mcmc_config.getint('key', 0)]
+        # Iterate over the fit_key list
+        for idx, key in enumerate(fit_keys):
+            # MCMC MAP estimation via cd-dynamax model
+            print("Using fit results from SGD for MCMC initialization." if 'sgd' in optim_configs else "No previous SGD fit; using initial parameters for MCMC initialization.")
+            print(f"Running MCMC MAP estimation with fit_key: {key} (Index {idx + 1} of {len(fit_keys)})")
+            mcmc_result = model.fit_mcmc(
+                initial_params=sgd_results['params_fitted'] if 'sgd' in optim_configs else params,
+                props=props,
+                emissions=data['emissions'],
+                t_emissions=data['t_emissions'],
+                filter_hyperparams=filter_hyperparams,
+                inputs=None,
+                mcmc_algorithm=mcmc_config_to_dict(mcmc_config),
+                verbose=mcmc_config.getboolean('verbose', True),
+                key=jr.PRNGKey(key)
+            )
+            print("MCMC MAP estimation complete for fit_key:", key)
 
-        # Reformat the results into a dictionary
-        mcmc_results = {
-            'warmup_param_samples': mcmc_result[0],
-            'mcmc_param_samples': mcmc_result[1],
-            'warmup_log_probs': mcmc_result[2],
-            'mcmc_log_probs': mcmc_result[3],
-        }
+            # Reformat the results into a dictionary
+            mcmc_results = {
+                'warmup_param_samples': mcmc_result[0],
+                'mcmc_param_samples': mcmc_result[1],
+                'warmup_log_probs': mcmc_result[2],
+                'mcmc_log_probs': mcmc_result[3],
+            }
 
-        # Save the results
-        with open(os.path.join(results_dir, 'mcmc_results.pkl'), 'wb') as f:
-            pickle.dump(mcmc_results, f)
+            # Save the results
+            save_results_file = os.path.join(
+                results_dir,
+                mcmc_config.get('type', 'unknown') +
+                f'_mcmc_model_fit_fitkey{key}.pkl'
+            )
+            with open(save_results_file, 'wb') as f:
+                pickle.dump(mcmc_results, f)
+
+    if 'scipy' in optim_configs or 'scipy_jaxopt' in optim_configs:
+        config_key = 'scipy' if 'scipy' in optim_configs else 'scipy_jaxopt'
+        scipy_config = config[config_key]
+
+        # If fit_keys are provided
+        fit_keys = fit_key if fit_key is not None else [scipy_config.getint('key', 0)]
+        # Iterate over the fit_key list
+        for idx, key in enumerate(fit_keys):
+            print(f"Running {config_key} optimization MAP estimation with fit_key: {key} (Index {idx + 1} of {len(fit_keys)})")
+
+            # SciPy optimization MAP estimation via cd-dynamax model
+            scipy_result = model.fit_scipy(
+                initial_params=sgd_results['params_fitted'] if 'sgd' in optim_configs else params,
+                props=props,
+                emissions=data['emissions'],
+                t_emissions=data['t_emissions'],
+                filter_hyperparams=filter_hyperparams,
+                inputs=None,
+                method=scipy_config.get('method', 'l-bfgs-b'),
+                options={
+                    'maxiter': scipy_config.getint('maxiter', 100),
+                    'disp': scipy_config.getboolean('disp', True),
+                },
+            )
+            print("{} optimization MAP estimation complete for fit_key:", config_key, key)
+
+            # Reformat the results into a dictionary
+            scipy_results = {
+                'params_fitted': scipy_result.x,
+                'fun_value': scipy_result.fun,
+                'nfev': scipy_result.nfev,
+                'success': scipy_result.success,
+                'message': scipy_result.message,
+            }
+            # Save the results
+            with open(os.path.join(results_dir, f'scipy_model_fit_fitkey{key}.pkl'), 'wb') as f:
+                pickle.dump(scipy_results, f)
 
     # Print a message indicating the completion of the experiment
     print("Experiment completed. Results saved to:", results_dir)
@@ -134,11 +204,21 @@ if __name__ == "__main__":
     parser.add_argument('--model_config_file', type=str, default='configs/model/true_l63_mech',
                         help='Model configuration file: (default: true_l63_mech)')
     parser.add_argument('--filter_config_file', type=str, default='configs/filter/ekf_StateFirst_EmissionsFirst', 
-                        help='Filter configuration file: (default: ekf_StateFirst_EmissionsFirst), if all filters should be used, set to "all"')
-    parser.add_argument('--param_est_config_file', type=str, default='configs/param_estimation/all',
-                        help='Parameter estimation configuration file: (default: all)')
-    parser.add_argument('--output_dir', type=str, default='results/exp_runner',
-                        help='Output directory for results: (default: results/exp_runner)')
-    
+                        help='Filter configuration file: (default: ekf_StateFirst_EmissionsFirst)')
+    parser.add_argument('--fit_config_file', type=str, default='configs/fitting/fit_sgd',
+                        help='Fitting algorithm configuration file: (default: fit_sgd)')
+    # Add optional data_key and ftf_key arguments, which can be a sequence of integers
+    parser.add_argument('--fit_key', type=int, nargs='+', default=None,
+                        help='Optional key to use for fitting. If None, the key from the fit config file will be used.')
+    parser.add_argument('--output_dir', type=str, default='results/fit_model_to_data',
+                        help='Output directory for results: (default: results/fit_model_to_data)')
+
     args = parser.parse_args()
-    run_exp(**args.__dict__)
+
+    # Revise this if overrides are needed
+    overrides = {}
+    if args.fit_key is not None:
+        pass
+    
+    # Run the fit_model_to_data function with the provided arguments
+    fit_model_to_data(**args.__dict__)
