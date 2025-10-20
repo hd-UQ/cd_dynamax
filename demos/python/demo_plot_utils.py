@@ -527,3 +527,202 @@ def plot_filter_then_forecast_state_emission_results(
     )
     print("Filter-then-Forecast states and emissions plot saved to:", plot_file)
     plt.close(fig)
+
+# Function to compare the filtering and forecasting results for the states
+def compare_filter_then_forecast_state_results(
+        data,
+        all_filter_results,
+        all_filter_info,
+        plot_filename,
+        plot_uncertainty: bool = True,
+        plot_observations: bool = True,
+        plot_mse: bool = False,
+        true_state_style = {'color': 'black', 'linestyle': '-', 'linewidth': 1.5},
+        true_emission_style = {'color': 'gray', 'linestyle': 'None', 'marker': 'x', 'markersize': 3, 'alpha': 0.5},
+        default_filtered_style = {'color': 'blue', 'linestyle': '-', 'linewidth': 1.5, 'alpha': 0.7},
+        default_forecasted_style = {'color': 'green', 'linestyle': '-', 'linewidth': 1.5, 'alpha': 0.7},
+        plot_dpi: int = 300,
+        ):
+    '''Compare the filtering and forecasting results for the states.
+    Args:
+        data (dict): Dictionary containing the data.
+        all_filter_results (list): List of dictionaries containing the filtering and forecasting results for each filter.
+        all_filter_info (list): List of dictionaries containing the filter information for each filter.
+        results_files (list): List of result file paths for each filter.
+        plot_uncertainty (bool): Whether to plot uncertainty intervals. (default: True)
+        plot_observations (bool): Whether to plot observations. (default: True)
+    '''
+
+    # Figure out data dimensions
+    d_states, d_emissions, t_emissions = figure_out_data_dimensions(data)
+
+    # Figure out filtering and forecasting indices
+    # Any index should work since they are the same for all filters
+    results = all_filter_results[0]
+    start_idx_filter=results['start_idx_filter']
+    stop_idx_filter=results['stop_idx_filter']
+    start_idx_forecast=results['start_idx_forecast']
+    stop_idx_forecast=results['stop_idx_forecast']
+
+    # Last time index used for filtering
+    t_split = t_emissions[stop_idx_filter - 1]  if stop_idx_filter > 0 else t_emissions[start_idx_forecast]
+    
+    # Plot Layout
+    plot_rows = d_states
+    plot_cols = 1
+
+    # Plot MSE if required, in second column
+    if plot_mse:
+        plot_cols += 1
+
+    fig, axes = plt.subplots(
+        nrows=plot_rows,
+        ncols=plot_cols,
+        sharex=True,
+        constrained_layout=True
+    )
+    if plot_rows == 1:
+        axes = [axes]
+
+    # === State plots ===
+    for d in range(d_states):
+        ### True data
+        data_plotter(
+            ax=axes[d] if plot_mse == False else axes[d][0],
+            t_idx=t_emissions,
+            states=data['states'][:, d],
+            state_label='True State' if d == 0 else "", # Add label only for the first plot
+            state_style=true_state_style,
+            emissions=data['emissions'][:, d],
+            emission_label='True Observation' if d == 0 else "", # Add label only for the first plot
+            emissions_style=true_emission_style,
+            plot_observations=plot_observations,
+        )
+        # Loop over each filter result to plot
+        for filter_idx, results in enumerate(all_filter_results):
+            ## Filter name and style
+            this_filter_name = all_filter_info[filter_idx]['name'] if 'name' in all_filter_info[filter_idx] else "Filter {}".format(filter_idx + 1)
+            this_filter_style = eval(all_filter_info[filter_idx]['filtered_style']) if 'filtered_style' in all_filter_info[filter_idx] else default_filtered_style
+
+            ### Filtered time-series
+            ts_plotter(
+                ax=axes[d] if plot_mse == False else axes[d][0],
+                t_idx=t_emissions[start_idx_filter:stop_idx_filter],
+                f_mean=results['filtered']['filtered_means'][:, d],
+                f_std=np.sqrt(
+                    np.clip(
+                        np.asarray(results['filtered']['filtered_covariances'])[:, d, d],
+                        0, np.inf
+                    )
+                ),
+                label='Filtered State - {}'.format(
+                    this_filter_name
+                ) if d == 0 else "", # Add label only for the first plot
+                line_style=this_filter_style,
+                fill_style={
+                    'color': this_filter_style['color'],
+                    'alpha': this_filter_style['alpha'],
+                    'linewidth': 0
+                },
+                plot_uncertainty=plot_uncertainty
+            )
+            ### Filtered MSE
+            if plot_mse:
+                # Compute MSE for filtered states
+                filtered_mse = (data['states'][start_idx_filter:stop_idx_filter, d] - results['filtered']['filtered_means'][:, d])**2
+
+                # In new column, plot the MSE
+                axes[d][1].plot(
+                    t_emissions[start_idx_filter:stop_idx_filter],
+                    filtered_mse,
+                    label='Filtered MSE - {}'.format(
+                        this_filter_name
+                    ) if d == 0 else "",
+                    color=this_filter_style['color'],
+                    linestyle='--',
+                    linewidth=1.0,
+                    alpha=0.7
+                )
+            
+            ### Forecast name and style
+            this_forecast_style = eval(all_filter_info[filter_idx]['forecasted_style']) if 'forecasted_style' in all_filter_info[filter_idx] else default_forecasted_style
+
+            ### Forecasted time-series
+            ts_plotter(
+                ax=axes[d] if plot_mse == False else axes[d][0],
+                t_idx=t_emissions[start_idx_forecast:stop_idx_forecast],
+                f_mean=results['forecasted']['forecasted_state_means'][:, d],
+                f_std=np.sqrt(
+                    np.clip(
+                        np.asarray(results['forecasted']['forecasted_state_covariances'])[:, d, d],
+                        0, np.inf
+                    )
+                ),
+                label="", #'Forecasted State' if d == 0 else "", # Add label only for the first plot
+                line_style=this_forecast_style,
+                fill_style={
+                    'color': this_forecast_style['color'],
+                    'alpha': this_forecast_style['alpha'],
+                    'linewidth': 0
+                },
+                plot_uncertainty=plot_uncertainty
+            )
+
+            ### Forecasted MSE
+            if plot_mse:
+                # Compute MSE for forecasted states
+                forecasted_mse = (data['states'][start_idx_forecast:stop_idx_forecast, d] - results['forecasted']['forecasted_state_means'][:, d])**2
+
+                # In new column, plot the MSE
+                axes[d][1].plot(
+                    t_emissions[start_idx_forecast:stop_idx_forecast],
+                    forecasted_mse,
+                    label="", #'Forecasted MSE' if d == 0 else "",
+                    color=this_forecast_style['color'],
+                    linestyle='--',
+                    linewidth=1.0,
+                    alpha=0.7
+                )
+        
+            # Plot vertical line at the split time
+            plot_vertical_split_line(
+                axes[d] if plot_mse == False else axes[d][0],
+                t_split,
+                vertical_line_style={'color': 'k', 'linestyle': '--', 'linewidth': 1.2, 'alpha': 0.8}
+            )
+
+        # Set titles and labels
+        (axes[d] if plot_mse == False else axes[d][0]).set_title(f"State $x_{d+1}$ over time", fontsize=8)
+        (axes[d] if plot_mse == False else axes[d][0]).set_ylabel(f"$x_{d+1}$", fontsize=8)
+        (axes[d] if plot_mse == False else axes[d][0]).grid(True)
+        if plot_mse:
+            axes[d][1].set_title(f"State $x_{d+1}$ MSE over time", fontsize=8)
+            axes[d][1].set_ylabel(f"MSE of $x_{d+1}$", fontsize=8)
+            axes[d][1].grid(True)
+
+    # time xlabel for the last state plot
+    (axes[d] if plot_mse == False else axes[d][0]).set_xlabel("Time", fontsize=8)
+    if plot_mse:
+        axes[d][1].set_xlabel("Time", fontsize=8)
+
+    # Overall figure legend
+    fig.legend(
+        loc='center left',
+        bbox_to_anchor=(1.0, 0.5),
+        fontsize=8
+    )
+
+    fig.suptitle(
+        "Comparison of Filter-then-Forecast on States (vertical line = forecast start)",
+        fontsize=10
+    )
+
+    # Save the figure, within a figures directory at results directory
+    
+    fig.savefig(
+        plot_filename,
+        dpi=plot_dpi,
+        bbox_inches='tight' # Use bbox_inches='tight' as a safeguard
+    )
+    print("Compare Filter-then-Forecast states plot saved to:", plot_filename)
+    plt.close(fig)

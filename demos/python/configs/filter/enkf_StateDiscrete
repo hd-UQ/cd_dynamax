@@ -8,3 +8,6 @@ diffeqsolve_settings_file: configs/solver/dt1e-2_maxSteps1e9
 
 [filter_info]
 name=EnKF (Discrete state)
+# Plotting styles
+filtered_style = {'color': '#7f1d1d', 'linestyle': '-', 'linewidth': 1.5, 'alpha': 0.7}
+forecasted_style = {'color': '#7f1d1d', 'linestyle': '--', 'linewidth': 1.5, 'alpha': 0.7}
