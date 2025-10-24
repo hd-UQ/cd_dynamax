@@ -5,7 +5,6 @@ import pickle
 
 from cd_dynamax.src.utils.experiment_utils import *
 from cd_dynamax.src.utils.simulation_utils import *
-from cd_dynamax.src.continuous_discrete_nonlinear_gaussian_ssm.cdnlgssm_utils import update_params
 
 def generate_data_from_config(
         data_config_file=None,
@@ -104,8 +103,16 @@ def generate_data_from_config(
                 transition_type=transition_type
             )
 
+            # Save the true data generating model
+            true_model_info = {
+                'model': true_model,
+                'params': true_params,
+                # No need to save props for now, they are not mandatory for data generation
+            }
+
             # Save the generated data
             generated_data = {
+                'dgmodel_info': true_model_info,
                 'states': states,
                 'emissions': emissions,
                 't_emissions': t_emissions,
@@ -123,10 +130,13 @@ def generate_data_from_config(
         if os.path.exists(data_save_file):
             print(f"Warning: The file '{data_save_file}' already exists. It will be overwritten.")   
 
+        # Save the generated data
         with open(data_save_file, 'wb') as f:
             pickle.dump(generated_data, f)
 
         print(f"Data saved to {data_save_file}.")
+
+    # Return the generated data and the data key
     return generated_data, data_config['data_generation'].getint('key', 0)
 
 # Main script gets two arguments: config file and data save file
@@ -138,7 +148,7 @@ if __name__ == "__main__":
         sys.exit(1)   
     
     # Generate data from the configuration file
-    generated_data = generate_data_from_config(
+    generated_data, data_key = generate_data_from_config(
         data_config_file=sys.argv[1],
         data_save_file=sys.argv[2]
     )

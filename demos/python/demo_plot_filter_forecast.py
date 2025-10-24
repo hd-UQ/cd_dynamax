@@ -726,3 +726,4 @@ def compare_filter_then_forecast_state_results(
     )
     print("Compare Filter-then-Forecast states plot saved to:", plot_filename)
     plt.close(fig)
+

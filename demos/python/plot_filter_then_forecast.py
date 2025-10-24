@@ -9,7 +9,7 @@ from cd_dynamax.src.utils.simulation_utils import filter_and_forecast
 from cd_dynamax.src.continuous_discrete_nonlinear_gaussian_ssm.cdnlgssm_utils import update_params
 
 # Demo plotting import
-from demo_plot_utils import (
+from demo_plot_filter_forecast import (
     plot_filter_then_forecast_state_results,
     plot_filter_then_forecast_state_emission_results,
 )

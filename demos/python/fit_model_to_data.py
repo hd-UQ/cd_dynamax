@@ -52,7 +52,7 @@ def fit_model_to_data(
         overrides=overrides
     )
 
-    ## Run series of inferences based on inference config --- [INFERENCE CONFIG FILE]
+    ## Run series of inferences based on inference config
     config = ConfigParser()
     config.read(fit_config_file)
 
@@ -198,11 +198,11 @@ def fit_model_to_data(
 if __name__ == "__main__":
     # Create optional flags for comamand line arguments
     import argparse
-    parser = argparse.ArgumentParser(description='Run experiment with specified configurations.')
+    parser = argparse.ArgumentParser(description='Fit model to data, according to specified configurations of data, model and filtering.')
     parser.add_argument('--data_config_file', type=str, default='configs/data/true_l63_data',
                         help='Data configuration file: (default: true_l63_data)')
-    parser.add_argument('--model_config_file', type=str, default='configs/model/true_l63_mech',
-                        help='Model configuration file: (default: true_l63_mech)')
+    parser.add_argument('--model_config_file', type=str, default='configs/model/l63_mech',
+                        help='Model configuration file: (default: l63_mech)')
     parser.add_argument('--filter_config_file', type=str, default='configs/filter/ekf_StateFirst_EmissionsFirst', 
                         help='Filter configuration file: (default: ekf_StateFirst_EmissionsFirst)')
     parser.add_argument('--fit_config_file', type=str, default='configs/fitting/fit_sgd',

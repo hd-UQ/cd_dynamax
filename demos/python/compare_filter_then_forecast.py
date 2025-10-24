@@ -5,11 +5,9 @@ import pickle
 # CD-NLGSSM imports
 from data_generator import generate_data_from_config
 from cd_dynamax.src.utils.experiment_utils import *
-from cd_dynamax.src.utils.simulation_utils import filter_and_forecast
-from cd_dynamax.src.continuous_discrete_nonlinear_gaussian_ssm.cdnlgssm_utils import update_params
 
 # Demo plotting import
-from demo_plot_utils import (
+from demo_plot_filter_forecast import (
     compare_filter_then_forecast_state_results,
 )
 
@@ -51,6 +49,7 @@ def compare_filter_then_forecast(
     if not os.path.exists(results_dir):
         print("Warning: Results directory does not exist at:", results_dir)
         print("Please run the filtering and forecasting experiment first to generate results.")
+        import pdb; pdb.set_trace()
         return
 
     if enforce_twin_experiment:
@@ -173,6 +172,12 @@ if __name__ == "__main__":
     else:
         filter_config_files = args.filter_config_file
 
+    # Prepare overrides dictionary
+    overrides = {}
+    if args.data_key is not None:
+        for data_key in args.data_key:
+            overrides['data_generation.key'] = data_key
+
     # Compare filter results from multiple filter config files
     compare_filter_then_forecast(
         data_config_file=args.data_config_file,
@@ -182,5 +187,5 @@ if __name__ == "__main__":
         T_filter=args.T_filter,
         enforce_twin_experiment=args.enforce_twin_experiment,
         ftf_key=args.ftf_key,
-        overrides={}
+        overrides=overrides,
     )
