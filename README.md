@@ -84,9 +84,9 @@ These scripts illustrate how to learn components of continuous-discrete SDEs fro
 
 In particular, we provide easy demonstrations for using `numpyro` to define priors and perform parameter inference using HMC or SVI with likelihoods computed via continuous-discrete filtering in `cd_dynamax`. Demos include:
 
-- [Intro tutorial][./demos/notebooks/lorenz63_filter-based_likelihood_tutorial.ipynb] to filtering-based likelihood computation for continuous-discrete SDEs.
+- [Intro tutorial](./demos/notebooks/lorenz63_filter-based_likelihood_tutorial.ipynb) to filtering-based likelihood computation for continuous-discrete SDEs.
 
-- [Impressive example (be very impressed!)][./demos/notebooks/lorenz63_neuralSDE_partial_observation.ipynb] of learning a neural SDE from partial, noisy observations of the Lorenz 63 system. This is quite hard and most methods would struggle here---and yet, a simple Bayesian maximum-likelihood framing works well!
+- [Impressive example (be very impressed!)](./demos/notebooks/lorenz63_neuralSDE_partial_observation.ipynb) of learning a neural SDE from partial, noisy observations of the Lorenz 63 system. This is quite hard and most methods would struggle here---and yet, a simple Bayesian maximum-likelihood framing works well!
 
 - Learning drift functions from noisy, irregularly-sampled data:
     - Lorenz 63 system:
