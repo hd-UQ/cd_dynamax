@@ -77,7 +77,7 @@ All of these problems are deeply interconnected.
 
 ### Numpyro-based API
 
-We provide a set of [demos](./cd_dynamax/demos) that showcase key functionality of `cd-dynamax`, by interacting with the core-functionalities via `numpyro`.
+We provide a set of [demos](./demos) that showcase key functionality of `cd-dynamax`, by interacting with the core-functionalities via `numpyro`.
 
 These scripts illustrate how to learn components of continuous-discrete SDEs from data.
 
@@ -87,31 +87,31 @@ In particular, we provide easy demonstrations for using `numpyro` to define prio
     - Lorenz 63 system:
         - Sparse dictionary learning (all 3 components observed): 
             ```bash
-            python ./cd_dynamax/demos/l63_LaplaceDict.py --emission_dim 3
+            python ./demos/numpyro/l63_LaplaceDict.py --emission_dim 3
             ```
         - Partial observations (only 1st component): 
             ```bash
-            python ./cd_dynamax/demos/l63_nn.py --emission_dim 1 --state_dim 3
+            python ./demos/numpyro/l63_nn.py --emission_dim 1 --state_dim 3
             ```
     - Lorenz 96 system:
         - Sparse dictionary learning (5 components): 
         ```bash
-        python ./cd_dynamax/demos/l96_LaplaceDict.py --emission_dim 5 --state_dim 5
+        python ./demos/numpyro/l96_LaplaceDict.py --emission_dim 5 --state_dim 5
         ```
         - Sparse dictionary learning (10 components): 
         ```bash
-        python ./cd_dynamax/demos/l96_LaplaceDict.py --emission_dim 10 --state_dim 10 --N_particles 100
+        python ./demos/numpyro/l96_LaplaceDict.py --emission_dim 10 --state_dim 10 --N_particles 100
         ```
 
     - Linear SDE:
         - Learning a linear SDE from multiple i.i.d. noisy trajectories. In this setting, all trajectories are assumed to come from the *same* underlying linear system.  
 
         ```bash
-        python ./cd_dynamax/demos/LinearGaussian_MultiTraj.py --emission_dim 5 --state_dim 5 --N_trajectories 30
+        python ./demos/numpyro/LinearGaussian_MultiTraj.py --emission_dim 5 --state_dim 5 --N_trajectories 30
         ```
         - Hierarchical learning of linear SDEs from multiple noisy trajectories. Here, we assume each trajectory comes from a different, yet similar, linear SDE.  
         ```bash
-        python ./cd_dynamax/demos/LinearGaussian_MultiTraj_KF_Hierarchical.py --emission_dim 5 --state_dim 5 --N_trajectories 30
+        python ./demos/numpyro/LinearGaussian_MultiTraj_KF_Hierarchical.py --emission_dim 5 --state_dim 5 --N_trajectories 30
         ```
 ## Installation
 
