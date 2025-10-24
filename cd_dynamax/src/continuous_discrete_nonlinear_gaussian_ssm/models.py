@@ -482,15 +482,15 @@ class ContDiscreteNonlinearGaussianSSM(SSM):
         t_emissions=None,
         inputs=None,
         filter_type: str = "EnKF",
-        state_order: str = "first",
-        emission_order: str = "first",
-        N_particles: int = 25,
+        filter_state_order: str = "first",
+        filter_emission_order: str = "first",
+        filter_num_iter: int = 1,
+        filter_state_cov_rescaling: float = 1.0,
+        enkf_N_particles: int = 25,
+        enkf_inflation_delta: float = 0.0,
         diffeqsolve_max_steps: int = 100,
-        dt0: float = 1e-2,
-        inflation_delta: float = 0.0,
-        cov_rescaling: float = 1.0,
-        dt_average: float = 1e-2,
-        num_iter: int = 1,
+        diffeqsolve_dt0: float = 1e-2,
+        diffeqsolve_dt_average: float = 1e-2,
         output_fields=None,
         key=jr.PRNGKey(0),
         diffeqsolve_kwargs: Optional[dict] = {},
@@ -499,49 +499,59 @@ class ContDiscreteNonlinearGaussianSSM(SSM):
         """High-level filtering interface.
 
         Args:
+            params: Model parameters.
+            emissions: Emission sequence.
+            t_emissions: Time points corresponding to emissions (continuous-time only).
+            inputs: Optional input sequence.
             filter_type: Which filter to run ("EKF", "EnKF", "UKF").
-            state_order: Order of Taylor expansion for dynamics.
-            emission_order: Order of Taylor expansion for emissions (EKF only).
-            N_particles: Number of particles (for EnKF only).
+            filter_state_order: Order of Taylor expansion for dynamics used in the filter.
+            filter_emission_order: Order of Taylor expansion for emissions used in the EKF filter only.
+            filter_num_iter: Number of iterations for iterated filters (EKF only).
+            filter_state_cov_rescaling: Rescale state covariance by this factor after each update (inflation delta is better for accurate likelihoods)
+            enkf_N_particles: Number of particles (for EnKF only).
+            enkf_inflation_delta: EnKF covariance inflation (ignored by EKF/UKF).
             diffeqsolve_max_steps: Max steps for ODE solver between observations.
-            dt0: Initial step size for ODE/SDE solver (default is fixed step size).
-            inflation_delta: EnKF covariance inflation (ignored by EKF/UKF).
-            cov_rescaling: Rescale state covariance by this factor after each update (inflation delta is better for accurate likelihoods)
-            dt_average: [Only for state_order="Discrete"] Average step size to determine constant state noise cov.
+            diffeqsolve_dt0: Initial step size for ODE/SDE solver (default is fixed step size).
+            diffeqsolve_dt_average: [Only for state_order="Discrete"] Average step size to determine constant state noise cov.
+            output_fields: Which fields to return from the filter.
+            key: Random number generator key.
             diffeqsolve_kwargs: Extra kwargs for the ODE solver
                 (e.g., {"solver": diffrax.Heun(), "dt0": 1e-2}).
             filter_kwargs: Extra kwargs specific to the chosen filter
                 (e.g., {"emission_order": "zeroth"} for EKF).
         """
 
-        diffeqsolve_settings = {"max_steps": diffeqsolve_max_steps,
-                                "dt0": dt0,
-                                **diffeqsolve_kwargs}
-
-        common_args = {
-            "state_order": state_order,
+        # Prepare diffeqsolve settings
+        diffeqsolve_settings = {
+            "max_steps": diffeqsolve_max_steps,
+            "dt0": diffeqsolve_dt0,
+            "dt_average": diffeqsolve_dt_average,
+            **diffeqsolve_kwargs
+        }
+        
+        # Prepare filtering settings
+        common_filter_args = {
+            "state_order": filter_state_order,
             "diffeqsolve_settings": diffeqsolve_settings,
-            "dt_average": dt_average,
-            "cov_rescaling": cov_rescaling,
-            "diffeqsolve_settings": diffeqsolve_settings,
+            "cov_rescaling":  filter_state_cov_rescaling,
         }
         
         if filter_type == "EKF":
             filter_hyperparams = EKFHyperParams(
-                emission_order=emission_order,
-                **common_args,
+                emission_order=filter_emission_order,
+                **common_filter_args,
                 **extra_filter_kwargs,
             )
         elif filter_type == "EnKF":
             filter_hyperparams = EnKFHyperParams(
-                N_particles=N_particles,
-                inflation_delta=inflation_delta,
-                **common_args,
+                N_particles=enkf_N_particles,
+                inflation_delta=enkf_inflation_delta,
+                **common_filter_args,
                 **extra_filter_kwargs,
             )
         elif filter_type == "UKF":
             filter_hyperparams = UKFHyperParams(
-                **common_args,
+                **common_filter_args,
                 **extra_filter_kwargs,
             )
         else:
@@ -553,7 +563,7 @@ class ContDiscreteNonlinearGaussianSSM(SSM):
             t_emissions=t_emissions,
             filter_hyperparams=filter_hyperparams,
             inputs=inputs,
-            num_iter=num_iter,
+            num_iter=filter_num_iter,
             output_fields=output_fields,
             key=key,
         )

@@ -225,7 +225,7 @@ class ParamsCDNLGSSMEmissions(NamedTuple):
 
 # CDNLGSSM parameters are different to CDLGSSM due to nonlinearities
 class ParamsCDNLGSSM(NamedTuple):
-    r"""Parameters of a linear Gaussian SSM.
+    r"""Parameters of a nonlinear Gaussian SSM.
 
     :param initial: initial distribution parameters
     :param dynamics: dynamics distribution parameters
@@ -240,24 +240,6 @@ class ParamsCDNLGSSM(NamedTuple):
     initial: ParamsLGSSMInitial
     dynamics: ParamsCDNLGSSMDynamics
     emissions: ParamsCDNLGSSMEmissions 
-
-'''
-# CDNLSSM parameters are different to CDNLGSSM due to non-gaussian transitions
-class ParamsCDNLGSSM(NamedTuple):
-    r"""Parameters of a linear Gaussian SSM.
-
-    :param initial: initial distribution parameters
-    :param dynamics: dynamics distribution parameters
-    :param emissions: emission distribution parameters
-
-    The assumed transition and emission distributions are
-    $$p(z_1) = N(z_1 | m, S)$$
-    
-    """
-    initial: ParamsLGSSMInitial
-    dynamics: ParamsCDNLSSMDynamics
-    emissions: ParamsCDNLGSSMEmissions 
-'''
 
 # Some auxiliary functions for parameter handling
 ## Only use the values above if the user hasn't specified their own
