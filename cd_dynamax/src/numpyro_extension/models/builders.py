@@ -46,24 +46,24 @@ def wrap_function_or_constant(obj, expected_shape=None) -> eqx.Module:
 # -------------------------
 # Param containers
 # -------------------------
-class InitialParams(eqx.Module):
+class CDNLGSSMInitialParams(eqx.Module):
     mean: eqx.Module
     cov: eqx.Module
 
-class DynamicsParams(eqx.Module):
+class CDNLGSSMDynamicsParams(eqx.Module):
     drift: eqx.Module
     diffusion_cov: eqx.Module
     diffusion_coefficient: eqx.Module
     approx_order: float = 1.0
 
-class EmissionsParams(eqx.Module):
+class CDNLGSSMEmissionsParams(eqx.Module):
     emission_function: eqx.Module
     emission_cov: eqx.Module
 
-class SimpleParams(eqx.Module):
-    initial: InitialParams
-    dynamics: DynamicsParams
-    emissions: EmissionsParams
+class CDNLGSSMParams(eqx.Module):
+    initial: CDNLGSSMInitialParams
+    dynamics: CDNLGSSMDynamicsParams
+    emissions: CDNLGSSMEmissionsParams
 
 # -------------------------
 # Param construction
@@ -109,8 +109,8 @@ def build_params(
         Should only accept (x, u, t) or a subset of these.
     Returns
     -------
-    SimpleParams
-        An instance of SimpleParams containing the wrapped parameters.
+    CDNLGSSMParams
+        An instance of CDNLGSSMParams containing the wrapped parameters.
     Raises
     ------
     ValueError
@@ -121,19 +121,19 @@ def build_params(
     If they accept additional arguments, a ValueError will be raised.    
     '''
         
-    return SimpleParams(
-        initial=InitialParams(
+    return CDNLGSSMParams(
+        initial=CDNLGSSMInitialParams(
             mean=wrap_function_or_constant(_default(initial_mean, jnp.zeros(state_dim))),
             cov=wrap_function_or_constant(_default(initial_cov, jnp.eye(state_dim))),
         ),
-        dynamics=DynamicsParams(
+        dynamics=CDNLGSSMDynamicsParams(
             drift=wrap_function_or_constant(drift),
             diffusion_cov=wrap_function_or_constant(_default(diffusion_cov, jnp.eye(state_dim))),
             diffusion_coefficient=wrap_function_or_constant(
                 _default(diffusion_coeff, 1e-2 * jnp.ones(state_dim))
             ),
         ),
-        emissions=EmissionsParams(
+        emissions=CDNLGSSMEmissionsParams(
             emission_function=wrap_function_or_constant(
                 _default(emission_function, lambda x: x[:emission_dim])
             ),
