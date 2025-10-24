@@ -495,6 +495,7 @@ class ContDiscreteNonlinearGaussianSSM(SSM):
         key=jr.PRNGKey(0),
         diffeqsolve_kwargs: Optional[dict] = {},
         extra_filter_kwargs: Optional[dict] = {},
+        warn: bool = True,
     ):
         """High-level filtering interface.
 
@@ -519,6 +520,7 @@ class ContDiscreteNonlinearGaussianSSM(SSM):
                 (e.g., {"solver": diffrax.Heun(), "dt0": 1e-2}).
             filter_kwargs: Extra kwargs specific to the chosen filter
                 (e.g., {"emission_order": "zeroth"} for EKF).
+            warn: whether to issue warnings (e.g., about PSD issues)
         """
 
         # Prepare diffeqsolve settings
@@ -566,6 +568,7 @@ class ContDiscreteNonlinearGaussianSSM(SSM):
             num_iter=filter_num_iter,
             output_fields=output_fields,
             key=key,
+            warn=warn,
         )
 
     def smoother(self, *args, **kwargs):
@@ -834,7 +837,8 @@ def cdnlgssm_filter(
     inputs: Optional[Float[Array, "ntime input_dim"]] = None,
     num_iter: Optional[int] = 1,
     output_fields: Optional[List[str]]=None,
-    key: PRNGKey=jr.PRNGKey(0)
+    key: PRNGKey=jr.PRNGKey(0),
+    warn: bool = True,
 ) -> PosteriorGSSMFiltered:
     r"""Run an continuous-discrete nonlinear filter to produce the
         marginal likelihood and filtered state estimates.
@@ -851,6 +855,8 @@ def cdnlgssm_filter(
         output_fields: list of fields to return in posterior object.
             These can take the values "filtered_means", "filtered_covariances",
             "predicted_means", "predicted_covariances", and "marginal_loglik".
+        key: random key (e.g., for EnKF).
+        warn: whether to issue warnings during filtering.
 
     Returns:
         post: posterior object.
@@ -860,40 +866,25 @@ def cdnlgssm_filter(
     if filter_hyperparams is None:
         filter_hyperparams = EKFHyperParams()
     
-    extra_args = {}
+    common_args = {
+        "params": params,
+        "emissions": emissions,
+        "t_emissions": t_emissions,
+        "filter_hyperparams": filter_hyperparams,
+        "inputs": inputs,
+        "warn": warn,
+    }
+    
     if output_fields is not None:
-        extra_args["output_fields"] = output_fields
+        common_args["output_fields"] = output_fields
         
     # TODO: this can be condensed, by incorporating num_iter into hyperparams of EKF
     if isinstance(filter_hyperparams, EKFHyperParams):
-        filtered_posterior=iterated_extended_kalman_filter(
-            params = params,
-            emissions = emissions,
-            t_emissions = t_emissions,
-            filter_hyperparams = filter_hyperparams,
-            inputs = inputs,
-            num_iter = num_iter,
-            **extra_args,
-        )
+        filtered_posterior=iterated_extended_kalman_filter(**common_args,num_iter = num_iter)
     elif isinstance(filter_hyperparams, EnKFHyperParams):
-        filtered_posterior=ensemble_kalman_filter(
-            params = params,
-            emissions = emissions,
-            t_emissions = t_emissions,
-            filter_hyperparams = filter_hyperparams,
-            inputs = inputs,
-            key = key,
-            **extra_args,
-        )
+        filtered_posterior=ensemble_kalman_filter(**common_args, key = key)
     elif isinstance(filter_hyperparams, UKFHyperParams):
-        filtered_posterior=unscented_kalman_filter(
-            params = params,
-            emissions = emissions,
-            t_emissions = t_emissions,
-            filter_hyperparams = filter_hyperparams,
-            inputs = inputs,
-            **extra_args,
-        )
+        filtered_posterior=unscented_kalman_filter(**common_args)
     
     # TODO: use and leverage output_fields to have more or less granular returned posterior object
     return filtered_posterior
@@ -906,7 +897,8 @@ def cdnlgssm_smoother(
     inputs: Optional[Float[Array, "ntime input_dim"]] = None,
     num_iter: Optional[int] = 1,
     output_fields: Optional[List[str]]=["filtered_means", "filtered_covariances", "smoothed_means", "smoothed_covariances", "marginal_loglik"],
-    key: PRNGKey=jr.PRNGKey(0)
+    key: PRNGKey=jr.PRNGKey(0),
+    warn: bool = True,
 ) -> PosteriorGSSMFiltered:
     r"""Run an continuous-discrete nonlinear smoother to produce the
         marginal likelihood and smoothed state estimates.
@@ -924,6 +916,7 @@ def cdnlgssm_smoother(
             These can take the values "filtered_means", "filtered_covariances",
             "smoothed_means", "smoothed_covariances", and "marginal_loglik".
         key: random key (e.g., for EnKS).
+        warn: whether to issue warnings during smoothing (e.g., PSD issues).
 
     Returns:
         post: posterior object.
@@ -938,6 +931,7 @@ def cdnlgssm_smoother(
             filter_hyperparams = filter_hyperparams,
             inputs = inputs,
             num_iter = num_iter,
+            warn= warn,
         )
     elif isinstance(filter_hyperparams, EnKFHyperParams):
         raise ValueError('EnKS not implemented yet')
@@ -960,6 +954,7 @@ def cdnlgssm_forecast(
     ],
     key: PRNGKey=jr.PRNGKey(0),
     diffeqsolve_settings: dict = {},
+    warn: bool = True,
 ) -> GSSMForecast:
     r"""Run an continuous-discrete nonlinear model to produce the forecasted state estimates.
         
@@ -984,6 +979,7 @@ def cdnlgssm_forecast(
                     "forecasted_state_path".
         key: random key (e.g., for Ensemble Kalman).
         diffeqsolve_settings: settings for the SDE solver
+        warn: whether to issue warnings during forecasting (e.g., PSD issues).
 
     Returns:
         post: forecasted object.
@@ -992,40 +988,27 @@ def cdnlgssm_forecast(
     # Double-check filter_hyperparams is not None
     if filter_hyperparams is None:
         filter_hyperparams = EKFHyperParams()
+
+    common_args = {
+        "params": params,
+        "init_forecast": init_forecast,
+        "t_init": t_init,
+        "t_forecast": t_forecast,
+        "filter_hyperparams": filter_hyperparams,
+        "inputs": inputs,
+        "output_fields": output_fields,
+        "warn": warn,
+    }
+        
     # Check whether init_forecast is a distribution or a point estimate
     if isinstance(init_forecast, tfd.Distribution):
         # Forecasting a distribution, based on different filters
         if isinstance(filter_hyperparams, EKFHyperParams):
-            forecast=forecast_extended_kalman_filter(
-                params = params,
-                init_forecast = init_forecast,
-                t_init = t_init,
-                t_forecast = t_forecast,
-                filter_hyperparams = filter_hyperparams,
-                inputs = inputs,
-                output_fields=output_fields
-            )
+            forecast=forecast_extended_kalman_filter(**common_args)
         elif isinstance(filter_hyperparams, EnKFHyperParams):
-            forecast=forecast_ensemble_kalman_filter(
-                params = params,
-                init_forecast = init_forecast,
-                t_init = t_init,
-                t_forecast = t_forecast,
-                filter_hyperparams = filter_hyperparams,
-                inputs = inputs,
-                output_fields=output_fields,
-                key = key
-            )
+            forecast=forecast_ensemble_kalman_filter(**common_args, key = key)
         elif isinstance(filter_hyperparams, UKFHyperParams):
-            forecast=forecast_unscented_kalman_filter(
-                params = params,
-                init_forecast = init_forecast,
-                t_init = t_init,
-                t_forecast = t_forecast,
-                filter_hyperparams = filter_hyperparams,
-                inputs = inputs,
-                output_fields=output_fields
-            )
+            forecast=forecast_unscented_kalman_filter(**common_args)
     else:
         # Forecasting point estimates, based on pushing forward the model
         

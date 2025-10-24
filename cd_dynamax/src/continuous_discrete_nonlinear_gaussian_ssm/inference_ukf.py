@@ -111,7 +111,8 @@ def _predict(
     w_cov,
     W_matrix,
     u,
-    filter_hyperparams
+    filter_hyperparams,
+    warn: bool = True,
 ):
     """Predict next mean and covariance using additive UKF
 
@@ -126,6 +127,8 @@ def _predict(
         w_cov (2*D_hid+1,): 2n+1 weights to compute predicted covariance.
         W_matrix (2*D_hid+1,2*D_hid+1): matrix of weights defined by combining w_mean and w_cov as in eq. 3.82 of Saarka's Thesis.
         u (D_in,): inputs.
+        filter_hyperparams: hyper-parameters of the UKF.
+        warn: whether to issue warnings (e.g., about PSD issues)
 
     Returns:
         m_pred (D_hid,): predicted mean.
@@ -211,7 +214,7 @@ def _predict(
     return m_pred, P_pred
 
 
-def _condition_on(m, P, h, R, lamb, w_mean, w_cov, u, y, t):
+def _condition_on(m, P, h, R, lamb, w_mean, w_cov, u, y, t, warn: bool = True):
     """Condition a Gaussian potential on a new observation
 
     Duplicate of the _condition_on function in discrete case of inference_ukf.py
@@ -227,6 +230,7 @@ def _condition_on(m, P, h, R, lamb, w_mean, w_cov, u, y, t):
         u (D_in,): inputs.
         y (D_obs,): observation.black
         t (): time-instant of conditioning
+        warn: whether to issue warnings (e.g., about PSD issues)
 
     Returns:
         ll (float): log-likelihood of observation
@@ -243,7 +247,8 @@ def _condition_on(m, P, h, R, lamb, w_mean, w_cov, u, y, t):
     # Compute parameters needed to filter
     pred_mean = jnp.tensordot(w_mean, sigmas_cond_prop, axes=1)
     pred_cov = psd(
-        jnp.tensordot(w_cov, _outer(sigmas_cond_prop - pred_mean, sigmas_cond_prop - pred_mean), axes=1) + R
+        jnp.tensordot(w_cov, _outer(sigmas_cond_prop - pred_mean, sigmas_cond_prop - pred_mean), axes=1) + R,
+        warn=warn,
     )
     pred_cross = jnp.tensordot(w_cov, _outer(sigmas_cond - m, sigmas_cond_prop - pred_mean), axes=1)
 
@@ -253,7 +258,7 @@ def _condition_on(m, P, h, R, lamb, w_mean, w_cov, u, y, t):
     # Compute filtered mean and covariace
     K = psd_solve(pred_cov, pred_cross.T).T  # Filter gain
     m_cond = m + K @ (y - pred_mean)
-    P_cond = psd(P - K @ pred_cov @ K.T)
+    P_cond = psd(P - K @ pred_cov @ K.T, warn=warn)
     return ll, m_cond, P_cond
 
 
@@ -269,6 +274,7 @@ def unscented_kalman_filter(
         "predicted_means",
         "predicted_covariances",
     ],
+    warn: bool = True,
 ) -> PosteriorGSSMFiltered:
     """Run a unscented Kalman filter to produce the marginal likelihood and
     filtered state estimates.
@@ -280,6 +286,7 @@ def unscented_kalman_filter(
         filter_hyperparams: hyper-parameters.
         inputs: optional array of inputs.
         output_fields: list of fields to include in the output.
+        warn: whether to issue warnings (e.g., about PSD issues)
 
     Returns:
         filtered_posterior: posterior object.
@@ -327,14 +334,14 @@ def unscented_kalman_filter(
 
         # Condition on this emission
         log_likelihood, filtered_mean, filtered_cov = _condition_on(
-            pred_mean, pred_cov, h, R, lamb, w_mean, w_cov, u, y, t0
+            pred_mean, pred_cov, h, R, lamb, w_mean, w_cov, u, y, t0, warn=warn
         )
 
         # Update the log likelihood
         ll += log_likelihood
 
         # Predict the next state, based on UKF predict
-        pred_mean, pred_cov = _predict(filtered_mean, filtered_cov, params, t0, t1, lamb, w_mean, w_cov, W_matrix, u, filter_hyperparams)
+        pred_mean, pred_cov = _predict(filtered_mean, filtered_cov, params, t0, t1, lamb, w_mean, w_cov, W_matrix, u, filter_hyperparams, warn=warn)
 
         # Build carry and output states
         carry = (ll, pred_mean, pred_cov)
@@ -368,6 +375,7 @@ def unscented_kalman_smoother(
     t_emissions: Optional[Float[Array, "num_timesteps 1"]] = None,
     filter_hyperparams: UKFHyperParams = UKFHyperParams(),
     inputs: Optional[Float[Array, "ntime input_dim"]] = None,
+    warn: bool = True,
 ) -> PosteriorGSSMSmoothed:
     """Run a unscented Kalman (RTS) smoother.
 
@@ -377,6 +385,7 @@ def unscented_kalman_smoother(
         emissions: array of observations.
         hyperperams: hyper-parameters.
         inputs: optional inputs.
+        warn: whether to issue warnings (e.g., about PSD issues)
 
     Returns:
         nlgssm_posterior: posterior object.
@@ -471,6 +480,7 @@ def forecast_unscented_kalman_filter(
         "forecasted_state_means",
         "forecasted_state_covariances",
     ],
+    warn: bool = True,
 ) -> GSSMForecast:
     r"""Run an Unscented Kalman filter to forecast states.
 
@@ -482,6 +492,7 @@ def forecast_unscented_kalman_filter(
         filter_hyperparams: hyper-parameters of the EKF, related to the approximation order
         inputs: optional array of inputs.
         output_fields: list of fields to return 
+        warn: whether to issue warnings (e.g., about PSD issues)
 
     Returns:
         post: forecast object.
@@ -528,7 +539,8 @@ def forecast_unscented_kalman_filter(
             lamb,
             w_mean, w_cov, W_matrix,
             inputs[t0_idx],
-            filter_hyperparams
+            filter_hyperparams,
+            warn=warn,
         )
 
         # Build carry and output states
@@ -565,6 +577,7 @@ def emissions_unscented_kalman_filter(
     state_covs: Optional[Float[Array, "num_timesteps state_dim state_dim"]]=None,
     inputs: Optional[Float[Array, "num_timesteps input_dim"]] = None,
     filter_hyperparams: UKFHyperParams = UKFHyperParams(),
+    warn: bool = True,
 ) -> Tuple[
         Float[Array, "num_timesteps emission_dim"], Optional[Float[Array, "num_timesteps emission_dim emission_dim"]]
     ]:
@@ -579,6 +592,7 @@ def emissions_unscented_kalman_filter(
         inputs: optional array of inputs, of shape (1 + num_timesteps) \times input_dim
             - The extra input is needed for the initial emission, i.e., it should be at time t_init
         filter_hyperparams: hyper-parameters of the filter
+        warn: whether to issue warnings (e.g., about PSD issues)
 
     Returns:
         emissions_mean: mean of emissions
@@ -647,7 +661,8 @@ def emissions_unscented_kalman_filter(
                     sigmas_cond_prop - emission_mean
                 ),
                 axes=1
-            ) + R
+            ) + R,
+            warn=warn,
         )
         
         # Return carry and output states

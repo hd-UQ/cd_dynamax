@@ -119,7 +119,7 @@ def _predict(
     return x_pred
 
 
-def _condition_on(key, x, h, R, u, y, t, perturb_measurements=True, inflation_delta=0.0):
+def _condition_on(key, x, h, R, u, y, t, perturb_measurements=True, inflation_delta=0.0, warn: bool = True):
     """Condition a Gaussian potential on a new observation
 
     Args:
@@ -129,8 +129,10 @@ def _condition_on(key, x, h, R, u, y, t, perturb_measurements=True, inflation_de
         R (D_obs,D_obs): emssion covariance matrix
         u (D_in,): inputs.
         y (D_obs,): observation.black
-        perturb_measurements: whether to perturb the measurements.
         t: time-instant of conditioning
+        perturb_measurements: whether to perturb the measurements.
+        inflation_delta: inflation factor for ensemble spread.
+        warn: whether to warn about PSD issues.        
 
     Returns:
         ll (float): log-likelihood of observation
@@ -153,7 +155,8 @@ def _condition_on(key, x, h, R, u, y, t, perturb_measurements=True, inflation_de
     # compute predicted covariance of measurements as outer product of differences from mean
     # represents "HPH^T" in Kalman gain computation
     y_pred_cov = psd(
-        jnp.sum(_outer(y_ensemble - y_pred_mean, y_ensemble - y_pred_mean), axis=0) / (n_particles - 1)
+        jnp.sum(_outer(y_ensemble - y_pred_mean, y_ensemble - y_pred_mean), axis=0) / (n_particles - 1),
+        warn=warn
     )
 
     # Compute log-likelihood of observation
@@ -167,7 +170,8 @@ def _condition_on(key, x, h, R, u, y, t, perturb_measurements=True, inflation_de
         y_ensemble_infl = vmap(h, in_axes=(0, None, None))(x_inflated, u_s, t)
         y_pred_mean_infl = jnp.mean(y_ensemble_infl, axis=0)
         y_pred_cov_infl = psd(jnp.sum(_outer(y_ensemble_infl - y_pred_mean_infl,
-                                              y_ensemble_infl - y_pred_mean_infl), axis=0) / (n_particles - 1))
+                                              y_ensemble_infl - y_pred_mean_infl), axis=0) / (n_particles - 1),
+                              warn=warn)
     else:
         x_inflated = x
         y_ensemble_infl = y_ensemble
@@ -229,7 +233,8 @@ def ensemble_kalman_filter(
         "marginal_loglik",
         "posterior_extras",
     ],
-    key: PRNGKey=jr.PRNGKey(0)
+    key: PRNGKey=jr.PRNGKey(0),
+    warn: bool = True,
 ) -> PosteriorGSSMFiltered:
     """Run a ensemble Kalman filter to produce the marginal likelihood and
     filtered state estimates.
@@ -243,6 +248,7 @@ def ensemble_kalman_filter(
         inputs: optional array of inputs.
         output_fields: list of fields to include in the output.
         key: random key.
+        warn: whether to warn about PSD issues.
 
     Returns:
         filtered_posterior: posterior object.
@@ -288,7 +294,8 @@ def ensemble_kalman_filter(
         cond_dict = _condition_on(
             key_filter, pred_x_ens, h, R, u, y, t0,
             filter_hyperparams.perturb_measurements,
-            filter_hyperparams.inflation_delta
+            filter_hyperparams.inflation_delta,
+            warn=warn
         )
         filtered_x_ens = cond_dict['x_cond']
 
@@ -300,7 +307,8 @@ def ensemble_kalman_filter(
         filtered_cov = psd(
             jnp.sum(_outer(filtered_x_ens - filtered_mean, filtered_x_ens - filtered_mean), axis=0) / (
                 filter_hyperparams.N_particles - 1
-            )
+            ),
+            warn=warn
         )
 
         # Predict the next state, based on Ensemble prediction
@@ -311,7 +319,8 @@ def ensemble_kalman_filter(
         pred_cov = psd(
             jnp.sum(_outer(pred_x_ens - pred_mean, pred_x_ens - pred_mean), axis=0) / (
                 filter_hyperparams.N_particles - 1
-            )
+            ),
+            warn=warn
         )
 
         # Build carry and output states
@@ -375,7 +384,8 @@ def forecast_ensemble_kalman_filter(
         "forecasted_state_means",
         "forecasted_state_covariances",
     ],
-    key: PRNGKey=jr.PRNGKey(0)
+    key: PRNGKey=jr.PRNGKey(0),
+    warn: bool = True,
 ) -> GSSMForecast:
     r"""Run an Ensemble Kalman filter to forecast states
 
@@ -388,6 +398,7 @@ def forecast_ensemble_kalman_filter(
         inputs: optional array of inputs.
         output_fields: list of fields to return 
         key: random key.
+        warn: whether to warn about PSD issues.
 
     Returns:
         post: forecast object.
@@ -435,7 +446,8 @@ def forecast_ensemble_kalman_filter(
             jnp.sum(
                 _outer(pred_x_ens - pred_state_mean, pred_x_ens - pred_state_mean),
                 axis=0
-            ) / (filter_hyperparams.N_particles - 1)
+            ) / (filter_hyperparams.N_particles - 1),
+            warn=warn
         )    
 
         # Build carry and output states
@@ -479,7 +491,8 @@ def emissions_ensemble_kalman_filter(
     state_covs: Optional[Float[Array, "num_timesteps state_dim state_dim"]]=None,
     inputs: Optional[Float[Array, "num_timesteps input_dim"]] = None,
     filter_hyperparams: EnKFHyperParams = EnKFHyperParams(),
-    key: PRNGKey=jr.PRNGKey(0)
+    key: PRNGKey=jr.PRNGKey(0),
+    warn: bool = True,
 ) -> Tuple[
         Float[Array, "num_timesteps emission_dim"], Optional[Float[Array, "num_timesteps emission_dim emission_dim"]]
     ]:
@@ -495,6 +508,7 @@ def emissions_ensemble_kalman_filter(
             - The extra input is needed for the initial emission, i.e., it should be at time t_init
         filter_hyperparams: hyper-parameters of the filter
         key: random key.
+        warn: whether to warn about PSD issues.
 
     Returns:
         emissions_mean: mean of emissions
@@ -556,7 +570,8 @@ def emissions_ensemble_kalman_filter(
             jnp.sum(
                 _outer(y_ensemble - emission_mean, y_ensemble - emission_mean),
                 axis=0
-            ) / (filter_hyperparams.N_particles - 1) + R
+            ) / (filter_hyperparams.N_particles - 1) + R,
+            warn=warn
         )
 
         # Return carry and output states
