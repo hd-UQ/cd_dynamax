@@ -14,6 +14,9 @@ from cd_dynamax import (
     
 from cd_dynamax.src.utils.test_utils import compare, compare_structs
 
+# Whether to plot test results or not
+PLOT_TEST_RESULTS = True
+
 # JAX device check
 print("************* Checking JAX device *************")
 import jax

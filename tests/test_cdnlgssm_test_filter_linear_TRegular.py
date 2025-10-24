@@ -1,10 +1,12 @@
 # Imports
-import pdb
 import jax.numpy as jnp
 import jax.random as jr
 
 from cd_dynamax import ContDiscreteLinearGaussianSSM, ContDiscreteNonlinearGaussianSSM
 from cd_dynamax.src.utils.test_utils import compare, compare_structs
+
+# Whether to plot test results or not
+PLOT_TEST_RESULTS = True
 
 # JAX device check
 print("************* Checking JAX device *************")
@@ -497,40 +499,41 @@ cd_ekf_dist_forecasted = cdnlgssm_forecast(
     diffeqsolve_settings={},
 )
 
-print("Plotting EKF forecasted state path and distributions.")
-import matplotlib.pyplot as plt
-for n_state in jnp.arange(STATE_DIM):
-    plt.figure()
-    plt.plot(
-        t_forecast_emissions,
-        cd_ekf_point_forecasted.forecasted_state_path[:, n_state],
-        label="Forecasted path (point estimate)",
-        color="black"
-    )
-    plt.plot(
-        t_forecast_emissions,
-        cd_ekf_dist_forecasted.forecasted_state_means[:, n_state],
-        label="Forecasted state means (distribution)",
-        color="orange",
-        marker="o",
-        markerfacecolor="none",
-        markeredgewidth=2,
-        markersize=8,
-    )
-    plt.fill_between(
-        t_forecast_emissions[:, 0],
-        cd_ekf_dist_forecasted.forecasted_state_means[:, n_state] - jnp.sqrt(cd_ekf_dist_forecasted.forecasted_state_covariances[:, n_state, n_state]),
-        cd_ekf_dist_forecasted.forecasted_state_means[:, n_state] + jnp.sqrt(cd_ekf_dist_forecasted.forecasted_state_covariances[:, n_state, n_state]),
-        color="orange",
-        alpha=0.2,
-        label="Forecasted state uncertainty (1 std)",
-    )
-    plt.xlabel("Forecasted time")
-    plt.ylabel("x_{}".format(n_state))
-    plt.grid()
-    plt.legend()
-    plt.title("Forecasted states")
-    plt.show()
+if PLOT_TEST_RESULTS:
+    print("Plotting EKF forecasted state path and distributions.")
+    import matplotlib.pyplot as plt
+    for n_state in jnp.arange(STATE_DIM):
+        plt.figure()
+        plt.plot(
+            t_forecast_emissions,
+            cd_ekf_point_forecasted.forecasted_state_path[:, n_state],
+            label="Forecasted path (point estimate)",
+            color="black"
+        )
+        plt.plot(
+            t_forecast_emissions,
+            cd_ekf_dist_forecasted.forecasted_state_means[:, n_state],
+            label="Forecasted state means (distribution)",
+            color="orange",
+            marker="o",
+            markerfacecolor="none",
+            markeredgewidth=2,
+            markersize=8,
+        )
+        plt.fill_between(
+            t_forecast_emissions[:, 0],
+            cd_ekf_dist_forecasted.forecasted_state_means[:, n_state] - jnp.sqrt(cd_ekf_dist_forecasted.forecasted_state_covariances[:, n_state, n_state]),
+            cd_ekf_dist_forecasted.forecasted_state_means[:, n_state] + jnp.sqrt(cd_ekf_dist_forecasted.forecasted_state_covariances[:, n_state, n_state]),
+            color="orange",
+            alpha=0.2,
+            label="Forecasted state uncertainty (1 std)",
+        )
+        plt.xlabel("Forecasted time")
+        plt.ylabel("x_{}".format(n_state))
+        plt.grid()
+        plt.legend()
+        plt.title("Forecasted states")
+        plt.show()
 
 # Compute emissions from forecasted states
 from cd_dynamax import cdnlgssm_emissions
@@ -549,42 +552,41 @@ cd_ekf_dist_emissions_forecasted_means, cd_ekf_dist_emissions_forecasted_covaria
     inputs=inputs,
 )
 
-print("Plotting EKF forecasted emission path and distributions.")
-import matplotlib.pyplot as plt
-for n_emission in jnp.arange(EMISSION_DIM):
-    plt.figure()
-    plt.plot(
-        t_forecast_emissions,
-        cd_ekf_point_emissions_forecasted_means[:, n_emission],
-        label="Forecasted emission path (point estimate)",
-        color="black"
-    )
-    plt.plot(
-        t_forecast_emissions,
-        cd_ekf_dist_emissions_forecasted_means[:, n_emission],
-        label="Forecasted emission means (distribution)",
-        color="orange",
-        marker="o",
-        markerfacecolor="none",
-        markeredgewidth=2,
-        markersize=8,
-    )
-    plt.fill_between(
-        t_forecast_emissions[:, 0],
-        cd_ekf_dist_emissions_forecasted_means[:, n_emission] - jnp.sqrt(cd_ekf_dist_emissions_forecasted_covariances[:, n_emission, n_emission]),
-        cd_ekf_dist_emissions_forecasted_means[:, n_emission] + jnp.sqrt(cd_ekf_dist_emissions_forecasted_covariances[:, n_emission, n_emission]),
-        color="orange",
-        alpha=0.2,
-        label="Forecasted emission uncertainty (1 std)",
-    )
-    plt.xlabel("Forecasted time")
-    plt.ylabel("x_{}".format(n_state))
-    plt.grid()
-    plt.legend()
-    plt.title("Forecasted emissions")
-    plt.show()
-
-pdb.set_trace()
+if PLOT_TEST_RESULTS:
+    print("Plotting EKF forecasted emission path and distributions.")
+    import matplotlib.pyplot as plt
+    for n_emission in jnp.arange(EMISSION_DIM):
+        plt.figure()
+        plt.plot(
+            t_forecast_emissions,
+            cd_ekf_point_emissions_forecasted_means[:, n_emission],
+            label="Forecasted emission path (point estimate)",
+            color="black"
+        )
+        plt.plot(
+            t_forecast_emissions,
+            cd_ekf_dist_emissions_forecasted_means[:, n_emission],
+            label="Forecasted emission means (distribution)",
+            color="orange",
+            marker="o",
+            markerfacecolor="none",
+            markeredgewidth=2,
+            markersize=8,
+        )
+        plt.fill_between(
+            t_forecast_emissions[:, 0],
+            cd_ekf_dist_emissions_forecasted_means[:, n_emission] - jnp.sqrt(cd_ekf_dist_emissions_forecasted_covariances[:, n_emission, n_emission]),
+            cd_ekf_dist_emissions_forecasted_means[:, n_emission] + jnp.sqrt(cd_ekf_dist_emissions_forecasted_covariances[:, n_emission, n_emission]),
+            color="orange",
+            alpha=0.2,
+            label="Forecasted emission uncertainty (1 std)",
+        )
+        plt.xlabel("Forecasted time")
+        plt.ylabel("x_{}".format(n_state))
+        plt.grid()
+        plt.legend()
+        plt.title("Forecasted emissions")
+        plt.show()
 
 ##### ukf-based forecast
 ukf_params = UKFHyperParams(dt_final=1.)
@@ -615,40 +617,41 @@ cd_ukf_dist_forecasted = cdnlgssm_forecast(
     diffeqsolve_settings={},
 )
 
-print("Plotting ukf forecasted state path and distributions.")
-import matplotlib.pyplot as plt
-for n_state in jnp.arange(STATE_DIM):
-    plt.figure()
-    plt.plot(
-        t_forecast_emissions,
-        cd_ukf_point_forecasted.forecasted_state_path[:, n_state],
-        label="Forecasted path (point estimate)",
-        color="black"
-    )
-    plt.plot(
-        t_forecast_emissions,
-        cd_ukf_dist_forecasted.forecasted_state_means[:, n_state],
-        label="Forecasted state means (distribution)",
-        color="orange",
-        marker="o",
-        markerfacecolor="none",
-        markeredgewidth=2,
-        markersize=8,
-    )
-    plt.fill_between(
-        t_forecast_emissions[:, 0],
-        cd_ukf_dist_forecasted.forecasted_state_means[:, n_state] - jnp.sqrt(cd_ukf_dist_forecasted.forecasted_state_covariances[:, n_state, n_state]),
-        cd_ukf_dist_forecasted.forecasted_state_means[:, n_state] + jnp.sqrt(cd_ukf_dist_forecasted.forecasted_state_covariances[:, n_state, n_state]),
-        color="orange",
-        alpha=0.2,
-        label="Forecasted state uncertainty (1 std)",
-    )
-    plt.xlabel("Forecasted time")
-    plt.ylabel("x_{}".format(n_state))
-    plt.grid()
-    plt.legend()
-    plt.title("Forecasted states")
-    plt.show()
+if PLOT_TEST_RESULTS:
+    print("Plotting ukf forecasted state path and distributions.")
+    import matplotlib.pyplot as plt
+    for n_state in jnp.arange(STATE_DIM):
+        plt.figure()
+        plt.plot(
+            t_forecast_emissions,
+            cd_ukf_point_forecasted.forecasted_state_path[:, n_state],
+            label="Forecasted path (point estimate)",
+            color="black"
+        )
+        plt.plot(
+            t_forecast_emissions,
+            cd_ukf_dist_forecasted.forecasted_state_means[:, n_state],
+            label="Forecasted state means (distribution)",
+            color="orange",
+            marker="o",
+            markerfacecolor="none",
+            markeredgewidth=2,
+            markersize=8,
+        )
+        plt.fill_between(
+            t_forecast_emissions[:, 0],
+            cd_ukf_dist_forecasted.forecasted_state_means[:, n_state] - jnp.sqrt(cd_ukf_dist_forecasted.forecasted_state_covariances[:, n_state, n_state]),
+            cd_ukf_dist_forecasted.forecasted_state_means[:, n_state] + jnp.sqrt(cd_ukf_dist_forecasted.forecasted_state_covariances[:, n_state, n_state]),
+            color="orange",
+            alpha=0.2,
+            label="Forecasted state uncertainty (1 std)",
+        )
+        plt.xlabel("Forecasted time")
+        plt.ylabel("x_{}".format(n_state))
+        plt.grid()
+        plt.legend()
+        plt.title("Forecasted states")
+        plt.show()
 
 # Compute emissions from forecasted states
 from cd_dynamax import cdnlgssm_emissions
@@ -667,42 +670,42 @@ cd_ukf_dist_emissions_forecasted_means, cd_ukf_dist_emissions_forecasted_covaria
     inputs=inputs,
 )
 
-print("Plotting ukf forecasted emission path and distributions.")
-import matplotlib.pyplot as plt
-for n_emission in jnp.arange(EMISSION_DIM):
-    plt.figure()
-    plt.plot(
-        t_forecast_emissions,
-        cd_ukf_point_emissions_forecasted_means[:, n_emission],
-        label="Forecasted emission path (point estimate)",
-        color="black"
-    )
-    plt.plot(
-        t_forecast_emissions,
-        cd_ukf_dist_emissions_forecasted_means[:, n_emission],
-        label="Forecasted emission means (distribution)",
-        color="orange",
-        marker="o",
-        markerfacecolor="none",
-        markeredgewidth=2,
-        markersize=8,
-    )
-    plt.fill_between(
-        t_forecast_emissions[:, 0],
-        cd_ukf_dist_emissions_forecasted_means[:, n_emission] - jnp.sqrt(cd_ukf_dist_emissions_forecasted_covariances[:, n_emission, n_emission]),
-        cd_ukf_dist_emissions_forecasted_means[:, n_emission] + jnp.sqrt(cd_ukf_dist_emissions_forecasted_covariances[:, n_emission, n_emission]),
-        color="orange",
-        alpha=0.2,
-        label="Forecasted emission uncertainty (1 std)",
-    )
-    plt.xlabel("Forecasted time")
-    plt.ylabel("x_{}".format(n_state))
-    plt.grid()
-    plt.legend()
-    plt.title("Forecasted emissions")
-    plt.show()
+if PLOT_TEST_RESULTS:
+    print("Plotting ukf forecasted emission path and distributions.")
+    import matplotlib.pyplot as plt
+    for n_emission in jnp.arange(EMISSION_DIM):
+        plt.figure()
+        plt.plot(
+            t_forecast_emissions,
+            cd_ukf_point_emissions_forecasted_means[:, n_emission],
+            label="Forecasted emission path (point estimate)",
+            color="black"
+        )
+        plt.plot(
+            t_forecast_emissions,
+            cd_ukf_dist_emissions_forecasted_means[:, n_emission],
+            label="Forecasted emission means (distribution)",
+            color="orange",
+            marker="o",
+            markerfacecolor="none",
+            markeredgewidth=2,
+            markersize=8,
+        )
+        plt.fill_between(
+            t_forecast_emissions[:, 0],
+            cd_ukf_dist_emissions_forecasted_means[:, n_emission] - jnp.sqrt(cd_ukf_dist_emissions_forecasted_covariances[:, n_emission, n_emission]),
+            cd_ukf_dist_emissions_forecasted_means[:, n_emission] + jnp.sqrt(cd_ukf_dist_emissions_forecasted_covariances[:, n_emission, n_emission]),
+            color="orange",
+            alpha=0.2,
+            label="Forecasted emission uncertainty (1 std)",
+        )
+        plt.xlabel("Forecasted time")
+        plt.ylabel("x_{}".format(n_state))
+        plt.grid()
+        plt.legend()
+        plt.title("Forecasted emissions")
+        plt.show()
     
-pdb.set_trace()
 #####
 # enkf-based forecast
 enkf_params = EnKFHyperParams(dt_final=1., N_particles=int(1e4), perturb_measurements=True)
@@ -733,40 +736,41 @@ cd_enkf_dist_forecasted = cdnlgssm_forecast(
     diffeqsolve_settings={},
 )
 
-print("Plotting enkf forecasted state path and distributions.")
-import matplotlib.pyplot as plt
-for n_state in jnp.arange(STATE_DIM):
-    plt.figure()
-    plt.plot(
-        t_forecast_emissions,
-        cd_enkf_point_forecasted.forecasted_state_path[:, n_state],
-        label="Forecasted path (point estimate)",
-        color="black"
-    )
-    plt.plot(
-        t_forecast_emissions,
-        cd_enkf_dist_forecasted.forecasted_state_means[:, n_state],
-        label="Forecasted state means (distribution)",
-        color="orange",
-        marker="o",
-        markerfacecolor="none",
-        markeredgewidth=2,
-        markersize=8,
-    )
-    plt.fill_between(
-        t_forecast_emissions[:, 0],
-        cd_enkf_dist_forecasted.forecasted_state_means[:, n_state] - jnp.sqrt(cd_enkf_dist_forecasted.forecasted_state_covariances[:, n_state, n_state]),
-        cd_enkf_dist_forecasted.forecasted_state_means[:, n_state] + jnp.sqrt(cd_enkf_dist_forecasted.forecasted_state_covariances[:, n_state, n_state]),
-        color="orange",
-        alpha=0.2,
-        label="Forecasted state uncertainty (1 std)",
-    )
-    plt.xlabel("Forecasted time")
-    plt.ylabel("x_{}".format(n_state))
-    plt.grid()
-    plt.legend()
-    plt.title("Forecasted states")
-    plt.show()
+if PLOT_TEST_RESULTS:
+    print("Plotting enkf forecasted state path and distributions.")
+    import matplotlib.pyplot as plt
+    for n_state in jnp.arange(STATE_DIM):
+        plt.figure()
+        plt.plot(
+            t_forecast_emissions,
+            cd_enkf_point_forecasted.forecasted_state_path[:, n_state],
+            label="Forecasted path (point estimate)",
+            color="black"
+        )
+        plt.plot(
+            t_forecast_emissions,
+            cd_enkf_dist_forecasted.forecasted_state_means[:, n_state],
+            label="Forecasted state means (distribution)",
+            color="orange",
+            marker="o",
+            markerfacecolor="none",
+            markeredgewidth=2,
+            markersize=8,
+        )
+        plt.fill_between(
+            t_forecast_emissions[:, 0],
+            cd_enkf_dist_forecasted.forecasted_state_means[:, n_state] - jnp.sqrt(cd_enkf_dist_forecasted.forecasted_state_covariances[:, n_state, n_state]),
+            cd_enkf_dist_forecasted.forecasted_state_means[:, n_state] + jnp.sqrt(cd_enkf_dist_forecasted.forecasted_state_covariances[:, n_state, n_state]),
+            color="orange",
+            alpha=0.2,
+            label="Forecasted state uncertainty (1 std)",
+        )
+        plt.xlabel("Forecasted time")
+        plt.ylabel("x_{}".format(n_state))
+        plt.grid()
+        plt.legend()
+        plt.title("Forecasted states")
+        plt.show()
 
 # Compute emissions from forecasted states
 from cd_dynamax import cdnlgssm_emissions
@@ -785,39 +789,38 @@ cd_enkf_dist_emissions_forecasted_means, cd_enkf_dist_emissions_forecasted_covar
     inputs=inputs,
 )
 
-print("Plotting enkf forecasted emission path and distributions.")
-import matplotlib.pyplot as plt
-for n_emission in jnp.arange(EMISSION_DIM):
-    plt.figure()
-    plt.plot(
-        t_forecast_emissions,
-        cd_enkf_point_emissions_forecasted_means[:, n_emission],
-        label="Forecasted emission path (point estimate)",
-        color="black"
-    )
-    plt.plot(
-        t_forecast_emissions,
-        cd_enkf_dist_emissions_forecasted_means[:, n_emission],
-        label="Forecasted emission means (distribution)",
-        color="orange",
-        marker="o",
-        markerfacecolor="none",
-        markeredgewidth=2,
-        markersize=8,
-    )
-    plt.fill_between(
-        t_forecast_emissions[:, 0],
-        cd_enkf_dist_emissions_forecasted_means[:, n_emission] - jnp.sqrt(cd_enkf_dist_emissions_forecasted_covariances[:, n_emission, n_emission]),
-        cd_enkf_dist_emissions_forecasted_means[:, n_emission] + jnp.sqrt(cd_enkf_dist_emissions_forecasted_covariances[:, n_emission, n_emission]),
-        color="orange",
-        alpha=0.2,
-        label="Forecasted emission uncertainty (1 std)",
-    )
-    plt.xlabel("Forecasted time")
-    plt.ylabel("x_{}".format(n_state))
-    plt.grid()
-    plt.legend()
-    plt.title("Forecasted emissions")
-    plt.show()
-
-pdb.set_trace()
+if PLOT_TEST_RESULTS:
+    print("Plotting enkf forecasted emission path and distributions.")
+    import matplotlib.pyplot as plt
+    for n_emission in jnp.arange(EMISSION_DIM):
+        plt.figure()
+        plt.plot(
+            t_forecast_emissions,
+            cd_enkf_point_emissions_forecasted_means[:, n_emission],
+            label="Forecasted emission path (point estimate)",
+            color="black"
+        )
+        plt.plot(
+            t_forecast_emissions,
+            cd_enkf_dist_emissions_forecasted_means[:, n_emission],
+            label="Forecasted emission means (distribution)",
+            color="orange",
+            marker="o",
+            markerfacecolor="none",
+            markeredgewidth=2,
+            markersize=8,
+        )
+        plt.fill_between(
+            t_forecast_emissions[:, 0],
+            cd_enkf_dist_emissions_forecasted_means[:, n_emission] - jnp.sqrt(cd_enkf_dist_emissions_forecasted_covariances[:, n_emission, n_emission]),
+            cd_enkf_dist_emissions_forecasted_means[:, n_emission] + jnp.sqrt(cd_enkf_dist_emissions_forecasted_covariances[:, n_emission, n_emission]),
+            color="orange",
+            alpha=0.2,
+            label="Forecasted emission uncertainty (1 std)",
+        )
+        plt.xlabel("Forecasted time")
+        plt.ylabel("x_{}".format(n_state))
+        plt.grid()
+        plt.legend()
+        plt.title("Forecasted emissions")
+        plt.show()

@@ -1,10 +1,12 @@
 # Imports
-import pdb
 import jax.numpy as jnp
 import jax.random as jr
 
 from cd_dynamax import ContDiscreteLinearGaussianSSM, LinearGaussianSSM
 from cd_dynamax.src.utils.test_utils import compare, compare_structs
+
+# Whether to plot test results or not
+PLOT_TEST_RESULTS = True
 
 # JAX device check
 print("************* Checking JAX device *************")
@@ -262,39 +264,40 @@ cd_sgd_fitted_filtered_posterior = cdlgssm_filter(
 print("WARNING: Please take the following comparisons with a grain of salt.")
 compare_structs(d_sgd_fitted_filtered_posterior, cd_sgd_fitted_filtered_posterior, accept_failure=True)
 
-print("WARNING: plotting filtering results for understanding impact of SGD differences.")
-import matplotlib.pyplot as plt
-for n_state in jnp.arange(STATE_DIM):
-    plt.figure()
-    plt.plot(
-        t_emissions,
-        d_states[:, n_state],
-        label="true discrete position",
-        color="black"
-    )
-    plt.plot(
-        t_emissions,
-        d_sgd_fitted_filtered_posterior.filtered_means[:, n_state],
-        label="Post-SGD fit Discrete filtered state",
-        color="orange",
-        marker="o",
-        markerfacecolor="none",
-        markeredgewidth=2,
-        markersize=8,
-    )
-    plt.plot(
-        t_emissions,
-        cd_sgd_fitted_filtered_posterior.filtered_means[:, n_state],
-        label="Post-SGD fit Continuous-Discrete filtered state",
-        color="blue",
-        marker="x"
-    )
-    plt.xlabel("time")
-    plt.ylabel("x_{}".format(n_state))
-    plt.grid()
-    plt.legend()
-    plt.title("Filtered states after SGD optimization")
-    plt.show()
+if PLOT_TEST_RESULTS:
+    print("WARNING: plotting filtering results for understanding impact of SGD differences.")
+    import matplotlib.pyplot as plt
+    for n_state in jnp.arange(STATE_DIM):
+        plt.figure()
+        plt.plot(
+            t_emissions,
+            d_states[:, n_state],
+            label="true discrete position",
+            color="black"
+        )
+        plt.plot(
+            t_emissions,
+            d_sgd_fitted_filtered_posterior.filtered_means[:, n_state],
+            label="Post-SGD fit Discrete filtered state",
+            color="orange",
+            marker="o",
+            markerfacecolor="none",
+            markeredgewidth=2,
+            markersize=8,
+        )
+        plt.plot(
+            t_emissions,
+            cd_sgd_fitted_filtered_posterior.filtered_means[:, n_state],
+            label="Post-SGD fit Continuous-Discrete filtered state",
+            color="blue",
+            marker="x"
+        )
+        plt.xlabel("time")
+        plt.ylabel("x_{}".format(n_state))
+        plt.grid()
+        plt.legend()
+        plt.title("Filtered states after SGD optimization")
+        plt.show()
 
 print("All Discrete to Continous-Discrete model and filtering tests passed!")
 
@@ -336,40 +339,41 @@ cd_dist_forecasted = cdlgssm_forecast(
     diffeqsolve_settings={},
 )
 
-print("Plotting forecasted state path and distributions.")
-import matplotlib.pyplot as plt
-for n_state in jnp.arange(STATE_DIM):
-    plt.figure()
-    plt.plot(
-        t_forecast_emissions,
-        cd_point_forecasted.forecasted_state_path[:, n_state],
-        label="Forecasted path (point estimate)",
-        color="black"
-    )
-    plt.plot(
-        t_forecast_emissions,
-        cd_dist_forecasted.forecasted_state_means[:, n_state],
-        label="Forecasted state means (distribution)",
-        color="orange",
-        marker="o",
-        markerfacecolor="none",
-        markeredgewidth=2,
-        markersize=8,
-    )
-    plt.fill_between(
-        t_forecast_emissions[:, 0],
-        cd_dist_forecasted.forecasted_state_means[:, n_state] - jnp.sqrt(cd_dist_forecasted.forecasted_state_covariances[:, n_state, n_state]),
-        cd_dist_forecasted.forecasted_state_means[:, n_state] + jnp.sqrt(cd_dist_forecasted.forecasted_state_covariances[:, n_state, n_state]),
-        color="orange",
-        alpha=0.2,
-        label="Forecasted state uncertainty (1 std)",
-    )
-    plt.xlabel("Forecasted time")
-    plt.ylabel("x_{}".format(n_state))
-    plt.grid()
-    plt.legend()
-    plt.title("Forecasted states")
-    plt.show()
+if PLOT_TEST_RESULTS:
+    print("Plotting forecasted state path and distributions.")
+    import matplotlib.pyplot as plt
+    for n_state in jnp.arange(STATE_DIM):
+        plt.figure()
+        plt.plot(
+            t_forecast_emissions,
+            cd_point_forecasted.forecasted_state_path[:, n_state],
+            label="Forecasted path (point estimate)",
+            color="black"
+        )
+        plt.plot(
+            t_forecast_emissions,
+            cd_dist_forecasted.forecasted_state_means[:, n_state],
+            label="Forecasted state means (distribution)",
+            color="orange",
+            marker="o",
+            markerfacecolor="none",
+            markeredgewidth=2,
+            markersize=8,
+        )
+        plt.fill_between(
+            t_forecast_emissions[:, 0],
+            cd_dist_forecasted.forecasted_state_means[:, n_state] - jnp.sqrt(cd_dist_forecasted.forecasted_state_covariances[:, n_state, n_state]),
+            cd_dist_forecasted.forecasted_state_means[:, n_state] + jnp.sqrt(cd_dist_forecasted.forecasted_state_covariances[:, n_state, n_state]),
+            color="orange",
+            alpha=0.2,
+            label="Forecasted state uncertainty (1 std)",
+        )
+        plt.xlabel("Forecasted time")
+        plt.ylabel("x_{}".format(n_state))
+        plt.grid()
+        plt.legend()
+        plt.title("Forecasted states")
+        plt.show()
 
 # Compute emissions from forecasted states
 from cd_dynamax import cdlgssm_emissions
@@ -388,39 +392,38 @@ cd_dist_emissions_forecasted_means, cd_dist_emissions_forecasted_covariances = c
     inputs=inputs,
 )
 
-print("Plotting forecasted emission path and distributions.")
-import matplotlib.pyplot as plt
-for n_emission in jnp.arange(EMISSION_DIM):
-    plt.figure()
-    plt.plot(
-        t_forecast_emissions,
-        cd_point_emissions_forecasted_means[:, n_emission],
-        label="Forecasted emission path (point estimate)",
-        color="black"
-    )
-    plt.plot(
-        t_forecast_emissions,
-        cd_dist_emissions_forecasted_means[:, n_emission],
-        label="Forecasted emission means (distribution)",
-        color="orange",
-        marker="o",
-        markerfacecolor="none",
-        markeredgewidth=2,
-        markersize=8,
-    )
-    plt.fill_between(
-        t_forecast_emissions[:, 0],
-        cd_dist_emissions_forecasted_means[:, n_emission] - jnp.sqrt(cd_dist_emissions_forecasted_covariances[:, n_emission, n_emission]),
-        cd_dist_emissions_forecasted_means[:, n_emission] + jnp.sqrt(cd_dist_emissions_forecasted_covariances[:, n_emission, n_emission]),
-        color="orange",
-        alpha=0.2,
-        label="Forecasted emission uncertainty (1 std)",
-    )
-    plt.xlabel("Forecasted time")
-    plt.ylabel("x_{}".format(n_state))
-    plt.grid()
-    plt.legend()
-    plt.title("Forecasted emissions")
-    plt.show()
-
-pdb.set_trace()
+if PLOT_TEST_RESULTS:
+    print("Plotting forecasted emission path and distributions.")
+    import matplotlib.pyplot as plt
+    for n_emission in jnp.arange(EMISSION_DIM):
+        plt.figure()
+        plt.plot(
+            t_forecast_emissions,
+            cd_point_emissions_forecasted_means[:, n_emission],
+            label="Forecasted emission path (point estimate)",
+            color="black"
+        )
+        plt.plot(
+            t_forecast_emissions,
+            cd_dist_emissions_forecasted_means[:, n_emission],
+            label="Forecasted emission means (distribution)",
+            color="orange",
+            marker="o",
+            markerfacecolor="none",
+            markeredgewidth=2,
+            markersize=8,
+        )
+        plt.fill_between(
+            t_forecast_emissions[:, 0],
+            cd_dist_emissions_forecasted_means[:, n_emission] - jnp.sqrt(cd_dist_emissions_forecasted_covariances[:, n_emission, n_emission]),
+            cd_dist_emissions_forecasted_means[:, n_emission] + jnp.sqrt(cd_dist_emissions_forecasted_covariances[:, n_emission, n_emission]),
+            color="orange",
+            alpha=0.2,
+            label="Forecasted emission uncertainty (1 std)",
+        )
+        plt.xlabel("Forecasted time")
+        plt.ylabel("x_{}".format(n_state))
+        plt.grid()
+        plt.legend()
+        plt.title("Forecasted emissions")
+        plt.show()

@@ -5,6 +5,9 @@ import jax.random as jr
 from cd_dynamax import ContDiscreteLinearGaussianSSM, LinearGaussianSSM
 from cd_dynamax.src.utils.test_utils import compare, compare_structs
 
+# Whether to plot test results or not
+PLOT_TEST_RESULTS = True
+
 # JAX device check
 print("************* Checking JAX device *************")
 import jax
@@ -168,55 +171,54 @@ for smoother_type in ["cd_smoother_1", "cd_smoother_2"]:
 
     print(f"All Discrete to Continous-Discrete {smoother_type} smoothed posterior tests passed!")
 
-print("WARNING: plotting filtering results for understanding impact of smoothing algorithm differences.")
-import matplotlib.pyplot as plt
-for n_state in jnp.arange(STATE_DIM):
-    plt.figure()
-    plt.plot(
-        t_emissions,
-        d_states[:, n_state],
-        label="true discrete position",
-        color="black"
-    )
-    plt.plot(
-        t_emissions,
-        d_smoother_posterior.filtered_means[:, n_state],
-        label="Post-SGD fit Discrete filtered state",
-        color="orange",
-        marker="o",
-        markerfacecolor="none",
-        markeredgewidth=2,
-        markersize=8,
-    )
-    plt.plot(
-        t_emissions,
-        d_smoother_posterior.smoothed_means[:, n_state],
-        label="Post-SGD fit Discrete smoothed state",
-        color="red",
-        marker="o",
-        markerfacecolor="none",
-        markeredgewidth=2,
-        markersize=8,
-    )
-    plt.plot(
-        t_emissions,
-        cd_smoother_posterior.filtered_means[:, n_state],
-        label="Post-SGD fit Continuous-Discrete filtered state",
-        color="blue",
-        marker="x"
-    )
-    plt.plot(
-        t_emissions,
-        cd_smoother_posterior.smoothed_means[:, n_state],
-        label="Post-SGD fit Continuous-Discrete smoothed state",
-        color="green",
-        marker="x"
-    )
-    plt.xlabel("time")
-    plt.ylabel("x_{}".format(n_state))
-    plt.grid()
-    plt.legend()
-    plt.title("Filtered and smoothed states")
-    plt.show()
-
-
+if PLOT_TEST_RESULTS:
+    print("WARNING: plotting filtering results for understanding impact of smoothing algorithm differences.")
+    import matplotlib.pyplot as plt
+    for n_state in jnp.arange(STATE_DIM):
+        plt.figure()
+        plt.plot(
+            t_emissions,
+            d_states[:, n_state],
+            label="true discrete position",
+            color="black"
+        )
+        plt.plot(
+            t_emissions,
+            d_smoother_posterior.filtered_means[:, n_state],
+            label="Post-SGD fit Discrete filtered state",
+            color="orange",
+            marker="o",
+            markerfacecolor="none",
+            markeredgewidth=2,
+            markersize=8,
+        )
+        plt.plot(
+            t_emissions,
+            d_smoother_posterior.smoothed_means[:, n_state],
+            label="Post-SGD fit Discrete smoothed state",
+            color="red",
+            marker="o",
+            markerfacecolor="none",
+            markeredgewidth=2,
+            markersize=8,
+        )
+        plt.plot(
+            t_emissions,
+            cd_smoother_posterior.filtered_means[:, n_state],
+            label="Post-SGD fit Continuous-Discrete filtered state",
+            color="blue",
+            marker="x"
+        )
+        plt.plot(
+            t_emissions,
+            cd_smoother_posterior.smoothed_means[:, n_state],
+            label="Post-SGD fit Continuous-Discrete smoothed state",
+            color="green",
+            marker="x"
+        )
+        plt.xlabel("time")
+        plt.ylabel("x_{}".format(n_state))
+        plt.grid()
+        plt.legend()
+        plt.title("Filtered and smoothed states")
+        plt.show()

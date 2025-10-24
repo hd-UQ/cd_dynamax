@@ -1,6 +1,9 @@
 import jax
 jax.config.update("jax_platform_name", "cpu")
 
+# Whether to plot test results or not
+PLOT_TEST_RESULTS = True
+
 # JAX device check
 print("************* Checking JAX device *************")
 print('Running on jax device:{}'.format(
@@ -105,8 +108,6 @@ expected_prior_FIM_cdlgssm = true_model.prior_averaged_fisher(
     n_samples = 10,
     key = next(keys)
 )
-
-# pdb.set_trace()
 
 ###################### CD-NLGSSM ######################
 # Load the Lorenz 63 drift function definition
@@ -285,5 +286,3 @@ expected_prior_FIM_cdnlgssm = true_model.prior_averaged_fisher(
     n_samples = 10,
     key = next(keys)
 )
-
-# pdb.set_trace()
