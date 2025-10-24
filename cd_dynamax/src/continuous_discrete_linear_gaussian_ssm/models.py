@@ -34,7 +34,7 @@ from cd_dynamax.dynamax.linear_gaussian_ssm.inference import ParamsLGSSMInitial,
 from .cdlgssm_utils import ParamsCDLGSSM, ParamsCDLGSSMDynamics, init_cdlgssm_params, sample_cdlgssm_params
 # Filtering functions
 from .inference import KFHyperParams
-from .inference import cdlgssm_filter, cdlgssm_smoother
+from .inference import cdlgssm_filter, cdlgssm_smoother, cdlgssm_forecast
 # Unclear why we define this here, but not in models
 from .inference import cdlgssm_joint_sample, cdlgssm_path_sample, cdlgssm_posterior_sample
 from .inference import compute_pushforward
@@ -401,9 +401,45 @@ class ContDiscreteLinearGaussianSSM(SSM):
         emissions: Float[Array, "ntime emission_dim"],
         t_emissions: Optional[Float[Array, "ntime 1"]]=None,
         filter_hyperparams: Optional[KFHyperParams]=KFHyperParams(),
-        inputs: Optional[Float[Array, "ntime input_dim"]] = None
+        inputs: Optional[Float[Array, "ntime input_dim"]] = None,
+        warn: bool = True,
     ) -> PosteriorGSSMFiltered:
-        return cdlgssm_filter(params, emissions, t_emissions, filter_hyperparams, inputs)
+        return cdlgssm_filter(params, emissions, t_emissions, filter_hyperparams, inputs, warn=warn)
+
+    def filter_and_forecast(
+        self,
+        params,
+        emissions_filter,
+        t_emissions_filter,
+        t_emissions_forecast,
+        inputs_filter=None,
+        inputs_forecast=None,
+        warn: bool = True,
+    ):
+        # Run filter on filtering time points
+        filtered = self.filter(
+            params=params,
+            emissions=emissions_filter,
+            t_emissions=t_emissions_filter,
+            inputs=inputs_filter,
+            warn=warn,
+        )
+
+        # Initialize forecast with last filtered state
+        init_time = t_emissions_filter[-1]
+        init_forecast = MVN(filtered.filtered_means[-1, :], filtered.filtered_covariances[-1, :])
+
+        # Run forecast on forecasting time points
+        forecasted = cdlgssm_forecast(
+            params=params,
+            init_forecast=init_forecast,
+            t_init=init_time,
+            t_forecast=t_emissions_forecast,
+            inputs=inputs_forecast,
+            warn=warn,
+        )
+
+        return filtered, forecasted
 
     def smoother(
         self,

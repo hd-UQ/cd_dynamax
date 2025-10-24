@@ -523,41 +523,19 @@ class ContDiscreteNonlinearGaussianSSM(SSM):
             warn: whether to issue warnings (e.g., about PSD issues)
         """
 
-        # Prepare diffeqsolve settings
-        diffeqsolve_settings = {
-            "max_steps": diffeqsolve_max_steps,
-            "dt0": diffeqsolve_dt0,
-            **diffeqsolve_kwargs
-        }
-        
-        # Prepare filtering settings
-        common_filter_args = {
-            "state_order": filter_state_order,
-            "diffeqsolve_settings": diffeqsolve_settings,
-            "cov_rescaling":  filter_state_cov_rescaling,
-            "dt_average": filter_dt_average,
-        }
-        
-        if filter_type == "EKF":
-            filter_hyperparams = EKFHyperParams(
-                emission_order=filter_emission_order,
-                **common_filter_args,
-                **extra_filter_kwargs,
-            )
-        elif filter_type == "EnKF":
-            filter_hyperparams = EnKFHyperParams(
-                N_particles=enkf_N_particles,
-                inflation_delta=enkf_inflation_delta,
-                **common_filter_args,
-                **extra_filter_kwargs,
-            )
-        elif filter_type == "UKF":
-            filter_hyperparams = UKFHyperParams(
-                **common_filter_args,
-                **extra_filter_kwargs,
-            )
-        else:
-            raise ValueError(f"Unknown filter type: {filter_type}")
+        filter_hyperparams = build_filter_hyperparams(
+            filter_type=filter_type,
+            filter_state_order=filter_state_order,
+            filter_emission_order=filter_emission_order,
+            filter_state_cov_rescaling=filter_state_cov_rescaling,
+            filter_dt_average=filter_dt_average,
+            enkf_N_particles=enkf_N_particles,
+            enkf_inflation_delta=enkf_inflation_delta,
+            diffeqsolve_max_steps=diffeqsolve_max_steps,
+            diffeqsolve_dt0=diffeqsolve_dt0,
+            diffeqsolve_kwargs=diffeqsolve_kwargs,
+            extra_filter_kwargs=extra_filter_kwargs,
+        )
 
         return cdnlgssm_filter(
             params=params,
@@ -570,6 +548,76 @@ class ContDiscreteNonlinearGaussianSSM(SSM):
             key=key,
             warn=warn,
         )
+
+    def filter_and_forecast(
+        self,
+        params,
+        emissions_filter,
+        t_emissions_filter,
+        t_emissions_forecast,
+        inputs_filter=None,
+        inputs_forecast=None,
+        filter_type: str = "EnKF",
+        filter_state_order: str = "first",
+        filter_emission_order: str = "first",
+        filter_num_iter: int = 1,
+        filter_state_cov_rescaling: float = 1.0,
+        filter_dt_average: float = 0.1,
+        enkf_N_particles: int = 25,
+        enkf_inflation_delta: float = 0.0,
+        diffeqsolve_max_steps: int = 100,
+        diffeqsolve_dt0: float = 1e-2,
+        key=jr.PRNGKey(0),
+        diffeqsolve_kwargs: Optional[dict] = {},
+        extra_filter_kwargs: Optional[dict] = {},
+        warn: bool = True,
+    ):
+      
+        key_filter, key_forecast = jr.split(key)
+  
+        filter_hyperparams = build_filter_hyperparams(
+            filter_type=filter_type,
+            filter_state_order=filter_state_order,
+            filter_emission_order=filter_emission_order,
+            filter_state_cov_rescaling=filter_state_cov_rescaling,
+            filter_dt_average=filter_dt_average,
+            enkf_N_particles=enkf_N_particles,
+            enkf_inflation_delta=enkf_inflation_delta,
+            diffeqsolve_max_steps=diffeqsolve_max_steps,
+            diffeqsolve_dt0=diffeqsolve_dt0,
+            diffeqsolve_kwargs=diffeqsolve_kwargs,
+            extra_filter_kwargs=extra_filter_kwargs,
+        )
+
+        # Run filter on filtering time points
+        filtered = cdnlgssm_filter(
+            params=params,
+            emissions=emissions_filter,
+            t_emissions=t_emissions_filter,
+            inputs=inputs_filter,
+            filter_hyperparams=filter_hyperparams,
+            num_iter=filter_num_iter,
+            key=key_filter,
+            warn=warn,
+        )
+
+        # Initialize forecast with last filtered state
+        init_time = t_emissions_filter[-1]
+        init_forecast = MVN(filtered.filtered_means[-1, :], filtered.filtered_covariances[-1, :])
+
+        # Run forecast on forecasting time points
+        forecasted = cdnlgssm_forecast(
+            params=params,
+            init_forecast=init_forecast,
+            t_init=init_time,
+            t_forecast=t_emissions_forecast,
+            inputs=inputs_forecast,
+            filter_hyperparams=filter_hyperparams,
+            key=key_forecast,
+            warn=warn,
+        )
+
+        return filtered, forecasted
 
     def smoother(self, *args, **kwargs):
         return cdnlgssm_smoother(*args, **kwargs)
@@ -1197,3 +1245,55 @@ def cdnlgssm_emissions(
 
     # Return the emissions
     return emissions_mean, emissions_covariance
+
+def build_filter_hyperparams(
+    filter_type: str = "EnKF",
+    filter_state_order: str = "first",
+    filter_emission_order: str = "first",
+    filter_state_cov_rescaling: float = 1.0,
+    filter_dt_average: float = 0.1,
+    enkf_N_particles: int = 25,
+    enkf_inflation_delta: float = 0.0,
+    diffeqsolve_max_steps: int = 100,
+    diffeqsolve_dt0: float = 1e-2,
+    diffeqsolve_kwargs: Optional[dict] = {},
+    extra_filter_kwargs: Optional[dict] = {},
+    ) -> Union[EKFHyperParams, EnKFHyperParams, UKFHyperParams]:        
+
+    # Prepare diffeqsolve settings
+    diffeqsolve_settings = {
+        "max_steps": diffeqsolve_max_steps,
+        "dt0": diffeqsolve_dt0,
+        **diffeqsolve_kwargs
+    }
+    
+    # Prepare filtering settings
+    common_filter_args = {
+        "state_order": filter_state_order,
+        "diffeqsolve_settings": diffeqsolve_settings,
+        "cov_rescaling":  filter_state_cov_rescaling,
+        "dt_average": filter_dt_average,
+    }
+    
+    if filter_type == "EKF":
+        filter_hyperparams = EKFHyperParams(
+            emission_order=filter_emission_order,
+            **common_filter_args,
+            **extra_filter_kwargs,
+        )
+    elif filter_type == "EnKF":
+        filter_hyperparams = EnKFHyperParams(
+            N_particles=enkf_N_particles,
+            inflation_delta=enkf_inflation_delta,
+            **common_filter_args,
+            **extra_filter_kwargs,
+        )
+    elif filter_type == "UKF":
+        filter_hyperparams = UKFHyperParams(
+            **common_filter_args,
+            **extra_filter_kwargs,
+        )
+    else:
+        raise ValueError(f"Unknown filter type: {filter_type}")
+    
+    return filter_hyperparams
