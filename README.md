@@ -86,7 +86,7 @@ In particular, we provide easy demonstrations for using `numpyro` to define prio
 
 - [Intro tutorial](./demos/notebooks/lorenz63_filter-based_likelihood_tutorial.ipynb) to filtering-based likelihood computation for continuous-discrete SDEs.
 
-- [Impressive example (be very impressed!)](./demos/notebooks/lorenz63_neuralSDE_partial_observation.ipynb) of learning a neural SDE from partial, noisy observations of the Lorenz 63 system. This is quite hard and most methods would struggle here---and yet, a simple Bayesian maximum-likelihood framing works well!
+- [Impressive example (be very impressed!)](./demos/notebooks/lorenz63_neuralSDE_partial_observation.ipynb) of learning a neural SDE from partial, noisy observations of a Lorenz 63-based SDE. This is quite hard and most methods would struggle here---and yet, a simple Bayesian maximum-likelihood framing works well!
 
 - Learning drift functions from noisy, irregularly-sampled data:
     - Lorenz 63 system:
