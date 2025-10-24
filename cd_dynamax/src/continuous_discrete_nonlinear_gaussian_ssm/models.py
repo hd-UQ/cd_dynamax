@@ -486,11 +486,11 @@ class ContDiscreteNonlinearGaussianSSM(SSM):
         filter_emission_order: str = "first",
         filter_num_iter: int = 1,
         filter_state_cov_rescaling: float = 1.0,
+        filter_dt_average: float = 0.1,
         enkf_N_particles: int = 25,
         enkf_inflation_delta: float = 0.0,
         diffeqsolve_max_steps: int = 100,
         diffeqsolve_dt0: float = 1e-2,
-        diffeqsolve_dt_average: float = 1e-2,
         output_fields=None,
         key=jr.PRNGKey(0),
         diffeqsolve_kwargs: Optional[dict] = {},
@@ -508,11 +508,11 @@ class ContDiscreteNonlinearGaussianSSM(SSM):
             filter_emission_order: Order of Taylor expansion for emissions used in the EKF filter only.
             filter_num_iter: Number of iterations for iterated filters (EKF only).
             filter_state_cov_rescaling: Rescale state covariance by this factor after each update (inflation delta is better for accurate likelihoods)
+            filter_dt_average: [Only for state_order="Discrete"] Average step size to determine constant state noise cov in filter.
             enkf_N_particles: Number of particles (for EnKF only).
             enkf_inflation_delta: EnKF covariance inflation (ignored by EKF/UKF).
             diffeqsolve_max_steps: Max steps for ODE solver between observations.
             diffeqsolve_dt0: Initial step size for ODE/SDE solver (default is fixed step size).
-            diffeqsolve_dt_average: [Only for state_order="Discrete"] Average step size to determine constant state noise cov.
             output_fields: Which fields to return from the filter.
             key: Random number generator key.
             diffeqsolve_kwargs: Extra kwargs for the ODE solver
@@ -525,7 +525,6 @@ class ContDiscreteNonlinearGaussianSSM(SSM):
         diffeqsolve_settings = {
             "max_steps": diffeqsolve_max_steps,
             "dt0": diffeqsolve_dt0,
-            "dt_average": diffeqsolve_dt_average,
             **diffeqsolve_kwargs
         }
         
@@ -534,6 +533,7 @@ class ContDiscreteNonlinearGaussianSSM(SSM):
             "state_order": filter_state_order,
             "diffeqsolve_settings": diffeqsolve_settings,
             "cov_rescaling":  filter_state_cov_rescaling,
+            "dt_average": filter_dt_average,
         }
         
         if filter_type == "EKF":

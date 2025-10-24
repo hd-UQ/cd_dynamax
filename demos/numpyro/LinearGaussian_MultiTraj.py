@@ -146,9 +146,9 @@ def main(cfg):
                                   emissions=ems_i,
                                   t_emissions=t_emissions,
                                   filter_type=cfg.filter_type,
-                                  state_order=cfg.state_order,
+                                  filter_state_order=cfg.state_order,
                                   diffeqsolve_max_steps=cfg.diffeqsolve_max_steps,
-                                  cov_rescaling=cfg.cov_rescaling,
+                                  filter_state_cov_rescaling=cfg.cov_rescaling,
                                 )
             return out.marginal_loglik
 

@@ -82,11 +82,11 @@ def main(cfg):
     # Build filter hyperparameters
     filter_kwargs = {
         "filter_type": cfg.filter_type,
-        "state_order": cfg.state_order,
-        "N_particles": cfg.N_particles,
+        "filter_state_order": cfg.state_order,
+        "enkf_N_particles": cfg.N_particles,
         "diffeqsolve_max_steps": cfg.diffeqsolve_max_steps,
-        "inflation_delta": cfg.inflation_delta,
-        "cov_rescaling": cfg.cov_rescaling,
+        "enkf_inflation_delta": cfg.inflation_delta,
+        "filter_state_cov_rescaling": cfg.cov_rescaling,
     }       
 
     # NumPyro model
