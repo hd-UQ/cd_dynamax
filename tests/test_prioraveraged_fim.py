@@ -2,7 +2,7 @@ import jax
 jax.config.update("jax_platform_name", "cpu")
 
 # Whether to plot test results or not
-PLOT_TEST_RESULTS = True
+PLOT_TEST_RESULTS = False
 
 # JAX device check
 print("************* Checking JAX device *************")
