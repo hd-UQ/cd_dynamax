@@ -93,6 +93,7 @@ In particular, we provide easy demonstrations for using `numpyro` to define prio
             ```bash
             python ./demos/numpyro/l63_nn.py --emission_dim 1 --state_dim 3
             ```
+            - See the jupyter notebook version [here](./demos/notebooks/lorenz63_neuralSDE_partial_observation.ipynb) for a more detailed walkthrough of this example.
     - Lorenz 96 system:
         - Sparse dictionary learning (5 components): 
         ```bash
