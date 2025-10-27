@@ -1,8 +1,7 @@
+import argparse
 import os
 from configparser import ConfigParser
-import jax.numpy as jnp
 import jax.random as jr
-import optax
 import pickle
 
 # CD-NLGSSM imports
@@ -175,6 +174,7 @@ def fit_model_to_data(
                     'maxiter': scipy_config.getint('maxiter', 100),
                     'disp': scipy_config.getboolean('disp', True),
                 },
+                return_param_history=scipy_config.getboolean('return_param_history', False),
             )
             print("{} optimization MAP estimation complete for fit_key:", config_key, key)
 
@@ -186,6 +186,9 @@ def fit_model_to_data(
                 'success': scipy_result.success,
                 'message': scipy_result.message,
             }
+            if return_param_history:
+                scipy_results['params_history'] = scipy_result[2]
+
             # Save the results
             with open(os.path.join(results_dir, f'scipy_model_fit_fitkey{key}.pkl'), 'wb') as f:
                 pickle.dump(scipy_results, f)
@@ -197,7 +200,6 @@ def fit_model_to_data(
 # Main script gets two arguments: config file and data save file
 if __name__ == "__main__":
     # Create optional flags for comamand line arguments
-    import argparse
     parser = argparse.ArgumentParser(description='Fit model to data, according to specified configurations of data, model and filtering.')
     parser.add_argument('--data_config_file', type=str, default='configs/data/true_l63_data',
                         help='Data configuration file: (default: true_l63_data)')

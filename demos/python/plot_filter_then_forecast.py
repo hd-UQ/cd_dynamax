@@ -1,5 +1,5 @@
 import os
-from configparser import ConfigParser
+import argparse
 import pickle
 
 # CD-NLGSSM imports
@@ -115,9 +115,7 @@ def plot_filter_then_forecast(
 
 # Main script gets two arguments: config file and data save file
 if __name__ == "__main__":
-    
     # Create optional flags for comamand line arguments
-    import argparse
     parser = argparse.ArgumentParser(description='Plot the filter then forecast experiment with specified configurations.')
     parser.add_argument('--data_config_file', type=str, default='configs/data/true_l63_data_x1',
                         help='Data configuration file: (default: true_l63_data_x1)')

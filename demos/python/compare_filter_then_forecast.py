@@ -1,4 +1,5 @@
 import os
+import argparse
 from configparser import ConfigParser
 import pickle
 
@@ -128,9 +129,7 @@ def compare_filter_then_forecast(
 
 # Main script gets two arguments: config file and data save file
 if __name__ == "__main__":
-    
     # Create optional flags for comamand line arguments
-    import argparse
     parser = argparse.ArgumentParser(description='Compare the filter then forecast experiment with a set of filter configurations.')
     parser.add_argument('--data_config_file', type=str, default='configs/data/true_l63_data_x1',
                         help='Data configuration file: (default: true_l63_data_x1)')
