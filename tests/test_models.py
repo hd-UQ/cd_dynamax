@@ -2,7 +2,6 @@ import pytest
 from cd_dynamax.src.continuous_discrete_linear_gaussian_ssm import models
 import jax.random as jr
 
-
 def test_cdlgssm_basic_init():
     """Test that a model can be created and has correct dimensions."""
     model = models.ContDiscreteLinearGaussianSSM(state_dim=2, emission_dim=1)

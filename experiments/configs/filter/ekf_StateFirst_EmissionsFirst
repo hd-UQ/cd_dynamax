@@ -1,7 +1,0 @@
-[EKF]
-    dt_final: 1e-4
-    state_order: first
-    emission_order: first
-    smooth_order: first
-    cov_rescaling: 1.0
-    diffeqsolve_settings_file: configs/solver/dt1e-2_maxSteps1e2
