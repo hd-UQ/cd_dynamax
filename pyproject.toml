@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "cd_dynamax"
 version = "0.1.0"
-description = "Continuous-discrete dynamical systems with JAX, NumPyro, and related libraries."
+description = "Continuous-discrete dynamical systems with JAX and related libraries."
 readme = "README.md"
 requires-python = ">=3.11"
 
@@ -20,7 +20,6 @@ dependencies = [
     "tqdm>=4.66",
     "jax==0.6.2",
     "jaxlib==0.6.2",
-    "numpyro==0.19.0",
     "optax>=0.2.2",
     "equinox>=0.13",
     "diffrax==0.6.2",
