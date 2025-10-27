@@ -495,64 +495,15 @@ class ContDiscreteLinearGaussianSSM(SSM):
         inputs: Optional[Union[Float[Array, "num_timesteps input_dim"],
                                Float[Array, "num_batches num_timesteps input_dim"]]]=None,
     ) -> Tuple[SuffStatsCDLGSSM, Scalar]:
-        
-        num_timesteps = emissions.shape[0]
-        if inputs is None:
-            inputs = jnp.zeros((num_timesteps, 0))
 
-        # Run the smoother to get posterior expectations
-        posterior = cdlgssm_smoother(params, emissions, t_emissions, filter_hyperparams, inputs)
-
-        # shorthand
-        Ex = posterior.smoothed_means
-        Exp = posterior.smoothed_means[:-1]
-        Exn = posterior.smoothed_means[1:]
-        Vx = posterior.smoothed_covariances
-        Vxp = posterior.smoothed_covariances[:-1]
-        Vxn = posterior.smoothed_covariances[1:]
-        Expxn = posterior.smoothed_cross_covariances
-
-        # Append bias to the inputs
-        inputs = jnp.concatenate((inputs, jnp.ones((num_timesteps, 1))), axis=1)
-        up = inputs[:-1]
-        u = inputs
-        y = emissions
-
-        # expected sufficient statistics for the initial tfd.Distribution
-        Ex0 = posterior.smoothed_means[0]
-        Ex0x0T = posterior.smoothed_covariances[0] + jnp.outer(Ex0, Ex0)
-        init_stats = (Ex0, Ex0x0T, 1)
-
-        # expected sufficient statistics for the dynamics tfd.Distribution
-        # let zp[t] = [x[t], u[t]] for t = 0...T-2
-        # let xn[t] = x[t+1]          for t = 0...T-2
-        sum_zpzpT = jnp.block([[Exp.T @ Exp, Exp.T @ up], [up.T @ Exp, up.T @ up]])
-        sum_zpzpT = sum_zpzpT.at[:self.state_dim, :self.state_dim].add(Vxp.sum(0))
-        sum_zpxnT = jnp.block([[Expxn.sum(0)], [up.T @ Exn]])
-        sum_xnxnT = Vxn.sum(0) + Exn.T @ Exn
-        dynamics_stats = (sum_zpzpT, sum_zpxnT, sum_xnxnT, num_timesteps - 1)
-        if not self.has_dynamics_bias:
-            dynamics_stats = (sum_zpzpT[:-1, :-1], sum_zpxnT[:-1, :], sum_xnxnT,
-                                num_timesteps - 1)
-
-        # more expected sufficient statistics for the emissions
-        # let z[t] = [x[t], u[t]] for t = 0...T-1
-        sum_zzT = jnp.block([[Ex.T @ Ex, Ex.T @ u], [u.T @ Ex, u.T @ u]])
-        sum_zzT = sum_zzT.at[:self.state_dim, :self.state_dim].add(Vx.sum(0))
-        sum_zyT = jnp.block([[Ex.T @ y], [u.T @ y]])
-        sum_yyT = emissions.T @ emissions
-        emission_stats = (sum_zzT, sum_zyT, sum_yyT, num_timesteps)
-        if not self.has_emissions_bias:
-            emission_stats = (sum_zzT[:-1, :-1], sum_zyT[:-1, :], sum_yyT, num_timesteps)
-
-        return (init_stats, dynamics_stats, emission_stats), posterior.marginal_loglik
+        raise NotImplementedError("EM E-step for CD-LGSSM is not yet implemented.")
 
     def initialize_m_step_state(
             self,
             params: ParamsCDLGSSM,
             props: ParamsCDLGSSM
     ) -> Any:
-        return None
+        raise NotImplementedError("EM M-step for CD-LGSSM is not yet implemented.")
 
     def m_step(
         self,
@@ -562,39 +513,5 @@ class ContDiscreteLinearGaussianSSM(SSM):
         m_step_state: Any
     ) -> Tuple[ParamsCDLGSSM, Any]:
                 
-        def fit_linear_regression(ExxT, ExyT, EyyT, N):
-            # Solve a linear regression given sufficient statistics
-            W = psd_solve(ExxT, ExyT).T
-            Sigma = (EyyT - W @ ExyT - ExyT.T @ W.T + W @ ExxT @ W.T) / N
-            return W, Sigma
-
-        # Sum the statistics across all batches
-        stats = tree_map(partial(jnp.sum, axis=0), batch_stats)
-        init_stats, dynamics_stats, emission_stats = stats
-
-        # Perform MLE estimation jointly
-        sum_x0, sum_x0x0T, N = init_stats
-        S = (sum_x0x0T - jnp.outer(sum_x0, sum_x0)) / N
-        m = sum_x0 / N
-
-        # TODO: What's the m-step MLE for diffusion_cov and diffusion_coefficient?
-        raise ValueError('m_step not implemented yet: what is the MLE for diffusion_cov and diffusion_coefficient?')
-        
-        FB, Q = fit_linear_regression(*dynamics_stats)
-        F = FB[:, :self.state_dim]
-        B, b = (FB[:, self.state_dim:-1], FB[:, -1]) if self.has_dynamics_bias \
-            else (FB[:, self.state_dim:], None)
-
-        HD, R = fit_linear_regression(*emission_stats)
-        H = HD[:, :self.state_dim]
-        D, d = (HD[:, self.state_dim:-1], HD[:, -1]) if self.has_emissions_bias \
-            else (HD[:, self.state_dim:], None)
-        
-        params = ParamsCDLGSSM(
-            initial=ParamsLGSSMInitial(mean=m, cov=S),
-            # TODO: this will crash, as we should provide diffusion_cov and diffusion_coefficient
-            dynamics=ParamsCDLGSSMDynamics(weights=F, bias=b, input_weights=B, cov=Q),
-            emissions=ParamsLGSSMEmissions(weights=H, bias=d, input_weights=D, cov=R)
-        )
-        return params, m_step_state
+        raise NotImplementedError("EM M-step for CD-LGSSM is not yet implemented.")
 

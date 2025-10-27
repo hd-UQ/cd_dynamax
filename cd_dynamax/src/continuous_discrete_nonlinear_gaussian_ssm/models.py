@@ -40,7 +40,6 @@ from ..utils.diffrax_utils import diffeqsolve
 # Debugging utilities
 from ..utils.debug_utils import *
 
-from .builders import build_params
 DEBUG = False
 
 # Auxiliary function to process inputs ---from dynamax
@@ -475,6 +474,7 @@ class ContDiscreteNonlinearGaussianSSM(SSM):
         )
         return filtered_posterior.marginal_loglik
     
+    # High-level, user-friendly filtering interface
     def filter(
         self,
         params,
@@ -549,6 +549,7 @@ class ContDiscreteNonlinearGaussianSSM(SSM):
             warn=warn,
         )
 
+    # High-level, user-friendly filtering interface with forecasting
     def filter_and_forecast(
         self,
         params,
@@ -619,16 +620,12 @@ class ContDiscreteNonlinearGaussianSSM(SSM):
 
         return filtered, forecasted
 
+    # High-level, user-friendly smoothing interface
     def smoother(self, *args, **kwargs):
         return cdnlgssm_smoother(*args, **kwargs)
-
-    def build_params(self, drift, **kwargs):
-        return build_params(
-            state_dim=self.state_dim, 
-            emission_dim=self.emission_dim,
-            drift=drift,
-            **kwargs)
     
+
+# CDNLGSSM sampling function    
 def cdnlgssm_joint_sample(
     params: ParamsCDNLGSSM,
     key: PRNGKey,
@@ -744,6 +741,7 @@ def cdnlgssm_joint_sample(
 
     return states, emissions
 
+# CDNLGSSM path sampling function
 def cdnlgssm_path_sample(
         params: ParamsCDNLGSSM,
         key: PRNGKey,
@@ -877,6 +875,7 @@ def cdnlgssm_path_sample(
 
     return states, emissions
 
+# CDNLGSSM filtering function
 def cdnlgssm_filter(
     params: ParamsCDNLGSSM,
     emissions: Float[Array, "ntime emission_dim"],
@@ -937,6 +936,7 @@ def cdnlgssm_filter(
     # TODO: use and leverage output_fields to have more or less granular returned posterior object
     return filtered_posterior
 
+# CDNLGSSM smoothing function
 def cdnlgssm_smoother(
     params: ParamsCDNLGSSM,
     emissions: Float[Array, "ntime emission_dim"],
@@ -989,6 +989,7 @@ def cdnlgssm_smoother(
     # TODO: use and leverage output_fields to have more or less granular returned posterior object
     return smoothed_posterior
 
+# CDNLGSSM forecasting function
 def cdnlgssm_forecast(
     params: ParamsCDNLGSSM,
     init_forecast: Union[tfd.Distribution, Float[Array, "state_dim 1"]],
@@ -1136,6 +1137,7 @@ def cdnlgssm_forecast(
     
     return forecast
 
+# CDNLGSSM emissions function
 def cdnlgssm_emissions(
     params: ParamsCDNLGSSM,
     t_states: Float[Array, "num_timesteps 1"],
@@ -1246,6 +1248,7 @@ def cdnlgssm_emissions(
     # Return the emissions
     return emissions_mean, emissions_covariance
 
+# Helper function to build filter hyperparameters ---useful in high-level interfaces
 def build_filter_hyperparams(
     filter_type: str = "EnKF",
     filter_state_order: str = "first",

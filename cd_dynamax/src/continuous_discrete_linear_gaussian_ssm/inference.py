@@ -173,7 +173,7 @@ def _condition_on(m, P, H, D, d, R, u, y, warn: bool = True):
     mu_cond = m + K @ (y - D @ u - d - H @ m)
     return mu_cond, Sigma_cond
 
-
+# CD-LGSSM preprocess parameters and inputs
 def preprocess_params_and_inputs(params, num_timesteps, inputs):
     """Preprocess parameters in case some are set to None."""
 
@@ -217,7 +217,7 @@ def preprocess_params_and_inputs(params, num_timesteps, inputs):
         )
     return full_params, inputs
 
-
+# CD-LGSSM preprocess_args decorator
 def preprocess_args(f):
     """Preprocess the parameter and input arguments in case some are set to None."""
     sig = inspect.signature(f)
@@ -239,6 +239,7 @@ def preprocess_args(f):
         return f(full_params, emissions, t_emissions, filter_hyperparams=filter_hyperparams, inputs=inputs)
     return wrapper
 
+# CD-LGSSM Joint Sampling function
 def cdlgssm_joint_sample(
     params: ParamsCDLGSSM,
     key: PRNGKey,
@@ -342,6 +343,7 @@ def cdlgssm_joint_sample(
 
     return states, emissions
 
+# CD-LGSSM path sampling function
 def cdlgssm_path_sample(
         params: ParamsCDLGSSM,
         key: PRNGKey,
@@ -472,6 +474,7 @@ def cdlgssm_path_sample(
 
     return states, emissions
 
+# CD-LGSSM filtering implementation
 @preprocess_args
 def cdlgssm_filter(
     params: ParamsCDLGSSM,
@@ -619,6 +622,7 @@ def _smooth(
     m_smooth, P_smooth = sol[0][-1], psd(sol[1][-1], warn=warn)
     return m_smooth, P_smooth
 
+# CD-LGSSM smoother implementation
 # TODO: fix preprocess_args to accommodate smoother_type if it is really necessary
 # @preprocess_args
 def cdlgssm_smoother(
@@ -759,6 +763,7 @@ def cdlgssm_smoother(
         smoothed_cross_covariances=smoothed_cross,
     )
 
+# CD-LGSSM Posterior Sampling function
 def cdlgssm_posterior_sample(
     key: PRNGKey,
     params: ParamsCDLGSSM,
@@ -851,7 +856,7 @@ def cdlgssm_posterior_sample(
 
     return jnp.vstack([states, last_state])
 
-# TODO: preprocess_args
+# CD-LGSSM Forecasting function
 def cdlgssm_forecast(
     params: ParamsCDLGSSM,
     init_forecast: Union[tfd.Distribution, Float[Array, "state_dim 1"]],
@@ -1022,6 +1027,7 @@ def cdlgssm_forecast(
     # Return the forecast object
     return forecast
 
+# CD-LGSSM Emission function
 def cdlgssm_emissions(
     params: ParamsCDLGSSM,
     t_states: Float[Array, "num_timesteps 1"],

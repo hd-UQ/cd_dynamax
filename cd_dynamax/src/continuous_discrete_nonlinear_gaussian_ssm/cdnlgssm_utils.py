@@ -1,15 +1,11 @@
-from logging import config
-from typing import NamedTuple, Tuple, Optional, Union
-from jaxtyping import Array, Float, PyTree
+from typing import NamedTuple, Tuple, Union
+from jaxtyping import Array, Float
 import jax.numpy as jnp
 from jax import Array
-from jax.tree_util import tree_map
 import jax.random as jr
 import jax.numpy as jnp
 from cd_dynamax.dynamax.parameters import ParameterProperties, ParameterSet
 import abc
-from configparser import ConfigParser
-
 
 def _get_params(self):
     ''' A function to return the parameters of the learnable function
@@ -171,34 +167,7 @@ class ParamsCDNLGSSMDynamics(NamedTuple):
     # Dynamics SDE approximation order, defined as a Float
     approx_order: Union[Float, ParameterProperties]
 
-'''
-# Continuous non-linear dynamic parameters
-class ParamsCDNLSSMDynamics(NamedTuple):
-    r"""Parameters of the state dynamics of a CDNLGSSM model.
-
-    This model does obey the SDE as in Sarkaa's equation (3.151):
-        the solution to 3.151 is not necessarily a Gaussian Process
-            (note there are cases where that is indeed the case)
-
-    If you have no inputs, the dynamics and emission functions do not to take $u_t$ as an argument.
-
-    The tuple doubles as a container for the ParameterProperties.
-
-    :param drift_function: $f$
-    :param diffusion_coefficient: $L$
-    :param diffusion_cov: $Q$
-
-    """
-    # the deterministic drift $f$ of the nonlinear RHS of the state
-    drift_function: Union[FnStateToState, FnStateAndInputToState]
-    # the coefficient matrix L of the state's diffusion process
-    diffusion_coefficient: Union[Float[Array, "state_dim state_dim"], Float[Array, "ntime state_dim state_dim"], ParameterProperties]
-    # The covariance matrix Q of the state noise process
-    diffusion_cov: Union[Float[Array, "state_dim state_dim"], Float[Array, "ntime state_dim state_dim"], Float[Array, "state_dim_triu"], ParameterProperties]
-'''
-
 # Discrete non-linear emission parameters
-# TODO: function definitions within parameter classes breaks fit_sgd: where should they be placed?
 class ParamsCDNLGSSMEmissions(NamedTuple):
     r"""Parameters of the state dynamics
 
@@ -339,7 +308,6 @@ def init_cdnlgssm_params(
 
 
 # Sample CD-NLGSSM parameters, based on the provided prior and init_values
-# TODO: revise this as above, to match the new structure, use get_params()
 def sample_cdnlgssm_params(
         prior,
         M,
