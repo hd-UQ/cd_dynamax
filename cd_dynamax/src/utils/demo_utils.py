@@ -3,8 +3,6 @@ import numpy as np
 import jax.numpy as jnp
 import jax.nn as jnn
 import jax.random as jr
-import numpyro
-import numpyro.distributions as dist
 
 from cd_dynamax import (
     EnKFHyperParams, EKFHyperParams, UKFHyperParams
@@ -596,16 +594,6 @@ def plot_simulated_data(t=None, states=None, emissions=None):
     fig.suptitle("States and Emissions", fontsize=16)
     fig.tight_layout(rect=[0, 0, 1, 0.96])
     return fig
-    
-# ------------------------
-# Inference/model helpers
-# ------------------------
-def get_or_sample(name, dist_obj, value):
-    return (
-        numpyro.sample(name, dist_obj)
-        if value is None
-        else numpyro.deterministic(name, value)
-    )
 
 def all_multi_indices(d, max_degree):
     out = []
@@ -650,110 +638,6 @@ def make_nn_init_dict(key, state_dim, hidden_dims, eps=1):
     params["b_out"] = jnp.zeros((state_dim,))
 
     return params
-
-def make_bayesian_nn_drift(state_dim, hidden_dims, prior="uniform", prior_scale=10.0, **kwargs):
-    """Sample NN weights once, then return a deterministic drift(x)."""
-
-    def sample_or_use(name, shape):
-        if name in kwargs:
-            val = kwargs[name]
-            numpyro.deterministic(name, val)
-            return val
-        else:
-            if prior == "uniform":
-                return numpyro.sample(name, dist.Uniform(-prior_scale, prior_scale).expand(shape).to_event(len(shape)))
-            elif prior == "normal":
-                return numpyro.sample(name, dist.Normal(0.0, prior_scale).expand(shape).to_event(len(shape)))
-            else:
-                raise ValueError(f"Unknown prior: {prior}")
-
-    # sample weights once
-    params = {}
-    in_dim = state_dim
-    for layer_idx, out_dim in enumerate(hidden_dims):
-        params[f"W{layer_idx}"] = sample_or_use(f"W{layer_idx}", (in_dim, out_dim))
-        params[f"b{layer_idx}"] = sample_or_use(f"b{layer_idx}", (out_dim,))
-        in_dim = out_dim
-    params["W_out"] = sample_or_use("W_out", (in_dim, state_dim))
-    params["b_out"] = sample_or_use("b_out", (state_dim,))
-
-    # build deterministic forward
-    def drift_fn(x):
-        h = x
-        for layer_idx, out_dim in enumerate(hidden_dims):
-            h = jnn.gelu(jnp.dot(h, params[f"W{layer_idx}"]) + params[f"b{layer_idx}"])
-        out = jnp.dot(h, params["W_out"]) + params["b_out"]
-        return out
-
-    return drift_fn
-
-# ------------------------
-# Prior helpers
-# ------------------------
-def moment_matching_prior(
-    states,                 # (T, D) or (T,)
-    mu_0=0.0,               # target mean     (scalar, (1,), or (D,))
-    tau_0=0.1,              # sd around mean  (scalar, (1,), or (D,))
-    mu_1=1.0,               # target SD       (scalar, (1,), or (D,))
-    tau_1=0.2,              # sd around SD    (scalar, (1,), or (D,))
-    t_emissions=None,       # optional (T,) times for irregular sampling
-    eps=1e-6,
-):
-    """
-    Put Normal priors on:
-      - m̄_d  = time-averaged mean of states (per dim)
-      - s̄_d  = time-averaged SD of states  (per dim)
-
-    Defaults treat all dimensions the same. If you pass scalar or length-1 vectors
-    they are broadcast to (D,). If you pass length-D vectors, they are used as-is.
-    """
-    x = jnp.asarray(states)
-    if x.ndim == 1:
-        x = x[:, None]  # -> (T, 1)
-    T, D = x.shape
-
-    # --- weights over time (uniform or Δt) ---
-    if t_emissions is None:
-        w = jnp.ones((T,)) / T
-    else:
-        # Trapezoidal rule weights based on time intervals
-        t = jnp.asarray(t_emissions).reshape(-1)
-        dt_fwd = jnp.diff(t, append=t[-1])
-        dt_bwd = jnp.diff(t, prepend=t[0])
-        w = 0.5 * (dt_fwd + dt_bwd)
-        w = jnp.clip(w, a_min=eps, a_max=None)
-        w = w / jnp.sum(w)
-
-    # time-weighted mean and SD per dim
-    mean_t = (w[:, None] * x).sum(axis=0)                          # (D,)
-    var_t  = (w[:, None] * (x - mean_t[None, :])**2).sum(axis=0)   # (D,)
-    sd_t   = jnp.sqrt(var_t + eps)                                  # (D,)
-
-    # --- broadcasting helpers ---
-    def _as_vector(z, D, name):
-        z = jnp.asarray(z)
-        if z.ndim == 0:                    # scalar -> (D,)
-            return jnp.full((D,), z)
-        if z.ndim == 1 and z.size == 1:    # length-1 -> (D,)
-            return jnp.full((D,), z.item())
-        if z.ndim == 1 and z.size == D:    # length-D -> ok
-            return z
-        raise ValueError(f"{name} must be scalar, length-1, or length-{D}; got shape {z.shape}")
-
-    mu_0_vec  = _as_vector(mu_0,  D, "mu_0")
-    tau_0_vec = _as_vector(tau_0, D, "tau_0")
-    mu_1_vec  = _as_vector(mu_1,  D, "mu_1")
-    tau_1_vec = _as_vector(tau_1, D, "tau_1")
-
-    # guard against zero/negative taus
-    tau_0_vec = jnp.maximum(tau_0_vec, 1e-12)
-    tau_1_vec = jnp.maximum(tau_1_vec, 1e-12)
-
-    # Normal penalties
-    lp_mean = dist.Normal(mu_0_vec, tau_0_vec).log_prob(mean_t).sum()
-    lp_sd   = dist.Normal(mu_1_vec, tau_1_vec).log_prob(sd_t).sum()
-
-    return lp_mean, lp_sd, mean_t, sd_t
 
 # ------------------------
 # Filter hyperparameter helper
