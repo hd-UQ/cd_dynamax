@@ -75,50 +75,12 @@ All of these problems are deeply interconnected.
 
 ## Demos
 
-### Numpyro-based API
-
-We provide a set of [demos](./demos) that showcase key functionality of `cd-dynamax`, by interacting with the core-functionalities via `numpyro`.
-
+We provide a set of [demos](./demos) that showcase key functionality of `cd-dynamax`.
 
 These scripts illustrate how to learn components of continuous-discrete SDEs from data.
 
-In particular, we provide easy demonstrations for using `numpyro` to define priors and perform parameter inference using HMC or SVI with likelihoods computed via continuous-discrete filtering in `cd_dynamax`. Demos include:
-
 - [Intro tutorial](./demos/notebooks/lorenz63_filter-based_likelihood_tutorial.ipynb) to filtering-based likelihood computation for continuous-discrete SDEs.
 
-- [Impressive example (be very impressed!)](./demos/notebooks/lorenz63_neuralSDE_partial_observation.ipynb) of learning a neural SDE from partial, noisy observations of a Lorenz 63-based SDE. This is quite hard and most methods would struggle here---and yet, a simple Bayesian maximum-likelihood framing works well!
-
-- Learning drift functions from noisy, irregularly-sampled data:
-    - Lorenz 63 system:
-        - Sparse dictionary learning (all 3 components observed): 
-            ```bash
-            python ./demos/numpyro/l63_LaplaceDict.py --emission_dim 3
-            ```
-        - Partial observations (only 1st component): 
-            ```bash
-            python ./demos/numpyro/l63_nn.py --emission_dim 1 --state_dim 3
-            ```
-            - See the jupyter notebook version [here](./demos/notebooks/lorenz63_neuralSDE_partial_observation.ipynb) for a more detailed walkthrough of this example.
-    - Lorenz 96 system:
-        - Sparse dictionary learning (5 components): 
-        ```bash
-        python ./demos/numpyro/l96_LaplaceDict.py --emission_dim 5 --state_dim 5
-        ```
-        - Sparse dictionary learning (10 components): 
-        ```bash
-        python ./demos/numpyro/l96_LaplaceDict.py --emission_dim 10 --state_dim 10 --N_particles 100
-        ```
-
-    - Linear SDE:
-        - Learning a linear SDE from multiple i.i.d. noisy trajectories. In this setting, all trajectories are assumed to come from the *same* underlying linear system.  
-
-        ```bash
-        python ./demos/numpyro/LinearGaussian_MultiTraj.py --emission_dim 5 --state_dim 5 --N_trajectories 30
-        ```
-        - Hierarchical learning of linear SDEs from multiple noisy trajectories. Here, we assume each trajectory comes from a different, yet similar, linear SDE.  
-        ```bash
-        python ./demos/numpyro/LinearGaussian_MultiTraj_KF_Hierarchical.py --emission_dim 5 --state_dim 5 --N_trajectories 30
-        ```
 ## Installation
 
 We support installation via **Conda** (recommended) or via a standard Python virtual environment.
