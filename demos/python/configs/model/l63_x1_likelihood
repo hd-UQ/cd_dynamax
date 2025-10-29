@@ -1,0 +1,27 @@
+[model]
+class_name: CDNLGSSM
+state_dim: 3
+emission_dim: 1
+solver_config_file: configs/solver/dt1e-2_maxSteps1e5
+
+[initial_values]
+# Initial mean: defaults to zero vector
+# Initial covariance: defaults to identity matrix
+initial_cov: {"params": LearnableScaledMatrix(scale=100.0, matrix=jnp.eye(state_dim)),
+                "props": LearnableScaledMatrix(scale=ParameterProperties(trainable=False),
+                                matrix=ParameterProperties(trainable=False,
+                                constrainer=RealToPSDBijector()))}
+
+# Drift function parameters
+dynamics_drift: {"params": LearnableLorenz63_Drift(sigma=10.0, rho=28.0, beta=8.0 / 3.0),
+        "props": LearnableLorenz63_Drift(sigma=ParameterProperties(trainable=True),
+                                rho=ParameterProperties(trainable=True),
+                                beta=ParameterProperties(trainable=True))}
+# Diffusion coefficient
+dynamics_diffusion_coefficient : { "params": LearnableMatrix(params=1.0 * jnp.eye(state_dim)),
+    "props": LearnableMatrix(params=ParameterProperties(trainable=False))}
+
+# Observation function: observe x_1 only
+# Emission covariance:
+emission_cov : {"params": LearnableMatrix(params = 25 * jnp.eye(emission_dim)),
+    "props": LearnableMatrix(params=ParameterProperties(constrainer=RealToPSDBijector(), trainable=False))}

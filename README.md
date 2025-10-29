@@ -91,8 +91,8 @@ We support installation via **Conda** (recommended) or via a standard Python vir
 
 ```bash
 # Create and activate a new environment with Python 3.11
-conda create -n cd_dynamax python=3.11
-conda activate cd_dynamax
+conda create -n cd_dynamax_joss python=3.11
+conda activate cd_dynamax_joss
 
 # Install your package in editable mode (so local changes are picked up)
 pip install -e .[dev]
