@@ -220,41 +220,42 @@ def plot_filter_then_forecast_state_results(
             )
 
         ### Forecasted time-series
-        ts_plotter(
-            ax=axes[d] if plot_mse == False else axes[d][0],
-            t_idx=t_emissions[start_idx_forecast:stop_idx_forecast],
-            f_mean=results['forecasted']['forecasted_state_means'][:, d],
-            f_std=np.sqrt(
-                np.clip(
-                    np.asarray(results['forecasted']['forecasted_state_covariances'])[:, d, d],
-                    0, np.inf
-                )
-            ),
-            label='Forecasted State' if d == 0 else "", # Add label only for the first plot
-            line_style=forecasted_style,
-            fill_style={
-                'color': forecasted_style['color'],
-                'alpha': forecasted_style['alpha'],
-                'linewidth': 0
-            },
-            plot_uncertainty=plot_uncertainty
-        )
-
-        ### Forecasted MSE
-        if plot_mse:
-            # Compute MSE for forecasted states
-            forecasted_mse = (data['states'][start_idx_forecast:stop_idx_forecast, d] - results['forecasted']['forecasted_state_means'][:, d])**2
-
-            # In new column, plot the MSE
-            axes[d][1].plot(
-                t_emissions[start_idx_forecast:stop_idx_forecast],
-                forecasted_mse,
-                label='Forecasted MSE' if d == 0 else "",
-                color='orange',
-                linestyle='--',
-                linewidth=1.0,
-                alpha=0.7
+        if 'forecasted' in results:
+            ts_plotter(
+                ax=axes[d] if plot_mse == False else axes[d][0],
+                t_idx=t_emissions[start_idx_forecast:stop_idx_forecast],
+                f_mean=results['forecasted']['forecasted_state_means'][:, d],
+                f_std=np.sqrt(
+                    np.clip(
+                        np.asarray(results['forecasted']['forecasted_state_covariances'])[:, d, d],
+                        0, np.inf
+                    )
+                ),
+                label='Forecasted State' if d == 0 else "", # Add label only for the first plot
+                line_style=forecasted_style,
+                fill_style={
+                    'color': forecasted_style['color'],
+                    'alpha': forecasted_style['alpha'],
+                    'linewidth': 0
+                },
+                plot_uncertainty=plot_uncertainty
             )
+
+            ### Forecasted MSE
+            if plot_mse:
+                # Compute MSE for forecasted states
+                forecasted_mse = (data['states'][start_idx_forecast:stop_idx_forecast, d] - results['forecasted']['forecasted_state_means'][:, d])**2
+
+                # In new column, plot the MSE
+                axes[d][1].plot(
+                    t_emissions[start_idx_forecast:stop_idx_forecast],
+                    forecasted_mse,
+                    label='Forecasted MSE' if d == 0 else "",
+                    color='orange',
+                    linestyle='--',
+                    linewidth=1.0,
+                    alpha=0.7
+                )
         
         # Plot vertical line at the split time
         plot_vertical_split_line(
@@ -291,21 +292,25 @@ def plot_filter_then_forecast_state_results(
         fontsize=10
     )
 
-    # Save the figure, within a figures directory at results directory
-    plot_results_dir = os.path.join(os.path.dirname(results_file), 'figures')
-    os.makedirs(plot_results_dir, exist_ok=True)
-    plot_file = os.path.join(
-        plot_results_dir,
-        'filter_then_forecast_states_ftfkey{}.png'.format(
-            results_file.split('ftfkey')[-1].split('.pkl')[0]
+    # Save or show the plot
+    if results_file is None:
+        plt.show()
+    else:
+        # Save the figure, within a figures directory at results directory
+        plot_results_dir = os.path.join(os.path.dirname(results_file), 'figures')
+        os.makedirs(plot_results_dir, exist_ok=True)
+        plot_file = os.path.join(
+            plot_results_dir,
+            'filter_then_forecast_states_ftfkey{}.png'.format(
+                results_file.split('ftfkey')[-1].split('.pkl')[0]
+            )
         )
-    )
-    fig.savefig(
-        plot_file,
-        dpi=plot_dpi,
-        bbox_inches='tight' # Use bbox_inches='tight' as a safeguard
-    )
-    print("Filter-then-Forecast states plot saved to:", plot_file)
+        fig.savefig(
+            plot_file,
+            dpi=plot_dpi,
+            bbox_inches='tight' # Use bbox_inches='tight' as a safeguard
+        )
+        print("Filter-then-Forecast states plot saved to:", plot_file)
     plt.close(fig)
 
 # Function to plot the filtering and forecasting results for the states and emissions
@@ -393,25 +398,26 @@ def plot_filter_then_forecast_state_emission_results(
             plot_uncertainty=plot_uncertainty
         )
         ### Forecasted
-        ts_plotter(
-            ax=axes[d][0],
-            t_idx=t_emissions[start_idx_forecast:stop_idx_forecast],
-            f_mean=results['forecasted']['forecasted_state_means'][:, d],
-            f_std=np.sqrt(
-                np.clip(
-                    np.asarray(results['forecasted']['forecasted_state_covariances'])[:, d, d],
-                    0, np.inf
-                )
-            ),
-            label='Forecasted State' if d == 0 else "", # Add label only for the first plot
-            line_style=forecasted_style,
-            fill_style={
-                'color': forecasted_style['color'],
-                'alpha': forecasted_style['alpha'],
-                'linewidth': 0
-            },
-            plot_uncertainty=plot_uncertainty
-        )
+        if 'forecasted' in results:
+            ts_plotter(
+                ax=axes[d][0],
+                t_idx=t_emissions[start_idx_forecast:stop_idx_forecast],
+                f_mean=results['forecasted']['forecasted_state_means'][:, d],
+                f_std=np.sqrt(
+                    np.clip(
+                        np.asarray(results['forecasted']['forecasted_state_covariances'])[:, d, d],
+                        0, np.inf
+                    )
+                ),
+                label='Forecasted State' if d == 0 else "", # Add label only for the first plot
+                line_style=forecasted_style,
+                fill_style={
+                    'color': forecasted_style['color'],
+                    'alpha': forecasted_style['alpha'],
+                    'linewidth': 0
+                },
+                plot_uncertainty=plot_uncertainty
+            )
 
         # Plot vertical line at the split time
         plot_vertical_split_line(
@@ -441,45 +447,47 @@ def plot_filter_then_forecast_state_emission_results(
             plot_observations=plot_observations,
         )
         ### Filtered emissions
-        ts_plotter(
-            ax=axes[d][1],
-            t_idx=t_emissions[start_idx_filter:stop_idx_filter],
-            f_mean=results['filtered']['filtered_emissions_means'][:,d],
-            f_std=np.sqrt(
-                np.clip(
-                    np.asarray(results['filtered']['filtered_emissions_covariances'])[:, d, d],
-                    0, np.inf
-                )
-            ),
-            label='Filtered Emission' if d == 0 else "", # Add label only for the first plot
-            line_style=filtered_style,
-            fill_style={
-                'color': filtered_style['color'],
-                'alpha': filtered_style['alpha'],
-                'linewidth': 0
-            },
-            plot_uncertainty=plot_uncertainty
-        )
+        if 'filtered_emissions_means' in results['filtered']:
+            ts_plotter(
+                ax=axes[d][1],
+                t_idx=t_emissions[start_idx_filter:stop_idx_filter],
+                f_mean=results['filtered']['filtered_emissions_means'][:,d],
+                f_std=np.sqrt(
+                    np.clip(
+                        np.asarray(results['filtered']['filtered_emissions_covariances'])[:, d, d],
+                        0, np.inf
+                    )
+                ),
+                label='Filtered Emission' if d == 0 else "", # Add label only for the first plot
+                line_style=filtered_style,
+                fill_style={
+                    'color': filtered_style['color'],
+                    'alpha': filtered_style['alpha'],
+                    'linewidth': 0
+                },
+                plot_uncertainty=plot_uncertainty
+            )
         ### Forecasted emissions
-        ts_plotter(
-            ax=axes[d][1],
-            t_idx=t_emissions[start_idx_forecast:stop_idx_forecast],
-            f_mean=results['forecasted']['forecasted_emissions_means'][:,d],
-            f_std=np.sqrt(
-                np.clip(
-                    np.asarray(results['forecasted']['forecasted_emissions_covariances'])[:,d, d],
-                    0, np.inf
-                )
-            ),
-            label='Forecasted Emission' if d == 0 else "", # Add label only for the first plot
-            line_style=forecasted_style,
-            fill_style={
-                'color': forecasted_style['color'],
-                'alpha': forecasted_style['alpha'],
-                'linewidth': 0
-            },
-            plot_uncertainty=plot_uncertainty
-        )
+        if 'forecasted' in results and 'forecasted_emissions_means' in results['forecasted']:
+            ts_plotter(
+                ax=axes[d][1],
+                t_idx=t_emissions[start_idx_forecast:stop_idx_forecast],
+                f_mean=results['forecasted']['forecasted_emissions_means'][:,d],
+                f_std=np.sqrt(
+                    np.clip(
+                        np.asarray(results['forecasted']['forecasted_emissions_covariances'])[:,d, d],
+                        0, np.inf
+                    )
+                ),
+                label='Forecasted Emission' if d == 0 else "", # Add label only for the first plot
+                line_style=forecasted_style,
+                fill_style={
+                    'color': forecasted_style['color'],
+                    'alpha': forecasted_style['alpha'],
+                    'linewidth': 0
+                },
+                plot_uncertainty=plot_uncertainty
+            )
 
         # Plot vertical line at the split time
         plot_vertical_split_line(
@@ -511,21 +519,27 @@ def plot_filter_then_forecast_state_emission_results(
         fontsize=8
     )
 
-    # Save the figure, within a figures directory at results directory
-    plot_results_dir = os.path.join(os.path.dirname(results_file), 'figures')
-    os.makedirs(plot_results_dir, exist_ok=True)
-    plot_file = os.path.join(
-        plot_results_dir,
-        'filter_then_forecast_states_emissions_ftfkey{}.png'.format(
-            results_file.split('ftfkey')[-1].split('.pkl')[0]
+    # Save or show the plot
+    if results_file is None:
+        plt.show()
+    else:
+        # Save the figure, within a figures directory at results directory
+        plot_results_dir = os.path.join(os.path.dirname(results_file), 'figures')
+        os.makedirs(plot_results_dir, exist_ok=True)
+        plot_file = os.path.join(
+            plot_results_dir,
+            'filter_then_forecast_states_emissions_ftfkey{}.png'.format(
+                results_file.split('ftfkey')[-1].split('.pkl')[0]
+            )
         )
-    )
-    fig.savefig(
-        plot_file,
-        bbox_inches='tight',
-        dpi=plot_dpi
-    )
-    print("Filter-then-Forecast states and emissions plot saved to:", plot_file)
+        fig.savefig(
+            plot_file,
+            bbox_inches='tight',
+            dpi=plot_dpi
+        )
+        print("Filter-then-Forecast states and emissions plot saved to:", plot_file)
+
+    # Close the figure
     plt.close(fig)
 
 # Function to compare the filtering and forecasting results for the states

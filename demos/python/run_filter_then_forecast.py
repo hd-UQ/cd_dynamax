@@ -6,7 +6,6 @@ import pickle
 from data_generator import generate_data_from_config
 from cd_dynamax.src.utils.experiment_utils import *
 from cd_dynamax.src.utils.simulation_utils import filter_and_forecast
-from cd_dynamax.src.continuous_discrete_nonlinear_gaussian_ssm.cdnlgssm_utils import update_params
 
 def run_filter_then_forecast(
     data_config_file,
