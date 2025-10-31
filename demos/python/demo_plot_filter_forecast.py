@@ -176,10 +176,10 @@ def plot_filter_then_forecast_state_results(
             states=data['states'][:, d],
             state_label='True State' if d == 0 else "", # Add label only for the first plot
             state_style=true_state_style,
-            emissions=data['emissions'][:, d],
+            emissions=data['emissions'][:, d] if d < d_emissions else None,
             emission_label='True Observation' if d == 0 else "", # Add label only for the first plot
             emissions_style=true_emission_style,
-            plot_observations=plot_observations,
+            plot_observations=plot_observations and d < d_emissions,
         )
 
         ### Filtered time-series
