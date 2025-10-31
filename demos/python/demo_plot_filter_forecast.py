@@ -54,7 +54,7 @@ def data_plotter(
         )
     
     # Emissions
-    if plot_observations:
+    if plot_observations and emissions is not None:
         ax.plot(
             t_idx,
             emissions,
