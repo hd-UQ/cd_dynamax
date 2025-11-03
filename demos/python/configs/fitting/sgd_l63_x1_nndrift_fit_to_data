@@ -1,5 +1,5 @@
 [sgd]
-optimizer: optax.adam(1e-2)
+optimizer: optax.adam(1e-3)
 batch_size: 1
 num_epochs: 1000
 shuffle: False
