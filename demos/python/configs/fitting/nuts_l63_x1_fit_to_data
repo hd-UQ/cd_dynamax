@@ -1,0 +1,7 @@
+[mcmc]
+type: nuts
+n_samples: 10
+warmup_samples: 1
+parameters: {}
+verbose: True
+key: 0

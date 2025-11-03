@@ -1,0 +1,9 @@
+[sgd]
+optimizer: optax.adam(1e-2)
+batch_size: 1
+num_epochs: 1000
+shuffle: False
+return_param_history: False
+return_grad_history: False
+key: 0
+

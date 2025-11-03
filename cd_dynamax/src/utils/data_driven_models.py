@@ -8,23 +8,34 @@ from .diffrax_utils import adjust_rhs
 from flax import linen as nn
 
 class LearnableNN_TwoLayerGeLU(NamedTuple):
-    """Two-layer neural network with Gaussian Error Linear Units
-    weights1: weights of the first layer
-    bias1: bias of the first layer
-    weights2: weights of the second layer
-    bias2: bias of the second layer
+    """
+        Two-layer neural network with Gaussian Error Linear Units
 
-    f(x) = weights2 @ gelu(weights1 @ x + bias1) + bias2
+        f(x) = weights2 @ gelu(weights1 @ x + bias1) + bias2
+    Args:
+        weights1: weights of the first layer
+        bias1: bias of the first layer
+        weights2: weights of the second layer
+        bias2: bias of the second layer
     """
 
+    # Neural network parameters
     weights1: Union[Float[Array, "hidden_dim input_dim"], ParameterProperties]
     bias1: Union[Float[Array, "hidden_dim"], ParameterProperties]
     weights2: Union[Float[Array, "output_dim hidden_dim"], ParameterProperties]
     bias2: Union[Float[Array, "output_dim"], ParameterProperties]
-    scale: Union[Float, ParameterProperties]
-
+    
+    # Neural network function
     def f(self, x, u=None, t=None):
-        """This rhs operates in original space."""
+        """
+            NN function, operating in original space.
+        Args:
+            x: state at which to evaluate the NN
+            u: control input (not used)
+            t: time (not used)
+        Returns:
+            rhs: function computed by the NN
+        """
 
         # compute derivative given by NN
         foo = self.weights2 @ nn.gelu(self.weights1 @ x + self.bias1) + self.bias2

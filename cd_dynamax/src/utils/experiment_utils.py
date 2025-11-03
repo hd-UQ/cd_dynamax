@@ -1,20 +1,23 @@
 # System imports
 import os
 from configparser import ConfigParser
+# Jax imports
+import jax.numpy as jnp
+import jax.random as jr
+# Import floating types, to avoid float64' is not defined error
+from numpy import float64, float32, array
+from typing import Tuple, NamedTuple, Union
 
 # CD-Nonlinear Gaussian models
 from cd_dynamax import ContDiscreteNonlinearGaussianSSM
 from cd_dynamax.src.continuous_discrete_nonlinear_gaussian_ssm.models import *
+from cd_dynamax.dynamax.parameters import ParameterProperties
 
 # Useful utility functions
 from .simulation_utils import *
 from .physics_based_models import *
 from .data_driven_models import *
 
-from cd_dynamax.dynamax.parameters import ParameterProperties
-
-import jax.numpy as jnp
-import jax.random as jr
 
 def generate_t_emissions(
         t0: float,
@@ -186,8 +189,9 @@ def create_cdnlgssm_model_from_config(
     # by iterating over rows in section [initial_values]
     initial_config_values = config['initial_values']
 
-    # Import needed classes for the model
-    # LearnableLorenz63_Drift
+    # Typing aliases: for eval to work properly
+    Array = array
+    
     # Iterate over the rows in the initial values section (we don't know the order or which parameters are present)
     initial_params = {}
     for key, val in initial_config_values.items():
