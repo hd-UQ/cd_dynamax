@@ -123,6 +123,7 @@ def plot_filter_then_forecast_state_results(
         plot_uncertainty: bool = True,
         plot_observations: bool = True,
         plot_mse: bool = False,
+        plot_only_filter_forecast_window: bool = False,
         true_state_style = {'color': 'black', 'linestyle': '-', 'linewidth': 1.5},
         true_emission_style = {'color': 'gray', 'linestyle': 'None', 'marker': 'x', 'markersize': 3, 'alpha': 0.5},
         filtered_style = {'color': 'blue', 'linestyle': '-', 'linewidth': 1.5, 'alpha': 0.7},
@@ -170,18 +171,31 @@ def plot_filter_then_forecast_state_results(
     # === State plots ===
     for d in range(d_states):
         ### True data
-        data_plotter(
-            ax=axes[d] if plot_mse == False else axes[d][0],
-            t_idx=t_emissions,
-            states=data['states'][:, d],
-            state_label='True State' if d == 0 else "", # Add label only for the first plot
-            state_style=true_state_style,
-            emissions=data['emissions'][:, d] if d < d_emissions else None,
-            emission_label='True Observation' if d == 0 else "", # Add label only for the first plot
-            emissions_style=true_emission_style,
-            plot_observations=plot_observations and d < d_emissions,
-        )
-
+        if not plot_only_filter_forecast_window:
+            data_plotter(
+                ax=axes[d] if plot_mse == False else axes[d][0],
+                t_idx=t_emissions,
+                states=data['states'][:, d],
+                state_label='True State' if d == 0 else "", # Add label only for the first plot
+                state_style=true_state_style,
+                emissions=data['emissions'][:, d] if d < d_emissions else None,
+                emission_label='True Observation' if d == 0 else "", # Add label only for the first plot
+                emissions_style=true_emission_style,
+                plot_observations=plot_observations and d < d_emissions,
+            )
+        else:
+            # If plotting only filter and forecast, plot true data only in range
+            data_plotter(
+                ax=axes[d] if plot_mse == False else axes[d][0],
+                t_idx=t_emissions[start_idx_filter:stop_idx_forecast],
+                states=data['states'][start_idx_filter:stop_idx_forecast, d],
+                state_label='True State' if d == 0 else "", # Add label only for the first plot
+                state_style=true_state_style,
+                emissions=data['emissions'][start_idx_filter:stop_idx_forecast, d] if d < d_emissions else None,
+                emission_label='True Observation' if d == 0 else "", # Add label only for the first plot
+                emissions_style=true_emission_style,
+                plot_observations=plot_observations and d < d_emissions,
+            )
         ### Filtered time-series
         ts_plotter(
             ax=axes[d] if plot_mse == False else axes[d][0],
