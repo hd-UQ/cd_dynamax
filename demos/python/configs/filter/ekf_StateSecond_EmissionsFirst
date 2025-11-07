@@ -8,7 +8,7 @@ diffeqsolve_settings_file: configs/solver/dt1e-2_maxSteps1e5
 
 [filter_info]
 name=EKF (State 2nd, Emission 1st order)
-desc=Extended Kalman Filter with second order approximation to state function and first order approximatin to emission function.
+desc=Extended Kalman Filter with second order approximation to state function and first order approximation to emission function.
 # Plotting styles
 filtered_style = {'color': '#17becf', 'linestyle': '-', 'linewidth': 1.5, 'alpha': 0.7}
 forecasted_style = {'color': '#17becf', 'linestyle': '--', 'linewidth': 1.5, 'alpha': 0.7}
