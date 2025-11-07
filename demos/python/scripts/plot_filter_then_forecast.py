@@ -1,23 +1,30 @@
 import os
-from configparser import ConfigParser
+import argparse
 import pickle
 
 # CD-NLGSSM imports
-from data_generator import generate_data_from_config
+from cd_dynamax.src.utils.data_generator import generate_data_from_config
 from cd_dynamax.src.utils.experiment_utils import *
-from cd_dynamax.src.utils.simulation_utils import filter_and_forecast
 
-def run_filter_then_forecast(
-    data_config_file,
-    model_config_file,
-    filter_config_file,
-    output_dir,
-    T_filter=0.8,
-    enforce_twin_experiment=False,
-    ftf_key=None,
-    overrides={},
-):
-    '''Run a filtering and forecasting experiment with specified configurations.
+# Demo plotting import
+from filter_forecast_plotting_utils import (
+    plot_filter_then_forecast_state_results,
+    plot_filter_then_forecast_state_emission_results,
+)
+
+# Main function to plot filtering and forecasting experiment
+def plot_filter_then_forecast(
+        config_path,
+        data_config_file,
+        model_config_file,
+        filter_config_file,
+        output_dir,
+        T_filter=0.8,
+        enforce_twin_experiment=False,
+        ftf_key=None,
+        overrides={},
+    ):
+    '''Plot a filtering and forecasting experiment with specified configurations.
 
     Args:
         data_config_file (str): Path to the data configuration file.
@@ -31,7 +38,7 @@ def run_filter_then_forecast(
             Done by resetting the true_model_config_file in the data_config_file = model_config_file.
         overrides (dict): Dictionary of configuration overrides.
     '''
-    # Figure out and build the directory structure
+    # Figure out the directory structure
     results_dir = build_results_dir(
         output_dir,
         data_config_file,
@@ -40,31 +47,29 @@ def run_filter_then_forecast(
         overrides=overrides,
     )
 
-    # Create the results directory if it doesn't exist
-    os.makedirs(results_dir, exist_ok=True)
-    print("Results directory created at:", results_dir)
+    # Check if the results directory exists, if not, print a warning
+    if not os.path.exists(results_dir):
+        print("Warning: Results directory does not exist at:", results_dir)
+        print("Please run the filtering and forecasting experiment first to generate results.")
+        return
 
     if enforce_twin_experiment:
         # Override the true_model_config_file in data_config_file with the model's config file
         overrides['data_generation.true_model_config_file'] = model_config_file
         print(f"Enforcing twin experiment by setting 'data_generation.true_model_config_file' to {model_config_file}.")
     
-    # Generate or load data
+    # Load data: the same function used for generation is used, it should simply load existing data
     data, data_key = generate_data_from_config(
+        config_path=config_path,
         data_config_file=data_config_file,
         data_save_file=None,
         overrides=overrides,
     )
 
-    # Create and initialize the CD-NLGSSM model from the model config file
-    model, params, props = create_cdnlgssm_model_from_config(
-        model_config_file,
-        overrides=overrides,
-    )
-
     # Figure-out the filtering/smoothing settings from config
     filter_hyperparams, filter_info = create_cdnlgssm_filter_from_config(
-        filter_config_file,
+        config_path=config_path,
+        filter_config_file=filter_config_file,
         overrides=overrides
     )
 
@@ -78,79 +83,51 @@ def run_filter_then_forecast(
 
     # Run filtering and forecasting, for each key in ftf_keys
     for ftf_key in ftf_keys if isinstance(ftf_keys, (list)) else [ftf_keys]:
-        print("Running filtering with {filter_name} from T={T0} up to T={T_filter_end} and forecasting up to T={T_forecast_end} (with ftf_key={ftf_key}).".format(
-            filter_name = filter_info['name'] if filter_info is not None and 'name' in filter_info else "the specified filter",
-            T0=T0, T_filter_end=T_filter_end, T_forecast_end=T_forecast_end, ftf_key=ftf_key
-        ))
-        filtered, forecasted, start_idx_filter, stop_idx_filter, start_idx_forecast, stop_idx_forecast = filter_and_forecast(
-            model_params=params,
-            filter_hyperparams=filter_hyperparams,
-            t_emissions=data['t_emissions'],
-            emissions=data['emissions'],
-            T0=T0,
-            T_filter_end=T_filter_end,
-            T_forecast_end=T_forecast_end,
-            key=ftf_key
-        )
+        print(f"Loading {filter_info['name']} filtering from T={T0} up to T={T_filter_end} and forecasting up to T={T_forecast_end} (with ftf_key={ftf_key}) results...")
 
-        # TODO: check emissions_covariance computations
-        # Generate emissions means/covs from filtered states
-        f_emissions_mean, f_emissions_cov = cdnlgssm_emissions(
-            params=params,
-            t_states=data['t_emissions'][:stop_idx_filter],
-            state_means=filtered.filtered_means,
-            state_covs=filtered.filtered_covariances,
-            inputs=None,
-        )
-
-        # Generate emissions means/covs from forecasted states
-        fc_emissions_mean, fc_emissions_cov = cdnlgssm_emissions(
-            params=params,
-            t_states=data['t_emissions'][start_idx_forecast:stop_idx_forecast],
-            state_means=forecasted.forecasted_state_means,
-            state_covs=forecasted.forecasted_state_covariances,
-            inputs=None,
-        )
-    
-        # Convert the filtered and forecasted results to dictionaries, and add additional fields.
-        filtered_dict = tree_to_dict(filtered)
-        filtered_dict['filtered_emissions_means'] = f_emissions_mean
-        filtered_dict['filtered_emissions_covariances'] = f_emissions_cov
-        forecasted_dict = tree_to_dict(forecasted)
-        forecasted_dict['forecasted_emissions_means'] = fc_emissions_mean
-        forecasted_dict['forecasted_emissions_covariances'] = fc_emissions_cov
-
-        # Save the results as a dictionary
-        results = {
-            'filtered': filtered_dict,
-            'forecasted': forecasted_dict,
-            'start_idx_filter': start_idx_filter,
-            'stop_idx_filter': stop_idx_filter,
-            'start_idx_forecast': start_idx_forecast,
-            'stop_idx_forecast': stop_idx_forecast,
-        }
-
-        # Save the results to a file
-        with open(os.path.join(results_dir, 'results_ftfkey{}.pkl'.format(ftf_key)), 'wb') as f:
-            pickle.dump(results, f)
+        # Load the results
+        results_file = os.path.join(results_dir, 'results_ftfkey{}.pkl'.format(ftf_key))
+        with open(results_file, 'rb') as f:
+            results = pickle.load(f)
 
         # Print a message indicating the completion of the experiment
-        print("Experiment completed. Results saved to:", results_dir)
+        print("Results loaded from:", results_file)
+
+        # Plot the filtering and forecasting state results, along with their MSE
+        plot_filter_then_forecast_state_results(
+            data=data,
+            results=results,
+            results_file=results_file,
+            filter_info=filter_info,
+            plot_uncertainty=True,
+            plot_observations=True,
+            plot_mse=True,
+        )
+
+        # Plot the filtering and forecasting state and emission results
+        plot_filter_then_forecast_state_emission_results(
+            data=data,
+            results=results,
+            results_file=results_file,
+            filter_info=filter_info,
+            plot_uncertainty=True,
+            plot_observations=True,
+        )
 
 # Main script gets two arguments: config file and data save file
 if __name__ == "__main__":
-    
     # Create optional flags for comamand line arguments
-    import argparse
-    parser = argparse.ArgumentParser(description='Run a filter then forecast with specified configurations.')
-    parser.add_argument('--data_config_file', type=str, default='configs/data/true_l63_data_x1',
+    parser = argparse.ArgumentParser(description='Plot the filter then forecast experiment with specified configurations.')
+    parser.add_argument('--config_path', type=str, default='../configs/',
+                        help='Path to configuration files: (default: ../configs/)')
+    parser.add_argument('--data_config_file', type=str, default='data/true_l63_data_x1',
                         help='Data configuration file: (default: true_l63_data_x1)')
-    parser.add_argument('--model_config_file', type=str, default='configs/model/true_l63_mech_x1',
+    parser.add_argument('--model_config_file', type=str, default='model/true_l63_mech_x1',
                         help='Model configuration file: (default: true_l63_mech_x1)')
     parser.add_argument('--enforce_twin_experiment', type=bool, default=False,
                         help='If True, will enforce the twin experiment setup (default: False). Done by resetting the true_model_config_file in the data_config_file = model_config_file.')
     # Allow user to specify multiple filter config files or "all"
-    parser.add_argument('--filter_config_file', nargs='+', default='configs/filter/ekf_StateFirst_EmissionsFirst', 
+    parser.add_argument('--filter_config_file', nargs='+', default='filter/ekf_StateFirst_EmissionsFirst', 
                         help='Filter configuration file: (default: ekf_StateFirst_EmissionsFirst), if all filters should be used, set to "all"'
                         )
     parser.add_argument('--output_dir', type=str, default='results/filter_then_forecast',
@@ -170,19 +147,19 @@ if __name__ == "__main__":
 
         if filter_config_files[0].lower() == "all":
             filter_config_files = [
-                "configs/filter/ekf_StateFirst_EmissionsFirst",
-                "configs/filter/ekf_StateSecond_EmissionsFirst",
-                "configs/filter/ekf_StateZeroth_EmissionsFirst",
-                "configs/filter/enkf_StateFirst",
-                "configs/filter/enkf_StateZero",
-                "configs/filter/ukf_StateFirst",
-                "configs/filter/ukf_StateZeroth",
+                "filter/ekf_StateFirst_EmissionsFirst",
+                "filter/ekf_StateSecond_EmissionsFirst",
+                "filter/ekf_StateZeroth_EmissionsFirst",
+                "filter/enkf_StateFirst",
+                "filter/enkf_StateZero",
+                "filter/ukf_StateFirst",
+                "filter/ukf_StateZeroth",
             ]
     else:
         filter_config_files = args.filter_config_file
 
     # Iterate over filter config files
-    print("Running filtering and forecasting experiment...")
+    print("Plotting filtering and forecasting experiment...")
     for filter_config_file in filter_config_files:
         # Prepare overrides dictionary for this run
         overrides = {}
@@ -191,7 +168,8 @@ if __name__ == "__main__":
                 overrides['data_generation.key'] = data_key
 
                 print(f"\t with: {filter_config_file} and overrides: {overrides}")
-                run_filter_then_forecast(
+                plot_filter_then_forecast(
+                    config_path=args.config_path,
                     data_config_file=args.data_config_file,
                     model_config_file=args.model_config_file,
                     filter_config_file=filter_config_file,
@@ -203,7 +181,8 @@ if __name__ == "__main__":
                 )
         else:
             print(f"\t with: {filter_config_file} and no overrides")
-            run_filter_then_forecast(
+            plot_filter_then_forecast(
+                config_path=args.config_path,
                 data_config_file=args.data_config_file,
                 model_config_file=args.model_config_file,
                 filter_config_file=filter_config_file,

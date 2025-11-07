@@ -7,6 +7,7 @@ from cd_dynamax.src.utils.experiment_utils import *
 from cd_dynamax.src.utils.simulation_utils import *
 
 def generate_data_from_config(
+        config_path: str = '../configs/',
         data_config_file=None,
         data_save_file=None,
         overrides=None,
@@ -23,13 +24,16 @@ def generate_data_from_config(
         dict: Configuration parameters.
     """
 
+    # Full path to the config file
+    data_config_filepath = os.path.join(config_path, data_config_file)
+
     # Check if the config file exists
-    if not os.path.exists(data_config_file):
-        raise FileNotFoundError(f"Configuration file '{data_config_file}' not found.")
+    if not os.path.exists(data_config_filepath):
+        raise FileNotFoundError(f"Configuration file '{data_config_filepath}' not found.")
     
     # Initialize data config parser
     data_config = ConfigParser()
-    data_config.read(data_config_file)
+    data_config.read(data_config_filepath)
     
     # Apply overrides if provided
     if overrides is not None:
@@ -70,7 +74,11 @@ def generate_data_from_config(
             true_model_config_file = data_gen_config.get('true_model_config_file', None)
             
             # Create and initialize the CD-NLGSSM model
-            true_model, true_params, true_props = create_cdnlgssm_model_from_config(true_model_config_file)
+            true_model, true_params, true_props = create_cdnlgssm_model_from_config(
+                config_path=config_path,
+                true_model_config_file=true_model_config_file,
+                overrides=overrides
+            )
         
             # Sample from the model
             key = int(data_gen_config.get('key', 0))

@@ -75,11 +75,17 @@ All of these problems are deeply interconnected.
 
 ## Demos
 
-We provide a set of [demos](./demos) that showcase key functionality of `cd-dynamax`.
+We provide a set of [demos](./demos/python) that showcase key functionality of `cd-dynamax`.
 
-These scripts illustrate how to learn components of continuous-discrete SDEs from data.
+These [scripts](./demos/python/scripts) and [notebooks](./demos/python/notebooks) illustrate how to learn components of continuous-discrete SDEs from data.
 
-- [Intro tutorial](./demos/notebooks/lorenz63_filter-based_likelihood_tutorial.ipynb) to filtering-based likelihood computation for continuous-discrete SDEs.
+For instance:
+
+- [Filtering-based likelihood tutorial](./demos/notebooks/lorenz63_filter_based_likelihood_tutorial.ipynb) to filtering-based likelihood computation for continuous-discrete SDEs.
+
+- [SGD-based model fitting tutorial](./demos/notebooks/lorenz63_sgd_fit_to_data_tutorial.ipynb) to SGD-based fitting of continuous-discrete SDE model to data.
+
+- [MCMC-based model fitting tutorial](./demos/notebooks/lorenz63_mcmc_fit_to_data_tutorial.ipynb) to MCMC-based fitting of continuous-discrete SDE model to data.
 
 ## Installation
 

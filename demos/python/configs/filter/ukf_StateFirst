@@ -5,7 +5,7 @@ alpha: jnp.sqrt(3)
 beta: 2
 kappa: 1
 cov_rescaling: 1.0
-diffeqsolve_settings_file: configs/solver/dt1e-2_maxSteps1e5
+diffeqsolve_settings_file: solver/dt1e-2_maxSteps1e5
 
 [filter_info]
 name=UKF (1st order)

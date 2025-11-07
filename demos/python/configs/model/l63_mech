@@ -2,7 +2,7 @@
 class_name: CDNLGSSM
 state_dim: 3
 emission_dim: 3
-solver_config_file: configs/solver/dt1e-2_maxSteps1e5
+solver_config_file: solver/dt1e-2_maxSteps1e5
 
 [initial_values]
 # Initial mean: defaults to zero vector
@@ -31,5 +31,5 @@ dynamics_drift: {
 
 # If you specify a prior, the samples will replace both init and default values (possibly specified above) 
 [prior]
-prior_class_file: configs/prior/l63_mech_drift_hi_info.py
+prior_class_file: prior/l63_mech_drift_hi_info.py
 prior_init_key: 0

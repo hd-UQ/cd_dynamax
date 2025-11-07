@@ -2,7 +2,7 @@
 class_name: CDNLGSSM
 state_dim: 3
 emission_dim: 1
-solver_config_file: configs/solver/dt1e-2_maxSteps1e5
+solver_config_file: solver/dt1e-2_maxSteps1e5
 
 [initial_values]
 # Initial mean: defaults to zero vector
@@ -34,5 +34,5 @@ emission_cov : {"params": LearnableMatrix(params = jnp.eye(emission_dim)),
 # We specify a prior, to sample from, replaceing both init and default values
 # In this case, a higly informative prior over mechanistic drift
 [prior]
-prior_class_file: configs/prior/l63_mech_drift_hi_info.py
+prior_class_file: prior/l63_mech_drift_hi_info.py
 prior_init_key: 0

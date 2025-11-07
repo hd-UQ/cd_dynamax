@@ -4,25 +4,26 @@ from configparser import ConfigParser
 import pickle
 
 # CD-NLGSSM imports
-from data_generator import generate_data_from_config
+from cd_dynamax.src.utils.data_generator import generate_data_from_config
 from cd_dynamax.src.utils.experiment_utils import *
 
 # Demo plotting import
-from demo_plot_filter_forecast import (
+from filter_forecast_plotting_utils import (
     compare_filter_then_forecast_state_results,
 )
 
 # Main function to plot filtering and forecasting experiment
 def compare_filter_then_forecast(
-    data_config_file,
-    model_config_file,
-    filter_config_files,
-    output_dir,
-    T_filter=0.8,
-    enforce_twin_experiment=False,
-    ftf_key=None,
-    overrides={},
-):
+        config_path,
+        data_config_file,
+        model_config_file,
+        filter_config_files,
+        output_dir,
+        T_filter=0.8,
+        enforce_twin_experiment=False,
+        ftf_key=None,
+        overrides={},
+    ):
     '''Compare a filtering and forecasting experiment with specified configurations.
 
     Args:
@@ -60,6 +61,7 @@ def compare_filter_then_forecast(
     
     # Load data: the same function used for generation is used, it should simply load existing data
     data, data_key = generate_data_from_config(
+        config_path=config_path,
         data_config_file=data_config_file,
         data_save_file=None,
         overrides=overrides,
@@ -83,7 +85,8 @@ def compare_filter_then_forecast(
             print(f"Processing filter configuration: {filter_config_file}")
             # Figure-out the filtering/smoothing settings from config
             _, all_filter_info[filter_idx] = create_cdnlgssm_filter_from_config(
-                filter_config_file,
+                config_path=config_path,
+                filter_config_file=filter_config_file,
                 overrides=overrides
             )
 
@@ -125,15 +128,15 @@ def compare_filter_then_forecast(
             plot_dpi=300,
         )
 
-    import pdb; pdb.set_trace()
-
 # Main script gets two arguments: config file and data save file
 if __name__ == "__main__":
     # Create optional flags for comamand line arguments
     parser = argparse.ArgumentParser(description='Compare the filter then forecast experiment with a set of filter configurations.')
-    parser.add_argument('--data_config_file', type=str, default='configs/data/true_l63_data_x1',
+    parser.add_argument('--config_path', type=str, default='../configs/',
+                        help='Path to configuration files: (default: ../configs/)')
+    parser.add_argument('--data_config_file', type=str, default='data/true_l63_data_x1',
                         help='Data configuration file: (default: true_l63_data_x1)')
-    parser.add_argument('--model_config_file', type=str, default='configs/model/true_l63_mech_x1',
+    parser.add_argument('--model_config_file', type=str, default='model/true_l63_mech_x1',
                         help='Model configuration file: (default: true_l63_mech_x1)')
     parser.add_argument('--enforce_twin_experiment', type=bool, default=False,
                         help='If True, will enforce the twin experiment setup (default: False). Done by resetting the true_model_config_file in the data_config_file = model_config_file.')
@@ -158,13 +161,13 @@ if __name__ == "__main__":
 
         if filter_config_files[0].lower() == "all":
             filter_config_files = [
-                "configs/filter/ekf_StateFirst_EmissionsFirst",
-                "configs/filter/ekf_StateSecond_EmissionsFirst",
-                "configs/filter/ekf_StateZeroth_EmissionsFirst",
-                "configs/filter/enkf_StateFirst",
-                "configs/filter/enkf_StateZero",
-                "configs/filter/ukf_StateFirst",
-                "configs/filter/ukf_StateZeroth",
+                "filter/ekf_StateFirst_EmissionsFirst",
+                "filter/ekf_StateSecond_EmissionsFirst",
+                "filter/ekf_StateZeroth_EmissionsFirst",
+                "filter/enkf_StateFirst",
+                "filter/enkf_StateZero",
+                "filter/ukf_StateFirst",
+                "filter/ukf_StateZeroth",
             ]
         else:
             raise ValueError("We need more than one filter_config_file argument for comparison.")
@@ -179,6 +182,7 @@ if __name__ == "__main__":
 
     # Compare filter results from multiple filter config files
     compare_filter_then_forecast(
+        config_path=args.config_path,
         data_config_file=args.data_config_file,
         model_config_file=args.model_config_file,
         filter_config_files=filter_config_files,

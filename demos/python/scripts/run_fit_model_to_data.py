@@ -6,17 +6,18 @@ import pickle
 
 # CD-NLGSSM imports
 from cd_dynamax.src.utils.experiment_utils import *
-from data_generator import generate_data_from_config
+from cd_dynamax.src.utils.data_generator import generate_data_from_config
 
 def fit_model_to_data(
-    data_config_file,
-    model_config_file,
-    filter_config_file,
-    fit_config_file,
-    output_dir,
-    fit_key=None,
-    overrides={},
-):
+        config_path,
+        data_config_file,
+        model_config_file,
+        filter_config_file,
+        fit_config_file,
+        output_dir,
+        fit_key=None,
+        overrides={},
+    ):
     # Figure out and build the directory structure
     results_dir = build_results_dir(
         output_dir,
@@ -34,6 +35,7 @@ def fit_model_to_data(
 
     # Generate or load data
     data, data_key = generate_data_from_config(
+        config_path=config_path,
         data_config_file=data_config_file,
         data_save_file=None,
         overrides=overrides,
@@ -41,25 +43,36 @@ def fit_model_to_data(
 
     # Create and initialize the CD-NLGSSM model from the model config file
     model, params, props = create_cdnlgssm_model_from_config(
-        model_config_file,
+        config_path=config_path,
+        true_model_config_file=model_config_file,
         overrides=overrides,
     )
 
     # Figure-out the filtering/smoothing settings from config
     filter_hyperparams, filter_info = create_cdnlgssm_filter_from_config(
-        filter_config_file,
+        config_path=config_path,
+        filter_config_file=filter_config_file,
         overrides=overrides
     )
 
-    ## Run series of inferences based on inference config
+    # Full path to the fit config file
+    fit_config_filepath = os.path.join(config_path, fit_config_file)
+
+    # Check if the config file exists
+    if not os.path.exists(fit_config_filepath):
+        raise FileNotFoundError(f"Configuration file '{fit_config_filepath}' not found.")
+
+    ## Figure out series of inferences based on inference config file
+    # Initialize fit config parser
     config = ConfigParser()
-    config.read(fit_config_file)
+    config.read(fit_config_filepath)
 
     # For each optimization method specified in the config
     optim_configs = config.sections()
 
     # Run SGD for parameter estimation
     if 'sgd' in optim_configs:
+        import optax  # Local import to avoid unnecessary dependency if not using SGD
         # SGD configuration
         sgd_config = config['sgd']
 
@@ -201,13 +214,15 @@ def fit_model_to_data(
 if __name__ == "__main__":
     # Create optional flags for comamand line arguments
     parser = argparse.ArgumentParser(description='Fit model to data, according to specified configurations of data, model and filtering.')
-    parser.add_argument('--data_config_file', type=str, default='configs/data/true_l63_data',
+    parser.add_argument('--config_path', type=str, default='../configs/',
+                        help='Path to configuration files: (default: ../configs/)')
+    parser.add_argument('--data_config_file', type=str, default='data/true_l63_data',
                         help='Data configuration file: (default: true_l63_data)')
-    parser.add_argument('--model_config_file', type=str, default='configs/model/l63_mech',
+    parser.add_argument('--model_config_file', type=str, default='model/l63_mech',
                         help='Model configuration file: (default: l63_mech)')
-    parser.add_argument('--filter_config_file', type=str, default='configs/filter/ekf_StateFirst_EmissionsFirst', 
+    parser.add_argument('--filter_config_file', type=str, default='filter/ekf_StateFirst_EmissionsFirst', 
                         help='Filter configuration file: (default: ekf_StateFirst_EmissionsFirst)')
-    parser.add_argument('--fit_config_file', type=str, default='configs/fitting/fit_sgd',
+    parser.add_argument('--fit_config_file', type=str, default='fitting/fit_sgd',
                         help='Fitting algorithm configuration file: (default: fit_sgd)')
     # Add optional data_key and ftf_key arguments, which can be a sequence of integers
     parser.add_argument('--fit_key', type=int, nargs='+', default=None,

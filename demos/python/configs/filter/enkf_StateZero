@@ -4,7 +4,7 @@ state_order: zeroth
 cov_rescaling: 1.0
 N_particles: 30
 perturb_measurements: True
-diffeqsolve_settings_file: configs/solver/dt1e-2_maxSteps1e5
+diffeqsolve_settings_file: solver/dt1e-2_maxSteps1e5
 
 [filter_info]
 name=EnKF (Zeroth order)

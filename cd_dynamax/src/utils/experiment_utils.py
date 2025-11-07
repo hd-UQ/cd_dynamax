@@ -141,6 +141,7 @@ def mcmc_config_to_dict(mcmc_config):
 
 # Create CD-NLGSSM model from configuration files
 def create_cdnlgssm_model_from_config(
+        config_path: str = '../configs/',
         true_model_config_file: str = None,
         overrides = None,
     ) -> Tuple[ContDiscreteNonlinearGaussianSSM, ParamsCDNLGSSM, ParameterProperties]:
@@ -152,9 +153,17 @@ def create_cdnlgssm_model_from_config(
     Returns:
         :return: Tuple of CD-NLGSSM model, parameters and properties
     """
+
+    # Full path to the config file
+    true_model_config_filepath = os.path.join(config_path, true_model_config_file)
+
+    # Check if the config file exists
+    if not os.path.exists(true_model_config_filepath):
+        raise FileNotFoundError(f"Configuration file '{true_model_config_filepath}' not found.")
+      
     # Load the model configuration file
     config = ConfigParser()
-    config.read(true_model_config_file)
+    config.read(true_model_config_filepath)
 
     # The model section contains
     '''
@@ -181,7 +190,9 @@ def create_cdnlgssm_model_from_config(
         state_dim=state_dim,
         emission_dim=emission_dim,
         diffeqsolve_settings=solver_settings_from_config(
-            config.get('model', 'solver_config_file', fallback=None)
+            config_path=config_path,
+            config_file=config.get('model', 'solver_config_file', fallback=None),
+            overrides=overrides,
         )
     )
 
@@ -200,13 +211,38 @@ def create_cdnlgssm_model_from_config(
     # Load the prior from the configuration file, if present
     prior_config_file = config.get('prior', 'prior_class_file', fallback=None)
     if prior_config_file is not None:
-        # convert / to . in prior_config_file
-        prior_config_import_nm = prior_config_file.replace('/', '.').rstrip('.py')
-        ## WARNING: if your file has a "dash" in the name, it will not work as a module name!
+        # Prior name is given as a file path, we need to import it as a module
+        # First recover everything after last / and then, remove .py extension
+        '''
+        prior_module_name = prior_config_file.replace('/','.').rstrip('.py')
         from importlib import import_module
-        module = import_module(prior_config_import_nm)
-        prior = module.CDNLGSSM_Prior()
-        prior_init_key = jr.PRNGKey(config.getint('prior', 'prior_init_key', fallback=0))
+        module = import_module(
+            prior_module_name
+            package=config_path
+            )
+        '''
+
+        absolute_prior_path = os.path.abspath(os.path.join(config_path, prior_config_file))
+        print(f"Attempting to load prior from: {absolute_prior_path}")
+        import importlib, sys
+        prior_module_name = os.path.basename(prior_config_file).rstrip('.py')
+        spec = importlib.util.spec_from_file_location(prior_module_name, absolute_prior_path)
+
+        if spec and spec.loader:
+            # 3. Create the module from the spec
+            module = importlib.util.module_from_spec(spec)
+            sys.modules[prior_module_name] = module
+            spec.loader.exec_module(module)
+            print(f"Successfully loaded prior from: {absolute_prior_path}")
+            # Get the class
+            CDNLGSSM_Prior = getattr(module, 'CDNLGSSM_Prior')
+            # Instantiate the prior class
+            prior = CDNLGSSM_Prior()
+            print(f"Prior instantiated from class: {prior.__class__.__name__}")
+            prior_init_key = jr.PRNGKey(config.getint('prior', 'prior_init_key', fallback=0))
+        else:
+            raise ImportError(f"Could not load module from path: {absolute_prior_path}")
+        
     else:
         prior = None
         prior_init_key = jr.PRNGKey(0)
@@ -222,7 +258,8 @@ def create_cdnlgssm_model_from_config(
     return true_model, true_model_params, true_model_props
 
 def solver_settings_from_config(
-        config_file: str,
+        config_path: str = '../configs/',
+        config_file: str = None,
         overrides = None,
     ) -> dict:
     r"""Load solver settings from a configuration file
@@ -235,12 +272,17 @@ def solver_settings_from_config(
         :return: dictionary of solver settings
     """
     
-    import diffrax as dfx
-    
+    # Full path to the config file
+    config_filepath = os.path.join(config_path, config_file)
+
+    # Check if the config file exists
+    if not os.path.exists(config_filepath):
+        raise FileNotFoundError(f"Configuration file '{config_filepath}' not found.")
+
     # Load the solver configuration file
     solver_config = ConfigParser()
-    solver_config.read(config_file)
-    
+    solver_config.read(config_filepath)
+
     # Apply overrides if provided
     if overrides is not None:
         solver_config = override_config(
@@ -248,6 +290,8 @@ def solver_settings_from_config(
             overrides=overrides
         )
 
+    # Import diffrax as dfx (to avoid issues with eval)
+    import diffrax as dfx
     # Extract the solver settings into a dictionary
     diffeqsolve_settings = {}
     diffeqsolve_settings['solver'] = eval(
@@ -267,7 +311,8 @@ def solver_settings_from_config(
 
 # Create CD-NLGSSM filter from configuration file
 def create_cdnlgssm_filter_from_config(
-        filter_config_file: str,
+        config_path: str = '../configs/',
+        filter_config_file: str = None,
         overrides = None,
     ) -> NamedTuple:
     r"""Create CD-NLGSSM filter from configuration file
@@ -278,10 +323,16 @@ def create_cdnlgssm_filter_from_config(
         :return: NamedTuple of filter settings
     """
 
+    # Full path to the config file
+    filter_config_filepath = os.path.join(config_path, filter_config_file)
+    # Check if the config file exists
+    if not os.path.exists(filter_config_filepath):
+        raise FileNotFoundError(f"Configuration file '{filter_config_filepath}' not found.")
+
     # Load the filter configuration file
     filter_config = ConfigParser()
     filter_config.optionxform = str  # Preserve case sensitivity (needed for "N_particles")
-    filter_config.read(filter_config_file)
+    filter_config.read(filter_config_filepath)
 
     # Apply overrides if provided
     if overrides is not None:
@@ -302,7 +353,11 @@ def create_cdnlgssm_filter_from_config(
     hyperparam_dict = dict(filter_config.items(section))
     hyperparam_dict['dt_final'] = float(hyperparam_dict.get('dt_final', 1e-4))
     hyperparam_dict['cov_rescaling'] = float(hyperparam_dict.get('cov_rescaling', 1.0))
-    hyperparam_dict['diffeqsolve_settings'] = solver_settings_from_config(hyperparam_dict['diffeqsolve_settings_file'])
+    hyperparam_dict['diffeqsolve_settings'] = solver_settings_from_config(
+        config_path=config_path,
+        config_file=hyperparam_dict['diffeqsolve_settings_file'],
+        overrides=overrides,
+        )
     # drop the diffeqsolve_settings_file key
     hyperparam_dict.pop('diffeqsolve_settings_file', None)
     if section == 'EKF':
