@@ -64,7 +64,7 @@ python3 plot_fitted_model.py --fit_config_file fitting/fit_nuts
 
 ## Scipy
 
-- Run the parameter learning `run_fit_model_to_data.py` script, with corresponding fit_nuts config file
+- Run the parameter learning `run_fit_model_to_data.py` script, with corresponding fit_scipy config file
 ```bash
 python3 run_fit_model_to_data.py --fit_config_file fitting/fit_scipy
 ```
