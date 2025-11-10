@@ -877,22 +877,20 @@ class SSM(ABC):
         losses = jnp.array(loss_history)
 
         if return_param_history:
-            # Fill in untrainable params in history and convert to constrained space
-            n_fits = len(param_history)
-            unc_params_history = tree_map(
-                lambda initial, hist: (
-                    jnp.broadcast_to(jnp.array(initial),
-                                    (n_fits,) + jnp.array(initial).shape)
-                    if hist is None
-                    else jnp.stack([p if p is not None else initial for p in hist])
-                ),
-                initial_unc_params,
-                param_history
-            )
-            params_history = from_unconstrained(unc_params_history, props)
-            return params_fitted, losses, params_history
+            # Fill missing params before storing
+            param_history = [
+                tree_map(
+                    lambda init, p: init if p is None else p,
+                    initial_unc_params,
+                    ph,
+                )
+                for ph in param_history
+            ]
 
-        return params_fitted, losses
+            # Stack across iterations (same structure now)
+            unc_params_history = tree_map(lambda *xs: jnp.stack(xs), *param_history)
+            params_history = from_unconstrained(unc_params_history, props)
+            return params_fitted, losses, params_history, result
 
 
     def fit_scipy_jaxopt(

@@ -244,7 +244,7 @@ def plot_fitted_model_to_data(
             # Load the results, for each fit_key separately
             load_results_file = os.path.join(
                 results_dir,
-                f'_scipy_model_fit_fitkey{key}.pkl'
+                f'scipy_model_fit_fitkey{key}.pkl'
             )
             with open(load_results_file, 'rb') as f:
                 scipy_results = pickle.load(f)
@@ -267,7 +267,7 @@ def plot_fitted_model_to_data(
                 true_params = data['dgmodel_info']['params'],
                 true_emissions = data['emissions'],
                 t_emissions = data['t_emissions'],
-                marginal_lls = scipy_results['fun_value'],
+                marginal_lls = scipy_results['loss_history'],
                 filter_hyperparams=filter_hyperparams,
                 plot_save_path=os.path.join(
                     plotting_dir,

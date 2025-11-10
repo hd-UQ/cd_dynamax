@@ -194,12 +194,14 @@ def fit_model_to_data(
 
             # Reformat the results into a dictionary
             scipy_results = {
-                'params_fitted': scipy_result.x,
-                'fun_value': scipy_result.fun,
-                'nfev': scipy_result.nfev,
-                'success': scipy_result.success,
-                'message': scipy_result.message,
+                'params_fitted': scipy_result[0],
+                'fun_value': scipy_result[-1].fun,
+                'nfev': scipy_result[-1].nfev,
+                'success': scipy_result[-1].success,
+                'message': scipy_result[-1].message,
+                'loss_history': scipy_result[1],
             }
+
             if return_param_history:
                 scipy_results['params_history'] = scipy_result[2]
 
