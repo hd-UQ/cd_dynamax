@@ -109,10 +109,6 @@ This installs the core dependencies listed in `pyproject.toml`, along with optio
 #### GPU support
 If you want GPU acceleration with JAX, you must install a CUDA-enabled `jaxlib` wheel.  
 Check the [JAX installation docs](https://jax.readthedocs.io/en/latest/installation.html#installation) for the exact commands for your system.  
-For example (CUDA 12):
-```bash
-pip install --upgrade "jax[cuda12_pip]" -f https://storage.googleapis.com/jax-releases/jax_cuda_releases.html
-```
 
 ---
 

@@ -174,6 +174,7 @@ def fit_model_to_data(
         for idx, key in enumerate(fit_keys):
             print(f"Running {config_key} optimization MAP estimation with fit_key: {key} (Index {idx + 1} of {len(fit_keys)})")
 
+            return_param_history = scipy_config.getboolean('return_param_history', False)
             # SciPy optimization MAP estimation via cd-dynamax model
             scipy_result = model.fit_scipy(
                 initial_params=sgd_results['params_fitted'] if 'sgd' in optim_configs else params,
@@ -187,9 +188,9 @@ def fit_model_to_data(
                     'maxiter': scipy_config.getint('maxiter', 100),
                     'disp': scipy_config.getboolean('disp', True),
                 },
-                return_param_history=scipy_config.getboolean('return_param_history', False),
+                return_param_history=return_param_history,
             )
-            print("{} optimization MAP estimation complete for fit_key:", config_key, key)
+            print(f"{config_key} optimization MAP estimation complete for fit_key: {key}")
 
             # Reformat the results into a dictionary
             scipy_results = {
