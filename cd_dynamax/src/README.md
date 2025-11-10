@@ -43,23 +43,32 @@ We provide the following modifications of the dynamax codebase, to accommodate c
 
 ## [utils](./utils)
 
+- cd-dynamax example model defintions:
+    - [data_driven_models.py](./utils/data_driven_models.py): example neural network, Gaussian Process, polynomial and dictionary-learning models
+    - [physics_based_models.py](./utils/physics_based_models.py): example definition of mechanistic models
+
+- [data_generator.py](./utils/data_generator.py)
+    - functions to generate synthetic data from continuous-discrete state space (cd-dynamax) models, based on user-specified configuration
+
 - [diffrax_utils.py](./utils/diffrax_utils.py)
     - implements a diffrax based, autodifferentiable ODEsolver
-    
-- [test_utils.py](./utils/test_utils.py)
-
-- [plotting_utils.py](./utils/plotting_utils.py)
 
 - [debug_utils.py](./utils/debug_utils.py)
     - Debugging in jax can be difficult---pre-compilation speedups cause typical usage of in-line python debuggers to fail. To make debugging easier, we implemented a wrapper for `lax.scan` which, with `debug=True`, runs a (slow, but in-line debuggable!) `for` loop instead of `lax.scan`.
     - To use this in a particular piece of code, simply add `from utils.debug_utils import lax_scan` and replace an existing `lax.scan` call you wish to debug with `lax_scan(..., debug=True)`.
     - This is an experimental feature, so please report any issues that arise from using this tool---we hope it helps ease the transition into using jax!
 
-## [Tests](./test_scripts)
+- [optimize_utils.py](./utils/optimize_utils.py): utility functions for optimization routines
 
-- Establishes functionality of linear and non-linear filters/smoothers, as well as parameter fitting via SGD.
-- Checks that non-linear algorithms applied to linear problems return similar results as linear algorithms.
+- [test_utils.py](./utils/test_utils.py): utility functions for unit tests
 
-## [Notebooks](./notebooks)
+- Several plotting utilities are implemented in:
+    - [plotting_utils.py](./utils/plotting_utils.py)
+    - [pliotting_chaos_utils.py](./utils/plotting_chaos_utils.py)
 
-- Example notebooks, with filtering/smoothing of linear and nonlinear continuous-discrete dynamic models. 
+- Additional utility functions are implemented in:
+    - [experiment_utils.py](./utils/experiment_utils.py)
+    - [simulation_utils.py](./utils/simulation_utils.py)
+    - [prior_utils.py](./utils/prior_utils.py)
+    - [likelihood_eval_utils.py](./utils/likelihood_eval_utils.py)
+
