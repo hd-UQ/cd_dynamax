@@ -1,3 +1,13 @@
+# Simple functionality tests
+
+- [test_import.py](./test_import.py) checks that key packages can be imported without errors.
+
+- [test_models.py](./test_models.py) checks that basic model creation and parameter setting works for cd-dynamax models.
+
+- [test_utils_imports.py](./test_utils_imports.py) checks that key (debug and difrax) utility functions can be imported without errors.
+
+# Tests for cd-dynamax performance
+
 - [cdlgssm_test_filter_TRegular.py](./cdlgssm_test_filter_TRegular.py) checks discrete and continuous-discrete Linear filtering algorithms with regularly sampled observations
     - Note that after SGD learning, comparison between discrete and continuous-discrete models is not easy due to different parameterizations.
         - Although filtered means and covs are not exactly equal, plots showcase they are quite accurate in both models.
