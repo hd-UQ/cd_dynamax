@@ -58,16 +58,34 @@ All of these problems are deeply interconnected.
     - this is a design choice of ours, other alternatives are possible.
     - This marginalization is performed (approximately, in cases of non-linear dynamics) via filtering/smoothing algorithms.
 
-## Codebase status
+## Codebase description and status
+
+The `cd-dynamax` codebase extends the `dynamax` library to support continuous-discrete state space models, where observations are made at specified discrete times rather than at regular intervals.
 
 - We leverage [dynamax](https://github.com/probml/dynamax) code
     - Currently, based on a local directory with [Dynamax release 0.1.5](https://github.com/probml/dynamax/releases/tag/0.1.5)
 
-- We have implemented the codebase to deal with [continuous-discrete linear and non-linear models](./cd_dynamax/src/README.md), along with several filtering and smoothing algorithms.
+- We have implemented the [`cd-dynamax` codebase](./cd_dynamax/README.md) to deal with [continuous-discrete linear and non-linear models](./cd_dynamax/src/README.md), along with several filtering and smoothing algorithms.
 
-## Demos
+- The codebase is organized into several key directories:
+```
+cd_dynamax/
+├── src/                       # Source code for cd-dynamax library
+│   ├── continuous_discrete_linear_gaussian_ssm/  # CD-LGSSM models and algorithms
+│   ├── continuous_discrete_nonlinear_gaussian_ssm/ # CD-NLGSSM models and algorithms
+│   ├── ssm_temissions.py      # Modified SSM class for discrete emissions
+│   └── utils/               # Utility functions and example models
+├── dynamax/                     # Original dynamax library (as a submodule)
+demos/                       # Python demos showcasing cd-dynamax functionality
+├── python/scripts/          # Python scripts for running demos
+├── python/notebooks/        # Jupyter notebooks for interactive demos
+├── python/configs/          # Configuration files for demos
+tests/                       # Tests for cd-dynamax functionality
+```
 
-We provide a set of [demos](./demos/python) that showcase key functionality of `cd-dynamax`.
+## [Demos](./demos/python)
+
+We provide a set of [demos](./demos/python/README.md) that showcase key functionality of `cd-dynamax`.
 
 These [scripts](./demos/python/scripts) and [notebooks](./demos/python/notebooks) illustrate how to learn components of continuous-discrete SDEs from data.
 
@@ -79,7 +97,11 @@ For instance:
 
 - [MCMC-based model fitting tutorial](./demos/python/notebooks/lorenz63_mcmc_fit_to_data_tutorial.ipynb) to MCMC-based fitting of continuous-discrete SDE model to data.
 
-## Installation
+## [Tests](./tests)
+
+- Several [tests](./tests/README.md) to establish cd-dynamax general functionality, as well as linear and non-linear filters/smoothers tests: e.g., checks that non-linear algorithms applied to linear problems return similar results as linear algorithms.
+
+# Installation
 
 We support installation via **Conda** (recommended) or via a standard Python virtual environment.
 
@@ -135,7 +157,3 @@ Check the [JAX installation docs](https://jax.readthedocs.io/en/latest/installat
     ```bash
     pytest
     ```
-    
-## [Tests](./tests)
-
-- Several [tests](./tests/README.md) to establish cd-dynamax general functionality, as well as linear and non-linear filters/smoothers tests: e.g., checks that non-linear algorithms applied to linear problems return similar results as linear algorithms.
