@@ -80,24 +80,37 @@ demos/                       # Python demos showcasing cd-dynamax functionality
 ├── python/scripts/          # Python scripts for running demos
 ├── python/notebooks/        # Jupyter notebooks for interactive demos
 ├── python/configs/          # Configuration files for demos
+├── numpyro/scripts/         # Numpyro scripts for running demos
+├── numpyro/notebooks/       # Jupyter notebooks for interactive numpyro demos
 tests/                       # Tests for cd-dynamax functionality
 ```
 
-## [Demos](./demos/python)
+## [Demos](./demos)
 
-We provide a set of [demos](./demos/python/README.md) that showcase key functionality of `cd-dynamax`.
+We provide a set of [demos](./demos/README.md) that showcase key functionality of `cd-dynamax`.
 
-These [scripts](./demos/python/scripts) and [notebooks](./demos/python/notebooks) illustrate how to learn components of continuous-discrete SDEs from data.
+The demo scripts and notebooks illustrate how to learn components of continuous-discrete SDEs from data.
+
+USER NOTE: This README was made during a transition towards a more user-friendly way to interact with the cd-dynamax library. The new recommended way to use cd-dynamax is best illustrated in the [filter-based likelihood tutorial](./demos/python/notebooks/lorenz63_filter_based_likelihood_tutorial_newAPI.ipynb) and is used throughout the newly included [demos/numpyro](./demos/numpyro/README.md).
 
 For instance:
 
-- Filtering-based likelihood tutorial [(original](./demos/python/notebooks/lorenz63_filter_based_likelihood_tutorial.ipynb) and [and new API--recommended)](./demos/python/notebooks/lorenz63_filter_based_likelihood_tutorial_newAPI.ipynb) to filtering-based likelihood computation for continuous-discrete SDEs.
+- Filtering-based likelihood tutorial for continuous-discrete SDEs.
+    - [New API (recommended)](./demos/python/notebooks/lorenz63_filter_based_likelihood_tutorial_newAPI.ipynb)
+    - [Original API](./demos/python/notebooks/lorenz63_filter_based_likelihood_tutorial.ipynb)
 
-- [SGD-based model fitting tutorial](./demos/python/notebooks/lorenz63_sgd_fit_to_data_tutorial.ipynb) to SGD-based fitting of continuous-discrete SDE model to data.
+- SGD-based drift fitting tutorial on how to learn a Neural Network drift function for continuous-discrete SDEs.
+    - [New API (recommended)](./demos/numpyro/notebooks/lorenz63_nndrift_sgd_fit_to_data_tutorial_newAPI.ipynb)
+    - [Original API](./demos/python/notebooks/lorenz63_nndrift_sgd_fit_to_data_tutorial.ipynb)
 
-- [MCMC-based model fitting tutorial](./demos/python/notebooks/lorenz63_mcmc_fit_to_data_tutorial.ipynb) to MCMC-based fitting of continuous-discrete SDE model to data.
+- [SGD-based mechanistic model fitting tutorial](./demos/python/notebooks/lorenz63_sgd_fit_to_data_tutorial.ipynb) to SGD-based fitting of continuous-discrete SDE model to data.
+    - version using the new `.build_params` API is coming soon.
+
+- [MCMC-based mechanistic model fitting tutorial](./demos/python/notebooks/lorenz63_mcmc_fit_to_data_tutorial.ipynb) to MCMC-based fitting of continuous-discrete SDE model to data.
+    - version using the new `.build_params` API is coming soon.
 
 - [Numpyro-based tutorials (recommended)](./demos/numpyro) for Bayesian parameter inference using `numpyro`'s NUTS (MCMC) and Stochastic Variational Inference (SVI) algorithms.
+
 
 ## [Tests](./tests)
 

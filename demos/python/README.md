@@ -20,6 +20,6 @@ demos/python/
 
 To run the demos, ensure you have the `cd-dynamax` library installed in your Python environment.
 
-Then navigate to the `demos/python/scripts` directory and execute the desired script using Python ---see details in the [./scripts/README.md](./scripts/README.md).
+Then navigate to the `demos/python/scripts` directory and execute the desired script using Python ---see details in [./scripts/README.md](./scripts/README.md).
 
-If you prefer Jupyter notebooks, navigate to the `demos/python/notebooks` directory and launch Jupyter Notebook or JupyterLab to open and run the notebooks ---see details in the [./notebooks/README.md](./notebooks/README.md).
+If you prefer Jupyter notebooks, navigate to the `demos/python/notebooks` directory and launch Jupyter Notebook or JupyterLab to open and run the notebooks ---see details in [./notebooks/README.md](./notebooks/README.md).

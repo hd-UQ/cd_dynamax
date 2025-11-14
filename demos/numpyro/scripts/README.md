@@ -9,7 +9,7 @@
             ```bash
             python l63_nn.py --emission_dim 1 --state_dim 3
             ```
-            - See the jupyter notebook version [here](./demos/notebooks/lorenz63_neuralSDE_partial_observation.ipynb) for a more detailed walkthrough of this example.
+            - See the jupyter notebook version [here](../notebooks/lorenz63_nndrift_sgd_fit_to_data_tutorial_newAPI.ipynb) for a more detailed walkthrough of this example.
     - Lorenz 96 system:
         - Sparse dictionary learning (5 components): 
         ```bash
