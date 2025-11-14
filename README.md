@@ -91,11 +91,13 @@ These [scripts](./demos/python/scripts) and [notebooks](./demos/python/notebooks
 
 For instance:
 
-- [Filtering-based likelihood tutorial](./demos/python/notebooks/lorenz63_filter_based_likelihood_tutorial.ipynb) to filtering-based likelihood computation for continuous-discrete SDEs.
+- Filtering-based likelihood tutorial [(original](./demos/python/notebooks/lorenz63_filter_based_likelihood_tutorial.ipynb) and [and new API--recommended)](./demos/python/notebooks/lorenz63_filter_based_likelihood_tutorial_newAPI.ipynb) to filtering-based likelihood computation for continuous-discrete SDEs.
 
 - [SGD-based model fitting tutorial](./demos/python/notebooks/lorenz63_sgd_fit_to_data_tutorial.ipynb) to SGD-based fitting of continuous-discrete SDE model to data.
 
 - [MCMC-based model fitting tutorial](./demos/python/notebooks/lorenz63_mcmc_fit_to_data_tutorial.ipynb) to MCMC-based fitting of continuous-discrete SDE model to data.
+
+- [Numpyro-based tutorials (recommended)](./demos/numpyro) for Bayesian parameter inference using `numpyro`'s NUTS (MCMC) and Stochastic Variational Inference (SVI) algorithms.
 
 ## [Tests](./tests)
 
@@ -111,8 +113,8 @@ We support installation via **Conda** (recommended) or via a standard Python vir
 
 ```bash
 # Create and activate a new environment with Python 3.11
-conda create -n cd_dynamax_joss python=3.11
-conda activate cd_dynamax_joss
+conda create -n cd_dynamax_numpyro python=3.11
+conda activate cd_dynamax_numpyro
 
 # Install your package in editable mode (so local changes are picked up)
 pip install -e .[dev]
