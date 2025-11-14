@@ -40,6 +40,8 @@ from ..utils.diffrax_utils import diffeqsolve
 # Debugging utilities
 from ..utils.debug_utils import *
 
+from .builders import build_params
+
 DEBUG = False
 
 # Auxiliary function to process inputs ---from dynamax
@@ -166,6 +168,12 @@ class ContDiscreteNonlinearGaussianSSM(SSM):
     @property
     def diffeqsolve_settings(self):
         return self._diffeqsolve_settings
+
+    def build_params(self, *args, **kwargs):
+        return build_params(
+            state_dim=self.state_dim,
+            emission_dim=self.emission_dim,
+            *args, **kwargs)
 
     # SSM methods
     # Define default set of CD-NLGSSM parameters, with all learnable parameters set to False

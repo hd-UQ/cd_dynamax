@@ -7,3 +7,5 @@ from .models import cdnlgssm_filter, cdnlgssm_smoother, cdnlgssm_forecast, cdnlg
 from .inference_ekf import EKFHyperParams
 from .inference_ukf import UKFHyperParams
 from .inference_enkf import EnKFHyperParams
+
+from .builders import build_params

@@ -10,3 +10,5 @@ from .inference import cdlgssm_emissions
 from .inference import cdlgssm_posterior_sample
 from .inference import cdlgssm_joint_sample
 from .inference import KFHyperParams
+
+from .builders import build_params
