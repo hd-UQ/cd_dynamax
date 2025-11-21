@@ -2,7 +2,7 @@ import os
 from configparser import ConfigParser
 import pickle
 
-# CD-NLGSSM imports
+# cd-dynamax imports
 from cd_dynamax.src.utils.data_generator import generate_data_from_config
 from cd_dynamax.src.utils.experiment_utils import *
 from cd_dynamax.src.utils.simulation_utils import filter_and_forecast
@@ -59,14 +59,14 @@ def run_filter_then_forecast(
     )
 
     # Create and initialize the CD-NLGSSM model from the model config file
-    model, params, props = create_cdnlgssm_model_from_config(
+    model, params, props = create_cddynamax_model_from_config(
         config_path=config_path,
         true_model_config_file=model_config_file,
         overrides=overrides,
     )
-
+    
     # Figure-out the filtering/smoothing settings from config
-    filter_hyperparams, filter_info = create_cdnlgssm_filter_from_config(
+    filter_hyperparams, filter_info = create_cddynamax_filter_from_config(
         config_path=config_path,
         filter_config_file=filter_config_file,
         overrides=overrides
@@ -98,8 +98,17 @@ def run_filter_then_forecast(
         )
 
         # TODO: check emissions_covariance computations
+        # Emission generation function based on model type
+        if isinstance(model, ContDiscreteLinearGaussianSSM):
+            from cd_dynamax.src.continuous_discrete_linear_gaussian_ssm.inference import cdlgssm_emissions
+            cddynamax_emissions = cdlgssm_emissions
+        elif isinstance(model, ContDiscreteNonlinearGaussianSSM):
+            from cd_dynamax.src.continuous_discrete_nonlinear_gaussian_ssm.models import cdnlgssm_emissions
+            cddynamax_emissions = cdnlgssm_emissions
+        else:
+            raise ValueError("Model type not supported for emissions generation in filter-then-forecast.")
         # Generate emissions means/covs from filtered states
-        f_emissions_mean, f_emissions_cov = cdnlgssm_emissions(
+        f_emissions_mean, f_emissions_cov = cddynamax_emissions(
             params=params,
             t_states=data['t_emissions'][:stop_idx_filter],
             state_means=filtered.filtered_means,
@@ -108,7 +117,7 @@ def run_filter_then_forecast(
         )
 
         # Generate emissions means/covs from forecasted states
-        fc_emissions_mean, fc_emissions_cov = cdnlgssm_emissions(
+        fc_emissions_mean, fc_emissions_cov = cddynamax_emissions(
             params=params,
             t_states=data['t_emissions'][start_idx_forecast:stop_idx_forecast],
             state_means=forecasted.forecasted_state_means,

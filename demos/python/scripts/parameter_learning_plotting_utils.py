@@ -1,19 +1,46 @@
 # Imports
 import jax
+from jax import vmap
 from jax.tree_util import tree_map
 import numpy as np
 from matplotlib import pyplot as plt
+from pyparsing import Optional
 import seaborn as sns
 import pandas as pd
 
 ## Useful functions for learnable parameter identification and conversion to dataframe
 # Figure out which models parameters were trainable -> hence trained and interested in plotting
 def learnable_param_or_none(param, prop):
+    r"""
+    Returns the parameter if it is trainable, otherwise returns None.
+
+    Args:
+        param: The parameter value.
+        prop: The parameter properties, which includes a 'trainable' attribute.
+
+    Returns:
+        The parameter if it is trainable, otherwise None.
+    """
     return param if prop.trainable else None
 
-def learnable_params_to_df(param_tree, prop_tree):
+# Convert the learnable parameters from a parameter tree to a DataFrame with 1D columns
+def learnable_params_to_1d_df(param_tree, prop_tree, has_batch_dim=False):
+    """
+    Converts the learnable parameters from a parameter tree to a pandas DataFrame,
+    where each column corresponds to a 1D parameter (scalar or array flattened into scalars).
+    
+    Args:
+        param_tree: The parameter pytree (nested structure of parameters).
+        prop_tree: The corresponding parameter properties pytree.
+        has_batch_dim: Boolean indicating if the parameters have a batch dimension.
+    
+    Returns:
+        A pandas DataFrame with each learnable parameter as a column.
+    """
+
     # Strip out non-trainable parameter leaves,
-    # Organized into a dictionary, with keys as concatenated path names and values as the parameter values
+    # Organized into a dictionary,
+    # with keys as concatenated path names and values as the parameter values
     learnable_param_dict = {
             '_'.join([item.name for item in path]): value
             for (path, value) in jax.tree.leaves_with_path(
@@ -23,20 +50,85 @@ def learnable_params_to_df(param_tree, prop_tree):
             )
         }
 
-    # Check if all values in learnable_param_dict are scalars or 1D arrays
-    all_scalar = all(
-        pd.api.types.is_scalar(v) or (v.ndim == 0) for v in learnable_param_dict.values()
-    )
+    # Initialize the new dictionary for scalar parameters
+    learnable_scalar_param_dict = {}
+    
+    # Determine the batch size, if needed
+    batch_size = None
+    if has_batch_dim:
+        # Find the batch size from the shape of the first array-like value
+        for value in learnable_param_dict.values():
+            if hasattr(value, 'shape') and value.ndim >= 1:
+                batch_size = value.shape[0]
+                break
+        
+        # If has_batch_dim is True but we couldn't find a batched array, 
+        # assume single-sample behavior to prevent errors.
+        if batch_size is None:
+            has_batch_dim = False 
 
-    if all_scalar:
-        # All scalars: We MUST provide an index to pandas dataframe
-        learnable_param_df = pd.DataFrame(learnable_param_dict, index=[0])
+    # Process the dictionary of learnable parameters
+    for key, value in learnable_param_dict.items():
+        # Array-like values
+        if hasattr(value, 'ndim'):
+            if has_batch_dim:
+                #print(f'Processing array = {key} in batch mode')
+                # Case A: Array in batch mode
+                if value.ndim >= 1 and value.shape[0] == batch_size:
+                    # Get the shape of the dimensions to iterate over
+                    feature_shape = value.shape[1:] 
+                    
+                    # Iterate over all indices in the feature dimensions
+                    for idx in np.ndindex(feature_shape):
+                        # Construct the new key (e.g., 'dynamics_weights_0_0')
+                        suffix = '_'.join(map(str, idx))
+                        new_key = f"{key}_{suffix}" if suffix else key # 'key' if feature_shape is empty (1D array)
+                        
+                        # Extracts the 1D array across the batch dimension (length B)
+                        learnable_scalar_param_dict[new_key] = value[(slice(None),) + idx]
+                
+                elif value.ndim == 0 and batch_size is not None:
+                    # Scalar array (ndim=0) when in batch mode: broadcast its item value
+                    learnable_scalar_param_dict[key] = [value.item()] * batch_size
+                
+                else:
+                    # Array found, but not compatible with assumed batch_size (unlikely if data is clean)
+                    # Treating as an error/warning and falling back to single-item value
+                    print(f"Warning: Array for '{key}' has incompatible shape {value.shape}. Treating as single item.")
+                    learnable_scalar_param_dict[key] = [value] # Will likely cause length mismatch error if other arrays are batched
+
+            # Array in single-sample mode
+            else:
+                #print(f'Processing array = {key} in single-sample mode')
+                this_shape = value.shape
+                
+                # If it's already a scalar (ndim=0)
+                if this_shape == ():
+                    learnable_scalar_param_dict[key] = value.item()
+                else:
+                    # Iterate over all indices and flatten the array into scalar entries
+                    for idx in np.ndindex(this_shape):
+                        new_key = f"{key}_{'_'.join(map(str, idx))}"
+                        learnable_scalar_param_dict[new_key] = value[idx].item()
+                        
+        # Non-array-like values
+        else:
+            #print(f'Processing non-array-like value = {key}')
+            if has_batch_dim and batch_size is not None:
+                # IMPORTANT: Broadcast the scalar value to a list of length batch_size
+                learnable_scalar_param_dict[key] = [value] * batch_size
+            else:
+                # Single-sample mode: use the scalar value directly
+                learnable_scalar_param_dict[key] = value
+
+    # Return as DataFrame with each 1d parameter as a column
+    if has_batch_dim and batch_size is not None:
+        # All columns are 1D arrays of length B. This creates a multi-row DataFrame.
+        return pd.DataFrame(learnable_scalar_param_dict)
     else:
-        # At least one array. Let pandas build the index.
-        learnable_param_df = pd.DataFrame(learnable_param_dict)
-
-    return learnable_param_df
-
+        # All values are scalars. This requires an explicit index for a single row.
+        return pd.DataFrame(learnable_scalar_param_dict, index=[0])
+    
 ## Plotting Utilities
 # Plot the marginal log likelihood learning curve
 def plot_mll_learning_curve(
@@ -48,14 +140,52 @@ def plot_mll_learning_curve(
     filter_hyperparams=None,
     plot_save_path=None,
 ):
-    """Note that the true logjoint is computed using default filter hyperparameters in marginal_log_prob."""
+    r"""
+        Plots the marginal log likelihood learning curve over iterations,
+        comparing the estimated marginal log likelihoods to the true log joint probability.
 
-    plt.figure()
-    plt.xlabel("Iterations")
+    Args:
+        true_model: The true model cd-dynamax object.
+        true_params: The true model parameters.
+        true_emissions: The emissions data from the true model --- could have batch dim.
+        t_emissions: The emissions data used for training --- could have batch dim.
+        marginal_lls: List or array of estimated marginal log likelihoods over iterations.
+        filter_hyperparams: Optional filter hyperparameters for the true model.
+            If None, the true logjoint is computed using default filter hyperparameters in marginal_log_prob.
+        plot_save_path: Optional path to save the plot image. If None, the plot is shown instead.
+    Returns:
+        None
+    """
+
+    # Prepare arguments for true log joint computation
     mlp_args = [true_params, true_emissions, t_emissions]
     if filter_hyperparams is not None:
         mlp_args.append(filter_hyperparams)
-    true_logjoint = true_model.log_prior(true_params) + true_model.marginal_log_prob(*mlp_args)
+
+    # Compute true log joint, taking care of batches if needed
+    if len(true_emissions.shape) > 2 and len(t_emissions.shape) <= 2:
+        true_logjoint = vmap(
+            true_model.marginal_log_prob,
+            in_axes=(None, 0, None, None) if filter_hyperparams is not None else (None, 0, None)
+        )(*mlp_args).sum()
+    elif len(true_emissions.shape) <= 2 and len(t_emissions.shape) > 2:
+        true_logjoint = vmap(
+            true_model.marginal_log_prob,
+            in_axes=(None, None, 0, None) if filter_hyperparams is not None else (None, None, 0)
+        )(*mlp_args).sum()
+    elif len(true_emissions.shape) > 2 and len(t_emissions.shape) > 2:
+        true_logjoint = vmap(
+            true_model.marginal_log_prob,
+            in_axes=(None, 0, 0, None) if filter_hyperparams is not None else (None, 0, 0)
+        )(*mlp_args).sum()
+    else:
+        true_logjoint = true_model.marginal_log_prob(*mlp_args)
+    # Add prior to likelihood 
+    true_logjoint += true_model.log_prior(true_params)
+    
+    # Plot the learning curve
+    plt.figure()
+    plt.xlabel("Iterations")
     plt.axhline(
         true_logjoint,
         color="k",
@@ -97,6 +227,21 @@ def plot_param_dist(
     pairwise_plots=False,
     plot_save_path=None,
     ):
+    r"""
+    Plots the parameter distributions as box plots and pairwise density plots.
+
+    Args:
+        samples: DataFrame of parameter samples (each column is a parameter).
+        true: DataFrame of true parameter values (single row).
+        init: DataFrame of initial parameter estimates (single row).
+        pointwise_estimate: DataFrame of pointwise parameter estimates (single row).
+        name: Name for the plot titles.
+        burn_in_frac: Fraction of samples to discard as burn-in.
+        pairwise_plots: Whether to generate pairwise density plots.
+        plot_save_path: Optional path to save the plot images. If None, the plots are shown instead.
+    Returns:
+        None
+    """
 
     # Figure out number of parameters, from columns in param_history
     N_params = len(samples.columns)
@@ -315,6 +460,22 @@ def plot_param_sequences(
         pairwise_plots=False,
         plot_save_path=None,
     ):
+    r"""
+    Plots the parameter sequences over training iterations,
+    including optional ground truth, initial estimates, and pointwise estimates.
+
+    Args:
+        param_history: DataFrame of parameter values over iterations (each column is a parameter).
+        true: DataFrame of true parameter values (single row).
+        init: DataFrame of initial parameter estimates (single row).
+        pointwise_estimate: DataFrame of pointwise parameter estimates (single row).
+        burn_in_frac: Fraction of initial iterations to discard as burn-in.
+        pairwise_plots: Whether to generate pairwise trajectory plots.
+        plot_save_path: Optional path to save the plot images. If None, the plots are shown instead.
+    Returns:
+        None
+    """
+    
     # Figure out number of parameters, from columns in param_history
     N_params = len(param_history.columns)
 

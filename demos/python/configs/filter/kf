@@ -1,0 +1,10 @@
+[KF]
+dt_final: 1e-4
+diffeqsolve_settings_file: solver/dt1e-2_maxSteps1e5
+
+[filter_info]
+name=Kalman Filtering
+desc=Kalman Filter for CD-LGSSM
+# Plotting styles
+filtered_style = {'color': '#1f77b4', 'linestyle': '-', 'linewidth': 1.5, 'alpha': 0.7}
+forecasted_style = {'color': '#1f77b4', 'linestyle': '--', 'linewidth': 1.5, 'alpha': 0.7}

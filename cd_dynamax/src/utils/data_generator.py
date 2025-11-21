@@ -73,8 +73,8 @@ def generate_data_from_config(
             # Model and solver configuration files
             true_model_config_file = data_gen_config.get('true_model_config_file', None)
             
-            # Create and initialize the CD-NLGSSM model
-            true_model, true_params, true_props = create_cdnlgssm_model_from_config(
+            # Create and initialize the CD-Dynamax model
+            true_model, true_params, true_props = create_cddynamax_model_from_config(
                 config_path=config_path,
                 true_model_config_file=true_model_config_file,
                 overrides=overrides

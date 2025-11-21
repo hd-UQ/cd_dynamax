@@ -1,41 +1,44 @@
+# cd-dynamax's abstract SSM class and related types
 from abc import ABC
 from abc import abstractmethod
-from fastprogress.fastprogress import progress_bar
-from functools import partial
+
+# JAX imports
+from jax import jit, lax, vmap, grad, value_and_grad
+from jaxtyping import Float, Array
 import jax.numpy as jnp
 import jax.random as jr
-from jax import jit, lax, vmap, grad, value_and_grad
 from jax.tree_util import tree_map
-from jaxtyping import Float, Array
-import optax
-from tensorflow_probability.substrates.jax import distributions as tfd
+from jax.flatten_util import ravel_pytree
+
+# Type annotations
 from typing import Optional, Union, Tuple, Any
 from typing_extensions import Protocol
+from functools import partial
 
+# cd-dynamax relies on tensorflow-probability for distributions, as per dynamax
+from tensorflow_probability.substrates.jax import distributions as tfd
+# Imports from dynamax
 from cd_dynamax.dynamax.types import PRNGKey, Scalar
 from cd_dynamax.dynamax.parameters import to_unconstrained, from_unconstrained, log_det_jac_constrain
 from cd_dynamax.dynamax.parameters import ParameterSet, PropertySet
 from cd_dynamax.dynamax.utils.utils import ensure_array_has_batch_dim, fallback_hessian
 
-# From our codebase
+# Imports from our codebase
 from .utils.debug_utils import lax_scan
+DEBUG = False # By default, debugging is off, e.g., no extra checks in lax_scan
 from .utils.optimize_utils import run_sgd
 
+# Utils for optimization
+import optax
 import blackjax
 from fastprogress.fastprogress import progress_bar
-
 # Used in fit_scipy_* functions
 from jaxopt import ScipyMinimize
 from scipy.optimize import minimize
-from jax.flatten_util import ravel_pytree
-
-
-DEBUG = False
 
 # cd-dynamax's abstract prior class
 class Prior(ABC):
-    ''' cd-dynamax priors
-        These priors should have
+    r''' cd-dynamax priors: these prior should have
 
         * :meth:`sample` returns a tensor of samples from this prior
         * :meth:`log_prob` returns the log_probability of the prior, for a given Parameter set
@@ -44,7 +47,7 @@ class Prior(ABC):
     # Method definitions
     @abstractmethod
     def sample(self, key, M):
-        ''' 
+        r''' 
             A sampling function to be defined by specific prior classes
             
             Args:
@@ -57,7 +60,7 @@ class Prior(ABC):
     
     @abstractmethod
     def log_prob(self, x):
-        ''' 
+        r''' 
             A function to compute the log_probability of specific prior classes
 
             Args:
@@ -68,18 +71,20 @@ class Prior(ABC):
         '''
 
 class Posterior(Protocol):
-    """A :class:`NamedTuple` with parameters stored as :class:`jax.DeviceArray` in the leaf nodes."""
+    r"""
+        A :class:`NamedTuple` with parameters stored as :class:`jax.DeviceArray` in the leaf nodes."""
     pass
 
 class SuffStatsSSM(Protocol):
-    """A :class:`NamedTuple` with sufficient statics stored as :class:`jax.DeviceArray` in the leaf nodes."""
+    r"""A :class:`NamedTuple` with sufficient statics stored as :class:`jax.DeviceArray` in the leaf nodes."""
     pass
 
 # cd-dynamax's abstract SSM class
 class SSM(ABC):
-    r"""A base class for state space models. Such models consist of parameters, which
-    we may learn, as well as hyperparameters, which specify static properties of the
-    model. This base class allows parameters to be indicated a standardized way
+    r"""A base cd-dynamax class for continuous-discrete state space models.
+    Such models consist of parameters, which we may learn,
+    as well as hyperparameters, which specify static properties of the model.
+    This base class allows parameters to be indicated in a standardized way
     so that they can easily be converted to/from unconstrained form for optimization.
 
     **Abstract Methods**
@@ -97,8 +102,8 @@ class SSM(ABC):
 
     **Sampling and Computing Log Probabilities**
 
-    Once these have been implemented, subclasses will inherit the ability to sample
-    and compute log joint probabilities from the base class functions:
+    Once these have been implemented, subclasses will inherit the ability
+    to sample from these models and to compute log joint probabilities from the base class functions:
 
     * :meth:`sample` draws samples of the states and emissions for given parameters
     * :meth:`log_prob` computes the log joint probability of the states and emissions for given parameters
@@ -113,22 +118,37 @@ class SSM(ABC):
 
     **Learning**
 
-    Likewise, many SSMs will support learning with expectation-maximization (EM) or stochastic gradient descent (SGD).
+    Likewise, many SSMs will support learning with stochastic gradient descent (SGD) or Markov Chain Monte Carlo (MCMC).
 
     For expectation-maximization, subclasses must implement the E- and M-steps.
 
     * :meth:`e_step` computes the expected sufficient statistics for a sequence of emissions, given parameters
     * :meth:`m_step` finds new parameters that maximize the expected log joint probability
 
-    Once these are implemented, the generic SSM class allows to fit the model with EM
-
-    * :meth:`fit_em` run EM to find parameters that maximize the likelihood (or posterior) probability.
+    Once these are implemented, the generic SSM class allows to fit the model with the preferred learning algorithm
 
     For SGD, any subclass that implements :meth:`marginal_log_prob` inherits the base class fitting function
 
     * :meth:`fit_sgd` run SGD to minimize the *negative* marginal log probability.
 
     """
+
+    # An initialize method, consistent across cd-dynamax, based on dicts
+    @abstractmethod
+    def initialize(
+        self,
+        *args,
+        **kwargs
+    ):
+        r"""Initialize the model parameters.
+
+            Args:
+                To be defined by the specific model class
+            Returns:
+                parameters and their properties.
+        """
+
+        raise NotImplementedError
 
     @abstractmethod
     def initial_distribution(
@@ -190,25 +210,6 @@ class SSM(ABC):
         """
         raise NotImplementedError
 
-    def log_prior(
-        self,
-        params: ParameterSet
-    ) -> Scalar:
-        r"""Return the log prior probability of any model parameters.
-
-        Returns:
-            lp (Scalar): log prior probability.
-        """
-        # Default is no prior
-        log_prior = 0.0
-
-        # If a prior is specified, compute the log prior
-        if self.prior is not None:
-            log_prior = self.prior.log_prob(params)
-
-        # Return the log prior
-        return log_prior
-
     @property
     @abstractmethod
     def emission_shape(self) -> Tuple[int]:
@@ -232,46 +233,6 @@ class SSM(ABC):
 
         """
         return {}
-
-    def sample_batch(
-        self,
-        params: ParameterSet,
-        key: PRNGKey,
-        num_sequences: int,
-        num_timesteps: int,
-        t_emissions: Optional[Float[Array, "num_timesteps 1"]] = None,
-        inputs: Optional[Float[Array, "num_timesteps input_dim"]] = None,
-        transition_type: Optional[str] = "distribution"
-    ) -> Tuple[Float[Array, "num_sequences num_timesteps state_dim"], Float[Array, "num_sequences num_timesteps emission_dim"]]:
-
-        r"""Sample a batch of sequences of states and emissions.
-
-        Args:
-            params: model parameters $\theta$
-            key: random number generator
-            num_sequences: number of sequences to sample
-            num_timesteps: number of timesteps $T$
-            t_emissions: continuous-time specific time instants: if not None, it is an array
-            inputs: inputs $u_{1:T}$
-            transition_type: type of transition function, either "distribution" (default) or "path"
-                "distribution" samples from the (default Gaussian) transition distribution (default)
-                    - This is exact for Linear Gaussian SSMs
-                "path" runs an SDE solver to sample the distribution. This is more "exact" (up to discretization error).
-                    - Note: this is not supported for Linear Gaussian SSMs.
-
-        Returns:
-            latent states and emissions
-
-        """
-
-        # Sample each sequence using self.sample and stack them
-        def _sample_sequence(key):
-            return self.sample(params, key, num_timesteps, t_emissions, inputs, transition_type)
-
-        keys = jr.split(key, num_sequences)
-        # use vmap to sample multiple sequences in parallel
-        states, emissions = vmap(_sample_sequence)(keys)
-        return states, emissions
 
     # All SSMs support sampling
     def sample(
@@ -324,22 +285,94 @@ class SSM(ABC):
         
         return states, emissions
 
+    # All SSMs support sampling a batch of sequences
+    def sample_batch(
+        self,
+        params: ParameterSet,
+        key: PRNGKey,
+        num_sequences: int,
+        num_timesteps: int,
+        t_emissions: Optional[Float[Array, "num_timesteps 1"]] = None,
+        inputs: Optional[Float[Array, "num_timesteps input_dim"]] = None,
+        transition_type: Optional[str] = "distribution"
+    ) -> Tuple[Float[Array, "num_sequences num_timesteps state_dim"], Float[Array, "num_sequences num_timesteps emission_dim"]]:
+
+        r"""Sample a batch of sequences of states and emissions.
+
+        Args:
+            params: model parameters $\theta$
+            key: random number generator
+            num_sequences: number of sequences to sample
+            num_timesteps: number of timesteps $T$
+            t_emissions: continuous-time specific time instants: if not None, it is an array
+            inputs: inputs $u_{1:T}$
+            transition_type: type of transition function, either "distribution" (default) or "path"
+                "distribution" samples from the (default Gaussian) transition distribution (default)
+                    - This is exact for Linear Gaussian SSMs
+                "path" runs an SDE solver to sample the distribution. This is more "exact" (up to discretization error).
+                    - Note: this is not supported for Linear Gaussian SSMs.
+
+        Returns:
+            latent states and emissions
+
+        """
+
+        # Sample each sequence using self.sample and stack them
+        def _sample_sequence(key):
+            return self.sample(params, key, num_timesteps, t_emissions, inputs, transition_type)
+
+        keys = jr.split(key, num_sequences)
+        # use vmap to sample multiple sequences in parallel
+        states, emissions = vmap(_sample_sequence)(keys)
+        return states, emissions
+    
+    # Compute log prior probability for given parameters
+    def log_prior(
+        self,
+        params: ParameterSet
+    ) -> Scalar:
+        r"""Return the log prior probability of model parameters.
+
+        Args:
+            params: model parameters $\theta$
+
+        Returns:
+            lp (Scalar): log prior probability.
+        """
+        # Default is no prior
+        log_prior = 0.0
+
+        # If a prior is specified, compute the log prior
+        if self.prior is not None:
+            log_prior = self.prior.log_prob(params)
+
+        # Return the log prior
+        return log_prior
+    
+    # Compute log joint probability of states and emissions
     def log_prob(
         self,
         params: ParameterSet,
         states: Float[Array, "num_timesteps state_dim"],
         emissions: Float[Array, "num_timesteps emission_dim"],
         t_emissions: Optional[Float[Array, "num_timesteps 1"]]=None,
-        inputs: Optional[Float[Array, "num_timesteps input_dim"]]=None
+        inputs: Optional[Float[Array, "num_timesteps input_dim"]]=None,
+        key: PRNGKey=jr.PRNGKey(0)
     ) -> Scalar:
-        r"""Compute the log joint probability of the states and observations"""
+        r"""Compute the log joint probability of the states and observations, $\log p(y_{1:T}, z_{1:T} \mid \theta)$.
 
-        def _step(carry, args):
-            lp, prev_state = carry
-            state, emission, t0, t1, inpt = args
-            lp += self.transition_distribution(params, prev_state, t0, t1, inpt).log_prob(state)
-            lp += self.emission_distribution(params, state, inpt).log_prob(emission)
-            return (lp, state), None
+        Args:
+            params: model parameters $\theta$
+            states: latent states $z_{1:T}$
+            emissions: emissions $y_{1:T}$
+            t_emissions: continuous-time specific time instants: if not None, it is an array 
+            inputs: current inputs  $u_t$
+            key: random number generator key
+
+        Returns:
+            log joint probability of states and emissions
+        
+        """
 
         # Compute log prob of initial time step
         initial_state = tree_map(lambda x: x[0], states)
@@ -347,6 +380,14 @@ class SSM(ABC):
         initial_input = tree_map(lambda x: x[0], inputs)
         lp = self.initial_distribution(params, initial_input).log_prob(initial_state)
         lp += self.emission_distribution(params, initial_state, initial_input).log_prob(initial_emission)
+
+        # Define the scan step function
+        def _step(carry, args):
+            lp, prev_state = carry
+            state, emission, t0, t1, inpt = args
+            lp += self.transition_distribution(params, prev_state, t0, t1, inpt).log_prob(state)
+            lp += self.emission_distribution(params, state, inpt).log_prob(emission)
+            return (lp, state), None
 
         # Figure out timestamps, as vectors to scan over
         # t_emissions is of shape num_timesteps \times 1
@@ -365,6 +406,8 @@ class SSM(ABC):
         next_emissions = tree_map(lambda x: x[1:], emissions)
         next_inputs = tree_map(lambda x: x[1:], inputs)
         (lp, _), _ = lax.scan(_step, (lp, initial_state), (next_states, next_emissions, t0, t1, next_inputs))
+        
+        # Return the log probability
         return lp
 
     # Some SSMs will implement these inference functions.
@@ -393,6 +436,7 @@ class SSM(ABC):
         """
         raise NotImplementedError
 
+    # Compute gradient of log marginal likelihood
     def score(
         self,
         params: ParameterSet,
@@ -429,6 +473,7 @@ class SSM(ABC):
             lambda p, prop: p if prop.trainable else None, params, props
         )
 
+        # Define a helper function to compute log_prob given only trainable parameters
         def _log_prob(trainable_params):
             # Recombine: fill in non-trainable values from original `params`
             full_params = tree_map(
@@ -451,23 +496,8 @@ class SSM(ABC):
             grads = grad(_log_prob)(trainable_params)
             return grads
 
-    # This is a revised initialize, consistent across cd-dynamax, based on dicts
-    def initialize(
-        self,
-        *args,
-        **kwargs
-    ):
-        r"""Initialize the model parameters.
-
-            Args:
-                To be defined by the specific model class
-            Returns:
-                parameters and their properties.
-        """
-
-        raise NotImplementedError
-
-
+    # Inference algorithms
+    # All SSMs support filtering
     def filter(
         self,
         params: ParameterSet,
@@ -491,6 +521,7 @@ class SSM(ABC):
         """
         raise NotImplementedError
 
+    # All SSMs support smoothing
     def smoother(
         self,
         params: ParameterSet,
@@ -515,109 +546,7 @@ class SSM(ABC):
         raise NotImplementedError
 
     # Learning algorithms
-    def e_step(
-        self,
-        params: ParameterSet,
-        emissions: Float[Array, "num_timesteps emission_dim"],
-        t_emissions: Optional[Float[Array, "num_timesteps 1"]]=None,
-        inputs: Optional[Float[Array, "num_timesteps input_dim"]]=None
-    ) -> Tuple[SuffStatsSSM, Scalar]:
-        r"""Perform an E-step to compute expected sufficient statistics under the posterior, $p(z_{1:T} \mid y_{1:T}, u_{1:T}, \theta)$.
-
-        Args:
-            params: model parameters $\theta$
-            emissions: emissions $y_{1:T}$
-            t_emissions: continuous-time specific time instants: if not None, it is an array 
-            inputs: optional inputs $u_{1:T}$
-
-        Returns:
-            Expected sufficient statistics under the posterior.
-
-        """
-        raise NotImplementedError
-
-    def m_step(
-        self,
-        params: ParameterSet,
-        props: PropertySet,
-        batch_stats: SuffStatsSSM,
-        m_step_state: Any
-    ) -> ParameterSet:
-        r"""Perform an M-step to find parameters that maximize the expected log joint probability.
-
-        Specifically, compute
-
-        $$\theta^\star = \mathrm{argmax}_\theta \; \mathbb{E}_{p(z_{1:T} \mid y_{1:T}, u_{1:T}, \theta)} \big[\log p(y_{1:T}, z_{1:T}, \theta \mid u_{1:T}) \big]$$
-
-        Args:
-            params: model parameters $\theta$
-            props: properties specifying which parameters should be learned
-            batch_stats: sufficient statistics from each sequence
-            m_step_state: any required state for optimizing the model parameters.
-
-        Returns:
-            new parameters
-
-        """
-        raise NotImplementedError
-
-    def fit_em(
-        self,
-        params: ParameterSet,
-        props: PropertySet,
-        emissions: Union[Float[Array, "num_timesteps emission_dim"],
-                         Float[Array, "num_batches num_timesteps emission_dim"]],
-        t_emissions: Optional[Union[Float[Array, "num_timesteps 1"],
-                        Float[Array, "num_batches num_timesteps 1"]]]=None,
-        inputs: Optional[Union[Float[Array, "num_timesteps input_dim"],
-                               Float[Array, "num_batches num_timesteps input_dim"]]]=None,
-        num_iters: int=50,
-        verbose: bool=True
-    ) -> Tuple[ParameterSet, Float[Array, "num_iters"]]:
-        r"""Compute parameter MLE/ MAP estimate using Expectation-Maximization (EM).
-
-        EM aims to find parameters that maximize the marginal log probability,
-
-        $$\theta^\star = \mathrm{argmax}_\theta \; \log p(y_{1:T}, \theta \mid u_{1:T})$$
-
-        It does so by iteratively forming a lower bound (the "E-step") and then maximizing it (the "M-step").
-
-        *Note:* ``emissions`` *and* ``inputs`` *can either be single sequences or batches of sequences.*
-
-        Args:
-            params: model parameters $\theta$
-            props: properties specifying which parameters should be learned
-            emissions: one or more sequences of emissions
-            t_emissions: continuous-time specific time instants: if not None, it is an array 
-            inputs: one or more sequences of corresponding inputs
-            num_iters: number of iterations of EM to run
-            verbose: whether or not to show a progress bar
-
-        Returns:
-            tuple of new parameters and log likelihoods over the course of EM iterations.
-
-        """
-
-        # Make sure the emissions and inputs have batch dimensions
-        batch_emissions = ensure_array_has_batch_dim(emissions, self.emission_shape)
-        batch_t_emissions = ensure_array_has_batch_dim(t_emissions, (1,))
-        batch_inputs = ensure_array_has_batch_dim(inputs, self.inputs_shape)
-
-        @jit
-        def em_step(params, m_step_state):
-            batch_stats, lls = vmap(partial(self.e_step, params))(batch_emissions, batch_t_emissions, batch_inputs)
-            lp = self.log_prior(params) + lls.sum()
-            params, m_step_state = self.m_step(params, props, batch_stats, m_step_state)
-            return params, m_step_state, lp
-
-        log_probs = []
-        m_step_state = self.initialize_m_step_state(params, props)
-        pbar = progress_bar(range(num_iters)) if verbose else range(num_iters)
-        for _ in pbar:
-            params, m_step_state, marginal_loglik = em_step(params, m_step_state)
-            log_probs.append(marginal_loglik)
-        return params, jnp.array(log_probs)
-
+    # Fit model using SGD
     def fit_sgd(
         self,
         initial_params: ParameterSet,
@@ -777,6 +706,7 @@ class SSM(ABC):
         else:
             return params_fitted, losses
 
+    # Fit model using SciPy optimizer
     def fit_scipy(
         self,
         initial_params: ParameterSet,
@@ -892,7 +822,7 @@ class SSM(ABC):
             params_history = from_unconstrained(unc_params_history, props)
             return params_fitted, losses, params_history, result
 
-
+    # Fit model using jaxopt SciPyMinimize
     def fit_scipy_jaxopt(
         self,
         initial_params: ParameterSet,
@@ -985,6 +915,7 @@ class SSM(ABC):
         # so it is not a drop-in replacement.
         return params_fitted, final_loss
 
+    # Fit model using MCMC
     def fit_mcmc(
             self,
             initial_params: ParameterSet,
@@ -1223,6 +1154,113 @@ class SSM(ABC):
 
             return warmup_param_samples, mcmc_param_samples, warmup_log_probs, mcmc_log_probs
 
+    # For EM, subclasses must implement E- and M-steps
+    # E-step
+    def e_step(
+        self,
+        params: ParameterSet,
+        emissions: Float[Array, "num_timesteps emission_dim"],
+        t_emissions: Optional[Float[Array, "num_timesteps 1"]]=None,
+        inputs: Optional[Float[Array, "num_timesteps input_dim"]]=None
+    ) -> Tuple[SuffStatsSSM, Scalar]:
+        r"""Perform an E-step to compute expected sufficient statistics under the posterior, $p(z_{1:T} \mid y_{1:T}, u_{1:T}, \theta)$.
+
+        Args:
+            params: model parameters $\theta$
+            emissions: emissions $y_{1:T}$
+            t_emissions: continuous-time specific time instants: if not None, it is an array 
+            inputs: optional inputs $u_{1:T}$
+
+        Returns:
+            Expected sufficient statistics under the posterior.
+
+        """
+        raise NotImplementedError
+    # M-step
+    def m_step(
+        self,
+        params: ParameterSet,
+        props: PropertySet,
+        batch_stats: SuffStatsSSM,
+        m_step_state: Any
+    ) -> ParameterSet:
+        r"""Perform an M-step to find parameters that maximize the expected log joint probability.
+
+        Specifically, compute
+
+        $$\theta^\star = \mathrm{argmax}_\theta \; \mathbb{E}_{p(z_{1:T} \mid y_{1:T}, u_{1:T}, \theta)} \big[\log p(y_{1:T}, z_{1:T}, \theta \mid u_{1:T}) \big]$$
+
+        Args:
+            params: model parameters $\theta$
+            props: properties specifying which parameters should be learned
+            batch_stats: sufficient statistics from each sequence
+            m_step_state: any required state for optimizing the model parameters.
+
+        Returns:
+            new parameters
+
+        """
+        raise NotImplementedError
+
+    # Actual EM fitting function
+    def fit_em(
+        self,
+        params: ParameterSet,
+        props: PropertySet,
+        emissions: Union[Float[Array, "num_timesteps emission_dim"],
+                         Float[Array, "num_batches num_timesteps emission_dim"]],
+        t_emissions: Optional[Union[Float[Array, "num_timesteps 1"],
+                        Float[Array, "num_batches num_timesteps 1"]]]=None,
+        inputs: Optional[Union[Float[Array, "num_timesteps input_dim"],
+                               Float[Array, "num_batches num_timesteps input_dim"]]]=None,
+        num_iters: int=50,
+        verbose: bool=True
+    ) -> Tuple[ParameterSet, Float[Array, "num_iters"]]:
+        r"""Compute parameter MLE/ MAP estimate using Expectation-Maximization (EM).
+
+        EM aims to find parameters that maximize the marginal log probability,
+
+        $$\theta^\star = \mathrm{argmax}_\theta \; \log p(y_{1:T}, \theta \mid u_{1:T})$$
+
+        It does so by iteratively forming a lower bound (the "E-step") and then maximizing it (the "M-step").
+
+        *Note:* ``emissions`` *and* ``inputs`` *can either be single sequences or batches of sequences.*
+
+        Args:
+            params: model parameters $\theta$
+            props: properties specifying which parameters should be learned
+            emissions: one or more sequences of emissions
+            t_emissions: continuous-time specific time instants: if not None, it is an array 
+            inputs: one or more sequences of corresponding inputs
+            num_iters: number of iterations of EM to run
+            verbose: whether or not to show a progress bar
+
+        Returns:
+            tuple of new parameters and log likelihoods over the course of EM iterations.
+
+        """
+
+        # Make sure the emissions and inputs have batch dimensions
+        batch_emissions = ensure_array_has_batch_dim(emissions, self.emission_shape)
+        batch_t_emissions = ensure_array_has_batch_dim(t_emissions, (1,))
+        batch_inputs = ensure_array_has_batch_dim(inputs, self.inputs_shape)
+
+        @jit
+        def em_step(params, m_step_state):
+            batch_stats, lls = vmap(partial(self.e_step, params))(batch_emissions, batch_t_emissions, batch_inputs)
+            lp = self.log_prior(params) + lls.sum()
+            params, m_step_state = self.m_step(params, props, batch_stats, m_step_state)
+            return params, m_step_state, lp
+
+        log_probs = []
+        m_step_state = self.initialize_m_step_state(params, props)
+        pbar = progress_bar(range(num_iters)) if verbose else range(num_iters)
+        for _ in pbar:
+            params, m_step_state, marginal_loglik = em_step(params, m_step_state)
+            log_probs.append(marginal_loglik)
+        return params, jnp.array(log_probs)
+    
+    # Fisher information matrix
     def fisher_information(
         self,
         params: ParameterSet,
@@ -1234,10 +1272,8 @@ class SSM(ABC):
         filter_hyperparams: Optional[Any]=None,
         inputs: Optional[Union[Float[Array, "num_timesteps input_dim"],
                             Float[Array, "num_batches num_timesteps input_dim"]]]=None,
-    ):
-
-        '''
-        Compute the observed Fisher information matrix for the model parameters.
+        ):
+        r'''Compute the observed Fisher information matrix for the model parameters.
 
         Args:
             params: model parameters $\theta$
@@ -1298,6 +1334,7 @@ class SSM(ABC):
         neg_hess = tree_map(lambda x: -x, hess)
         return neg_hess
 
+    # Prior-averaged Fisher information matrix
     def prior_averaged_fisher(
         self,
         prior: Prior,

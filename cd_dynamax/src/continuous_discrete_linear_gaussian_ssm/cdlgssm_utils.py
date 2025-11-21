@@ -147,7 +147,7 @@ def init_cdlgssm_params(
     params = default_params
 
     # Replace defaults with provided initialization as needed
-    for dict_key in params.keys():
+    for dict_key in init_params.keys():
         params[dict_key] = default(
             init_params[dict_key],
             default_params[dict_key]

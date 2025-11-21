@@ -42,14 +42,14 @@ def fit_model_to_data(
     )
 
     # Create and initialize the CD-NLGSSM model from the model config file
-    model, params, props = create_cdnlgssm_model_from_config(
+    model, params, props = create_cddynamax_model_from_config(
         config_path=config_path,
         true_model_config_file=model_config_file,
         overrides=overrides,
     )
 
     # Figure-out the filtering/smoothing settings from config
-    filter_hyperparams, filter_info = create_cdnlgssm_filter_from_config(
+    filter_hyperparams, filter_info = create_cddynamax_filter_from_config(
         config_path=config_path,
         filter_config_file=filter_config_file,
         overrides=overrides
@@ -81,7 +81,7 @@ def fit_model_to_data(
         # Iterate over the fit_key list
         for idx, key in enumerate(fit_keys):
             print(f"Running SGD MAP estimation with fit_key: {key} (Index {idx + 1} of {len(fit_keys)})")
-
+            
             # SGD MAP estimation via cd-dynamax model
             return_param_history = sgd_config.getboolean('return_param_history', False)
             return_grad_history = sgd_config.getboolean('return_grad_history', False)
@@ -103,7 +103,7 @@ def fit_model_to_data(
                 key = jr.PRNGKey(key)
             )
             print("SGD MAP estimation complete for fit_key:", key)
-
+            
             # Reformat the results into a dictionary
             sgd_results={
                 'params_fitted': fit_results[0],

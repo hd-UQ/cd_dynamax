@@ -84,7 +84,7 @@ def compare_filter_then_forecast(
             
             print(f"Processing filter configuration: {filter_config_file}")
             # Figure-out the filtering/smoothing settings from config
-            _, all_filter_info[filter_idx] = create_cdnlgssm_filter_from_config(
+            _, all_filter_info[filter_idx] = create_cddynamax_filter_from_config(
                 config_path=config_path,
                 filter_config_file=filter_config_file,
                 overrides=overrides

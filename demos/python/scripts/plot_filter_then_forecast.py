@@ -67,7 +67,7 @@ def plot_filter_then_forecast(
     )
 
     # Figure-out the filtering/smoothing settings from config
-    filter_hyperparams, filter_info = create_cdnlgssm_filter_from_config(
+    filter_hyperparams, filter_info = create_cddynamax_filter_from_config(
         config_path=config_path,
         filter_config_file=filter_config_file,
         overrides=overrides

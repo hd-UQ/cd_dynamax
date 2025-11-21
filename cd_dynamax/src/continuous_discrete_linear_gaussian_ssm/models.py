@@ -1,12 +1,8 @@
-from functools import partial
-
 # JAX imports
 import jax.numpy as jnp
 import jax.random as jr
 from jax.tree_util import tree_map
 from jaxtyping import Array, Float
-
-# Debugging utilities
 
 # Type annotations
 from typing import Any, Optional, Tuple, Union
@@ -19,19 +15,19 @@ from tensorflow_probability.substrates.jax.distributions import MultivariateNorm
 tfd = tfp.distributions
 tfb = tfp.bijectors
 
-# From dynamax
+# Imports from dynamax
 from cd_dynamax.dynamax.types import PRNGKey, Scalar
 from cd_dynamax.dynamax.parameters import ParameterProperties
 from cd_dynamax.dynamax.utils.bijectors import RealToPSDBijector
 from cd_dynamax.dynamax.utils.utils import psd_solve
 
-# Our codebase
+# Imports from our codebase
 from ..ssm_temissions import SSM, Prior
 # To avoid unnecessary redefinitions of code,
 # We import parameters and posteriors that can be reused from LGSSM first
 from cd_dynamax.dynamax.linear_gaussian_ssm.inference import ParamsLGSSMInitial, ParamsLGSSMEmissions, PosteriorGSSMFiltered, PosteriorGSSMSmoothed
 # Param definition
-from .cdlgssm_utils import ParamsCDLGSSM, ParamsCDLGSSMDynamics, init_cdlgssm_params, sample_cdlgssm_params
+from .cdlgssm_utils import ParamsCDLGSSM, init_cdlgssm_params, sample_cdlgssm_params
 # Filtering functions
 from .inference import KFHyperParams
 from .inference import cdlgssm_filter, cdlgssm_smoother, cdlgssm_forecast
@@ -40,6 +36,7 @@ from .inference import cdlgssm_joint_sample, cdlgssm_path_sample, cdlgssm_poster
 from .inference import compute_pushforward
 # Debug utilities
 from ..utils.debug_utils import psd
+DEBUG = False # By default, debugging is off, e.g., no extra checks in lax_scan
 
 class SuffStatsCDLGSSM(Protocol):
     """A :class:`NamedTuple` with sufficient statistics for CDLGSSM parameter estimation."""
@@ -64,12 +61,12 @@ class ContDiscreteLinearGaussianSSM(SSM):
     * $A_t$ = are the dynamics (transition) of the state:
                 A_t is the solution to the ODE in eq (3.135)
     * $B$ = optional input-to-state weight matrix
-    * $b$ = optional input-to-state bias vector
+    * $b$ = optional state bias vector
     * $L$ = diffusion coefficient of the dynamics (system) 
     * $Q$ = diffucion covariance matrix of dynamics (system) ---brownian motion
     * $H$ = emission (observation) matrix
     * $D$ = optional input-to-emission weight matrix
-    * $d$ = optional input-to-emission bias vector
+    * $d$ = optional emission bias vector
     * $R$ = covariance function for emission (observation) noise
     * $m$ = mean of initial state
     * $S$ = covariance matrix of initial state
@@ -188,7 +185,7 @@ class ContDiscreteLinearGaussianSSM(SSM):
             'emission_cov': _emission_cov,
         }
 
-    # This is a revised initialize, consistent across cd-dynamax, based on dicts
+    # CD-LGSSM initialize, consistent across cd-dynamax, based on dicts
     def initialize(
         self,
         key: PRNGKey =jr.PRNGKey(0),

@@ -1,12 +1,9 @@
-
 # JAX imports
-from jax import lax
-from jax import jacfwd, jacrev
 import jax.numpy as jnp
 import jax.random as jr
+from jax import lax
+from jax import jacfwd, jacrev
 from jax.tree_util import tree_map
-
-# Debugging utilities
 
 # Type annotations
 from jaxtyping import Array, Float
@@ -19,13 +16,13 @@ import tensorflow_probability.substrates.jax.distributions as tfd
 tfd = tfp.distributions
 tfb = tfp.bijectors
 
-# Dynamax shared code
+# Imports from dynamax
 from cd_dynamax.dynamax.types import PRNGKey, Scalar
 from cd_dynamax.dynamax.parameters import ParameterProperties
 from cd_dynamax.dynamax.utils.bijectors import RealToPSDBijector
 from cd_dynamax.dynamax.linear_gaussian_ssm.inference import PosteriorGSSMFiltered
 
-# Our codebase
+# Imports from our codebase
 from ..ssm_temissions import SSM, Prior
 # CDLGSSM forecasting definition
 from ..continuous_discrete_linear_gaussian_ssm.cdlgssm_utils import GSSMForecast
@@ -39,8 +36,7 @@ from .inference_ukf import UKFHyperParams, unscented_kalman_filter, forecast_uns
 from ..utils.diffrax_utils import diffeqsolve
 # Debugging utilities
 from ..utils.debug_utils import *
-
-DEBUG = False
+DEBUG = False # By default, debugging is off, e.g., no extra checks in lax_scan
 
 # Auxiliary function to process inputs ---from dynamax
 _process_input = lambda x, y: jnp.zeros((y,1)) if x is None else x
@@ -263,7 +259,7 @@ class ContDiscreteNonlinearGaussianSSM(SSM):
             'emission_cov': _emission_cov,
         }
 
-    # This is a revised initialize, consistent across cd-dynamax, based on dicts
+    # CD-NLGSSM initialize, consistent across cd-dynamax, based on dicts
     def initialize(
         self,
         key: Optional[Float[Array, "key"]] = jr.PRNGKey(0),
@@ -320,6 +316,7 @@ class ContDiscreteNonlinearGaussianSSM(SSM):
         # Return the parameters and properties
         return params_dict_values, params_dict_props
 
+    # Define the initial, transition and emission distributions
     def initial_distribution(
         self,
         params: ParamsCDNLGSSM,
