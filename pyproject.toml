@@ -37,8 +37,9 @@ dependencies = [
     "ipykernel"
 ]
 
-[tool.setuptools]
-packages = ["cd_dynamax"]
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["cd_dynamax*"]
 
 [project.optional-dependencies]
 dev = [
