@@ -5,9 +5,17 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "cd_dynamax"
 version = "0.2.5"
+requires-python = ">=3.11"
 description = "Continuous-discrete dynamical systems with JAX and related libraries."
 readme = "README.md"
-requires-python = ">=3.11"
+authors = [
+    {name="Matthew Levine"}, 
+    {name="Iñigo Urteaga"}
+]
+maintainers = [
+    {name="Matthew Levine", email="matt@basis.ai"},
+    {name="Iñigo Urteaga", email="iurteaga@bcamath.org"}
+]
 
 dependencies = [
     "numpy>=2.0",
@@ -36,8 +44,9 @@ dependencies = [
     "ipykernel"
 ]
 
-[tool.setuptools]
-packages = ["cd_dynamax"]
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["cd_dynamax*"]
 
 [project.optional-dependencies]
 dev = [
