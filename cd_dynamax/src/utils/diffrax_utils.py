@@ -1,5 +1,7 @@
 # Diffrax for ODE solving with autodiff
 import diffrax as dfx
+
+# JAX imports
 import jax.numpy as jnp
 import jax.debug as jdb
 from jax import random as jr
@@ -7,7 +9,6 @@ from jax import vmap, lax
 from jax import jit
 from pdb import set_trace as bp
 import jax.debug as jdb
-
 DEBUG = False
 
 def reverse_rhs(rhs, t1, ref_var):
@@ -164,32 +165,21 @@ def diffeqsolve(
 
     return sol
 
+# Adjust the right-hand side of an ODE/SDE to enforce state and derivative bounds
 @jit
-def adjust_rhs(x, rhs, lower_bound=-100, upper_bound=100, lower_bound_derivative=-1000, upper_bound_derivative=1000,
-               epsilon=1e-10, method="new"):
-    """
-    Adjust the right-hand side of the ODE to ensure that the state
-    remains within the bounds [-100, 100] and the derivative remains
-    within the bounds [-1000, 1000]. If any of the state variables
-    violate the constraints, set rhs = -x for all variables.
-    """
-    if method == "old":
-        return adjust_rhs_old(x, rhs, lower_bound, upper_bound, lower_bound_derivative, upper_bound_derivative, epsilon)
-    elif method == "new":
-        return adjust_rhs_new(x, rhs, lower_bound, upper_bound, lower_bound_derivative, upper_bound_derivative)
-    else:
-        raise ValueError("Invalid method. Choose either 'old' or 'new'.")
+def adjust_rhs(x, rhs, lower_bound=-100, upper_bound=100, lower_bound_derivative=-1000, upper_bound_derivative=1000):
+    r""" Adjust the right-hand side of an ODE/SDE
+    to ensure that the state remains within the bounds (default [-100, 100])
+    and the derivative remains within the bounds (default [-1000, 1000]).
+    If any of the state variables violate the constraints, set rhs = -x for all variables.
 
-
-@jit
-def adjust_rhs_new(x, rhs, lower_bound=-100, upper_bound=100, lower_bound_derivative=-1000, upper_bound_derivative=1000):
-    """
-    Adjust the right-hand side of the ODE to ensure that the state
-    remains within the bounds [-100, 100] and the derivative remains
-    within the bounds [-1000, 1000]. If any of the state variables
-    violate the constraints, set rhs = -x for all variables.
-
-    NOTE: This method was necessary to avoid NaN errors when training a SINDy model.
+    Args:
+        x: Current state (jnp.ndarray)
+        rhs: Right-hand side of the ODE/SDE (jnp.ndarray)
+        lower_bound: Lower bound for the state (float)
+        upper_bound: Upper bound for the state (float)
+        lower_bound_derivative: Lower bound for the derivative (float)
+        upper_bound_derivative: Upper bound for the derivative (float)
     """
 
     # Check if any state variable violates the bounds
@@ -202,28 +192,5 @@ def adjust_rhs_new(x, rhs, lower_bound=-100, upper_bound=100, lower_bound_deriva
 
     # If any state violates the bounds, set rhs = -x for that state
     rhs = jnp.where(state_violates, -x, rhs)
-
-    return rhs
-
-@jit
-def adjust_rhs_old(x, rhs, lower_bound=-100, upper_bound=100,
-        lower_bound_derivative=-1000, upper_bound_derivative=1000,
-        epsilon=1e-10):
-    """
-    Adjust the right-hand side of the ODE to ensure that the state
-    remains within the bounds [-100, 100]
-    and the derivative remains within the bounds [-1000, 1000]
-    """
-
-    # Use a small epsilon to ensure numerical stability
-    # Smoothly adjust the bounds to avoid gradient discontinuities
-    safe_lower_bound = jnp.where(x <= lower_bound, lower_bound + epsilon, x)
-    safe_upper_bound = jnp.where(x >= upper_bound, upper_bound - epsilon, x)
-
-    # Conditionally adjust rhs using the safe bounds
-    rhs = jnp.where(safe_lower_bound <= lower_bound, jnp.maximum(rhs, 0), rhs)
-    rhs = jnp.where(safe_upper_bound >= upper_bound, jnp.minimum(rhs, 0), rhs)
-
-    rhs = jnp.clip(rhs, lower_bound_derivative, upper_bound_derivative)
 
     return rhs

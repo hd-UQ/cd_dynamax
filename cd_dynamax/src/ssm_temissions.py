@@ -3,14 +3,14 @@ from abc import ABC
 from abc import abstractmethod
 
 # JAX imports
-from jax import jit, lax, vmap, grad, value_and_grad
-from jaxtyping import Float, Array
 import jax.numpy as jnp
 import jax.random as jr
+from jax import jit, lax, vmap, grad, value_and_grad
 from jax.tree_util import tree_map
 from jax.flatten_util import ravel_pytree
 
 # Type annotations
+from jaxtyping import Float, Array
 from typing import Optional, Union, Tuple, Any
 from typing_extensions import Protocol
 from functools import partial
@@ -23,7 +23,7 @@ from cd_dynamax.dynamax.parameters import to_unconstrained, from_unconstrained, 
 from cd_dynamax.dynamax.parameters import ParameterSet, PropertySet
 from cd_dynamax.dynamax.utils.utils import ensure_array_has_batch_dim, fallback_hessian
 
-# Imports from our codebase
+# Imports from the cd-dynamax codebase
 from .utils.debug_utils import lax_scan
 DEBUG = False # By default, debugging is off, e.g., no extra checks in lax_scan
 from .utils.optimize_utils import run_sgd
@@ -120,16 +120,19 @@ class SSM(ABC):
 
     Likewise, many SSMs will support learning with stochastic gradient descent (SGD) or Markov Chain Monte Carlo (MCMC).
 
-    For expectation-maximization, subclasses must implement the E- and M-steps.
-
-    * :meth:`e_step` computes the expected sufficient statistics for a sequence of emissions, given parameters
-    * :meth:`m_step` finds new parameters that maximize the expected log joint probability
-
-    Once these are implemented, the generic SSM class allows to fit the model with the preferred learning algorithm
+    The generic SSM class allows to fit the model with the preferred learning algorithm
 
     For SGD, any subclass that implements :meth:`marginal_log_prob` inherits the base class fitting function
 
     * :meth:`fit_sgd` run SGD to minimize the *negative* marginal log probability.
+
+    For black-box optimization, any subclass that implements :meth:`marginal_log_prob` inherits the base class fitting function
+
+    * :meth:`fit_scipy` run SciPy-based optimization to minimize the *negative* marginal log probability.
+    * :meth:`fit_scipy_jaxopt` run jaxopt SciPyMinimize optimization to minimize the *negative* marginal log probability.
+
+    For MCMC, any subclass that implements :meth:`marginal_log_prob` inherits the base class fitting function
+    * :meth:`fit_mcmc` run BlackJAX HMC to sample from the posterior over parameters given data.
 
     """
 
@@ -145,7 +148,7 @@ class SSM(ABC):
             Args:
                 To be defined by the specific model class
             Returns:
-                parameters and their properties.
+                CD-SSM parameters and their properties.
         """
 
         raise NotImplementedError
@@ -163,7 +166,7 @@ class SSM(ABC):
             inputs: optional  inputs  $u_t$
 
         Returns:
-            distribution over initial latent state, $p(z_1 \mid \theta)$.
+            distribution over initial latent state, $p(z_1 \mid u_t, \theta)$.
 
         """
         raise NotImplementedError
@@ -215,15 +218,13 @@ class SSM(ABC):
     def emission_shape(self) -> Tuple[int]:
         r"""Return a pytree matching the pytree of tuples specifying the shape of a single time step's emissions.
 
-        For example, a `GaussianHMM` with $D$ dimensional emissions would return `(D,)`.
-
         """
         raise NotImplementedError
 
     @property
     def inputs_shape(self) -> Optional[Tuple[int]]:
         r"""Return a pytree matching the pytree of tuples specifying the shape of a single time step's inputs.
-
+        
         """
         return None
 
@@ -337,7 +338,7 @@ class SSM(ABC):
             params: model parameters $\theta$
 
         Returns:
-            lp (Scalar): log prior probability.
+            log_prior (Scalar): log prior probability.
         """
         # Default is no prior
         log_prior = 0.0
@@ -364,20 +365,21 @@ class SSM(ABC):
         Args:
             params: model parameters $\theta$
             states: latent states $z_{1:T}$
-            emissions: emissions $y_{1:T}$
+            emissions: observed data $y_{1:T}$
             t_emissions: continuous-time specific time instants: if not None, it is an array 
             inputs: current inputs  $u_t$
             key: random number generator key
 
         Returns:
-            log joint probability of states and emissions
+            log joint probability (scalar) of states and emissions
         
         """
 
-        # Compute log prob of initial time step
+        # Extract initial states, emissions, and inputs
         initial_state = tree_map(lambda x: x[0], states)
         initial_emission = tree_map(lambda x: x[0], emissions)
         initial_input = tree_map(lambda x: x[0], inputs)
+        # Compute log prob of initial time step
         lp = self.initial_distribution(params, initial_input).log_prob(initial_state)
         lp += self.emission_distribution(params, initial_state, initial_input).log_prob(initial_emission)
 
@@ -401,7 +403,7 @@ class SSM(ABC):
             t0 = jnp.arange(num_timesteps-1)
             t1 = jnp.arange(1,num_timesteps)
 
-        # Scan over remaining time steps
+        # Scan over time steps
         next_states = tree_map(lambda x: x[1:], states)
         next_emissions = tree_map(lambda x: x[1:], emissions)
         next_inputs = tree_map(lambda x: x[1:], inputs)
@@ -428,7 +430,7 @@ class SSM(ABC):
             t_emissions: continuous-time specific time instants: if not None, it is an array 
             filter_hyperparams: hyperparameters of the filtering algorithm
             inputs: current inputs  $u_t$
-            key: random number generator (for use in randomized methods for approximating marginal likelihood)
+            key: random number generator (for use in randomized methods approximating the marginal likelihood)
 
         Returns:
             marginal log probability
@@ -436,7 +438,7 @@ class SSM(ABC):
         """
         raise NotImplementedError
 
-    # Compute gradient of log marginal likelihood
+    # Compute the score function, i.e., the gradient of the log marginal likelihood
     def score(
         self,
         params: ParameterSet,
@@ -448,23 +450,25 @@ class SSM(ABC):
         return_log_prob: bool=False,
         key: PRNGKey=jr.PRNGKey(0)
     ) -> Scalar:
-        r"""Compute gradient of log marginal likelihood of observations, $\nabla \log \sum_{z_{1:T}} p(y_{1:T}, z_{1:T} \mid \theta)$.
+        r"""Compute the score function, i.e., the gradient of the log marginal likelihood of observations:
+            $\nabla \log \sum_{z_{1:T}} p(y_{1:T}, z_{1:T} \mid \theta)$.
 
         Args:
             params: model parameters $\theta$
             props: properties specifying which parameters should be learned
-            emissions: emissions $y_{1:T}$
+            emissions: observed data $y_{1:T}$
             t_emissions: continuous-time specific time instants: if not None, it is an array
             filter_hyperparams: hyperparameters of the filtering algorithm
             inputs: current inputs  $u_t$
             return_log_prob: whether or not to return the log probability in addition to its gradient
-            key: random number generator (for use in randomized methods for approximating marginal likelihood)
+            key: random number generator (for use in randomized methods approximating the marginal likelihood)
 
         Returns:
             gradient of marginal log probability
 
-        Note: We need to exclude non-trainable parameters from the gradient computation because sometimes things like integers
-        or booleans are included in the parameter set. These are not differentiable and will cause the gradient to be None
+        Note: We need to exclude non-trainable parameters from the gradient computation
+        because sometimes objects like integers or booleans are included in the parameter set.
+        These are not differentiable and will cause the gradient to be None
         even with stop_gradient applied.
 
         """
@@ -510,7 +514,7 @@ class SSM(ABC):
 
         Args:
             params: model parameters $\theta$
-            emissions: emissions $y_{1:T}$
+            emissions: observed data $y_{1:T}$
             t_emissions: continuous-time specific time instants: if not None, it is an array 
             filter_hyperparams: hyperparameters of the filtering algorithm
             inputs: current inputs  $u_t$
@@ -530,11 +534,11 @@ class SSM(ABC):
         filter_hyperparams: Optional[Union[Any]]=None,
         inputs: Optional[Float[Array, "ntime input_dim"]]=None,
     ) -> Posterior:
-        r"""Compute smoothing distribution, $p(z_t \mid y_{1:T}, u_{1:T}, \theta)$ for $t=1,\ldots,T$.
+        r"""Compute smoothing distributions, $p(z_t \mid y_{1:T}, u_{1:T}, \theta)$ for $t=1,\ldots,T$.
 
         Args:
             params: model parameters $\theta$
-            emissions: emissions $y_{1:T}$
+            emissions: observed data $y_{1:T}$
             t_emissions: continuous-time specific time instants: if not None, it is an array 
             filter_hyperparams: hyperparameters of the filtering algorithm
             inputs: current inputs  $u_t$
@@ -566,7 +570,7 @@ class SSM(ABC):
         return_grad_history: bool=False,
         key: PRNGKey=jr.PRNGKey(0)
     ) -> Tuple[ParameterSet, Float[Array, "niter"]]:
-        r"""Compute parameter MLE/ MAP estimate using Stochastic Gradient Descent (SGD).
+        r"""Compute parameter MLE/MAP estimate using Stochastic Gradient Descent (SGD).
 
         SGD aims to find parameters that maximize the marginal log probability,
 
@@ -577,12 +581,13 @@ class SSM(ABC):
         *Note:* ``emissions`` *and* ``inputs`` *can either be single sequences or batches of sequences.*
 
         On each iteration, the algorithm grabs a *minibatch* of sequences and takes a gradient step.
+        
         One pass through the entire set of sequences is called an *epoch*.
 
         Args:
             initial_params: model parameters $\theta$
-            props: properties specifying which parameters should be learned
-            emissions: one or more sequences of emissions
+            props: model properties specifying which parameters should be learned
+            emissions: one or more sequences of observed data
             t_emissions: continuous-time specific time instants: if not None, it is an array
             filter_hyperparams: if needed, hyperparameters of the filtering algorithm
             inputs: one or more sequences of corresponding inputs
@@ -596,7 +601,7 @@ class SSM(ABC):
 
         Returns:
             tuple of new parameters and losses (negative scaled marginal log probs) over the course of SGD iterations.
-            if interested in the history of parameters and gradients, these are returned as well.
+                if interested in the history of parameters and gradients, these are returned as well.
 
         """
         # Make sure the emissions and inputs have batch dimensions
@@ -604,15 +609,15 @@ class SSM(ABC):
         batch_t_emissions = ensure_array_has_batch_dim(t_emissions, (1,))
         batch_inputs = ensure_array_has_batch_dim(inputs, self.inputs_shape)
 
+        # Convert initial parameters to unconstrained space
         initial_unc_params = to_unconstrained(initial_params, props)
-
         # build initial_unc_params_trainable from initial_unc_params and props
         # by setting untrainable parameters to None
         initial_unc_params_trainable = tree_map(
             lambda param, prop: param if prop.trainable else None, initial_unc_params, props
         )
 
-        # The log likelihood that the HMC samples from
+        # The log likelihood that SGD computes on a minibatch
         def _loss_fn(unc_params_trainable, minibatch):
             # Combine the trainable and non-trainable parameters, then convert them to constrained space
             unc_params = tree_map(
@@ -623,8 +628,10 @@ class SSM(ABC):
             )
             params = from_unconstrained(unc_params, props)
 
+            # Extract minibatch data
             minibatch_emissions, minibatch_t_emissions, minibatch_inputs = minibatch
             scale = len(batch_emissions) / len(minibatch_emissions)
+            # Compute marginal log likelihoods for the minibatch
             minibatch_lls = vmap(
                 partial(
                     self.marginal_log_prob,
@@ -637,9 +644,12 @@ class SSM(ABC):
                 t_emissions=minibatch_t_emissions,
                 inputs=minibatch_inputs
             )
+            # Compute the (scaled) negative log posterior, including prior
             lp = self.log_prior(params) + minibatch_lls.sum() * scale
+            # Return negative log posterior scaled by total number of data points
             return -lp / batch_emissions.size
 
+        # Run SGD over dataset: emissions, their timestamps, and inputs
         dataset = (batch_emissions, batch_t_emissions, batch_inputs)
         unc_params_trainable, losses, unc_params_trainable_history, grad_trainable_history = run_sgd(_loss_fn,
                                     initial_unc_params_trainable,
@@ -656,10 +666,8 @@ class SSM(ABC):
         # Untrainable parameters will appear as None in history
         # We will fill in these none values with the initial unconstrained parameters,
         # and broadcast them to the correct shape.
-        # It will appear as though the sampler has not updated these parameters (in fact,
-        # it is ignoring them altogether, and we add them here for easy downstream usage).
-        n_fits = len(losses) # could differ from num_epochs if NaN's cause an early quit?
-
+        # It will appear as though the sampler has not updated these parameters
+        #  (in fact,it is ignoring them altogether, and we add them here for easy downstream usage).
         unc_params_fitted = tree_map(
             lambda initial, fitted: initial if fitted is None else fitted,
                 initial_unc_params,
@@ -668,6 +676,7 @@ class SSM(ABC):
         # Convert unconstrained parameters back to constrained space
         params_fitted = from_unconstrained(unc_params_fitted, props)
 
+        n_fits = len(losses) # could differ from num_epochs if NaN's cause an early quit?
         if unc_params_trainable_history is not None:
             unc_params_history = tree_map(
                 lambda initial, fitted: (
@@ -723,7 +732,25 @@ class SSM(ABC):
         return_param_history: bool = False
     ) -> Tuple[ParameterSet, Float[Array, "niter"], Optional[ParameterSet]]:
         """
-        Compute parameter MLE/MAP estimate using SciPy-based Nelder–Mead (or chosen method).
+        Compute parameter MLE/MAP estimate using SciPy-based chosen method.
+        SciPy-based optimizers aim to find parameters that maximize the marginal log probability,
+
+        $$\theta^\star = \mathrm{argmax}_\theta \; \log p(y_{1:T}, \theta \mid u_{1:T})$$
+
+        by minimizing the _negative_ of that quantity.
+
+        *Note:* ``emissions`` *and* ``inputs`` *can either be single sequences or batches of sequences.*
+
+        Args:
+            initial_params: model parameters $\theta$
+            props: model properties specifying which parameters should be learned
+            emissions: one or more sequences of observed data
+            t_emissions: continuous-time specific time instants: if not None, it is an array
+            filter_hyperparams: if needed, hyperparameters of the filtering algorithm
+            inputs: one or more sequences of corresponding inputs
+            method: optimization method to use, e.g. "Nelder-Mead", "BFGS", etc.
+            options: dictionary of options to pass to the SciPy optimizer
+            return_param_history: whether to return the history of parameters
 
         Returns:
             params_fitted: final fitted parameters (PyTree, constrained)
@@ -751,9 +778,10 @@ class SSM(ABC):
             initial_unc_params_trainable
         )
 
+        # Ravel/unravel parameters for SciPy
         flat_init, unravel_fn = ravel_pytree(filled_unc_params)
 
-        # Base loss in PyTree space
+        # Base loss for SciPy in PyTree form
         def _loss_fn(unc_params_trainable):
             unc_params = tree_map(
                 lambda init, trained, prop: trained if prop.trainable else init,
@@ -762,6 +790,8 @@ class SSM(ABC):
                 props
             )
             params = from_unconstrained(unc_params, props)
+
+            # Compute marginal log likelihoods for the full batch
             lls = vmap(
                 partial(self.marginal_log_prob,
                         params,
@@ -780,7 +810,7 @@ class SSM(ABC):
         # History storage
         loss_history = []
         param_history = [] if return_param_history else None
-
+        # Callback to store loss and parameters at each iteration
         def callback(flat_params):
             pytree_params = unravel_fn(flat_params)
             loss_history.append(flat_loss_fn(flat_params))
@@ -805,7 +835,6 @@ class SSM(ABC):
 
         # Convert loss history
         losses = jnp.array(loss_history)
-
         if return_param_history:
             # Fill missing params before storing
             param_history = [
@@ -821,6 +850,8 @@ class SSM(ABC):
             unc_params_history = tree_map(lambda *xs: jnp.stack(xs), *param_history)
             params_history = from_unconstrained(unc_params_history, props)
             return params_fitted, losses, params_history, result
+        else:
+            return params_fitted, losses, result
 
     # Fit model using jaxopt SciPyMinimize
     def fit_scipy_jaxopt(
@@ -837,7 +868,7 @@ class SSM(ABC):
         method: str = "nelder-mead",
         options: dict = {"maxiter": 100},
     ) -> Tuple[ParameterSet, Float[Array, "niter"]]:
-        r"""Compute parameter MLE/ MAP estimate using SciPy-based Nelder–Mead (or chosen method).
+        r"""Compute parameter MLE/ MAP estimate using SciPy-based chosen method from jaxopt.
 
         ScipyMinimize aims to find parameters that maximize the marginal log probability,
 
@@ -847,7 +878,6 @@ class SSM(ABC):
 
         *Note:* ``emissions`` *and* ``inputs`` *can either be single sequences or batches of sequences.*
 
-
         Args:
             initial_params: model parameters $\theta$
             props: properties specifying which parameters should be learned
@@ -856,7 +886,7 @@ class SSM(ABC):
             filter_hyperparams: if needed, hyperparameters of the filtering algorithm
             inputs: one or more sequences of corresponding inputs
             method: optimization method to use, e.g. "Nelder-Mead", "BFGS", etc.
-            maxiter: maximum number of iterations to run the optimizer
+            options: dictionary of options to pass to the SciPy optimizer
 
         Returns:
             tuple of new parameters and losses (negative scaled marginal log probs) over the course of Nelder-Mead iterations.
@@ -873,7 +903,7 @@ class SSM(ABC):
             lambda param, prop: param if prop.trainable else None, initial_unc_params, props
         )
 
-        # Define base loss
+        # Define base loss for SciPyMinimize in PyTree form
         def _loss_fn(unc_params_trainable):
             unc_params = tree_map(
                 lambda init, trained, prop: trained if prop.trainable else init,
@@ -882,6 +912,8 @@ class SSM(ABC):
                 props,
             )
             params = from_unconstrained(unc_params, props)
+
+            # Compute marginal log likelihoods for the full batch
             lls = vmap(
                 partial(self.marginal_log_prob, params,
                         filter_hyperparams=filter_hyperparams)
@@ -909,13 +941,12 @@ class SSM(ABC):
 
         # Can only return final params and loss
         # TODO: maybe there is a way to return history?
-        # So far, I struggled with this while using jaxopt, so omitting for now.
         # If you want history, use fit_scipy instead.
         # Note that their implementations (perhaps due to versioning) differ empirically,
         # so it is not a drop-in replacement.
         return params_fitted, final_loss
 
-    # Fit model using MCMC
+    # Fit model using MCMC, based on Blackjax
     def fit_mcmc(
             self,
             initial_params: ParameterSet,
@@ -936,20 +967,21 @@ class SSM(ABC):
             verbose=True,
             key: PRNGKey=jr.PRNGKey(0)
         ) -> Tuple[ParameterSet, ParameterSet, Float[Array, "num_steps"], Float[Array, "n_mcmc_samples"]]:
-            r"""Generate samples from the posterior using Hamiltonian Monte Carlo (HMC).
+            r"""Generate samples from the posterior using Markov Chain Monte Carlo (MCMC).
 
             Args:
                 initial_params: initial parameters $\theta$
                 props: properties specifying which parameters should be learned
-                emissions: one or more sequences of emissions
+                emissions: one or more sequences of observed data
                 t_emissions: continuous-time specific time instants: if not None, it is an array
                 filter_hyperparams: if needed, hyperparameters of the filtering algorithm
                 inputs: one or more sequences of corresponding inputs
-                mcmc_algorithm: dictionary specifying the MCMC algorithm to use and its settings
-                    {type: type of MCMC algorithm (e.g. "nuts")
-                    n_samples: number of samples to draw
-                    warmup_samples: number of warmup steps
-                    parameters: additional parameters for the MCMC algorithm}
+                mcmc_algorithm: dictionary specifying the MCMC algorithm to use and its settings, based on Blackjax.
+                    It should contain the following keys:
+                        type: type of MCMC algorithm (e.g. "nuts")
+                        n_samples: number of samples to draw
+                        warmup_samples: number of warmup steps
+                        parameters: additional parameters for the MCMC algorithm
                 verbose: whether or not to show a progress bar
                 key: a random number generator
 
@@ -962,16 +994,16 @@ class SSM(ABC):
             batch_emissions = ensure_array_has_batch_dim(emissions, self.emission_shape)
             batch_t_emissions = ensure_array_has_batch_dim(t_emissions, (1,))
             batch_inputs = ensure_array_has_batch_dim(inputs, self.inputs_shape)
-
+            
+            # Transform initial parameters to unconstrained space
             initial_unc_params = to_unconstrained(initial_params, props)
-
-            # build initial_unc_params_trainable from initial_unc_params and props
+            # and build initial_unc_params_trainable from initial_unc_params and props
             # by setting untrainable parameters to None
             initial_unc_params_trainable = tree_map(
                 lambda param, prop: param if prop.trainable else None, initial_unc_params, props
             )
 
-            # The log likelihood that the HMC samples from
+            # The log likelihood that MCMC samples from
             def _logprob(unc_params_trainable):
                 # Combine the trainable and non-trainable parameters, then convert them to constrained space
                 unc_params = tree_map(
@@ -981,6 +1013,7 @@ class SSM(ABC):
                     props,
                 )
                 params = from_unconstrained(unc_params, props)
+                # Compute marginal log likelihoods for the full batch
                 batch_lls = vmap(
                     partial(
                         self.marginal_log_prob,
@@ -993,11 +1026,13 @@ class SSM(ABC):
                     t_emissions=batch_t_emissions,
                     inputs=batch_inputs
                 )
+                # Compute the log posterior, including prior
                 lp = self.log_prior(params) + batch_lls.sum()
                 lp += log_det_jac_constrain(params, props)
                 return lp
 
-            ## Blackjax - MCMC specific code            
+            ## Blackjax specific code            
+            # Helper function for the HMC algorithm
             def _run_hmc(mcmc_algo, mcmc_algorithm, _logprob, initial_unc_params_trainable, verbose, key):
                 # Initialize MCMC using window_adaptation
                 # https://blackjax-devs.github.io/blackjax/examples/quickstart.html#use-stan-s-window-adaptation
@@ -1032,7 +1067,7 @@ class SSM(ABC):
                 hmc_keys = jr.split(key, mcmc_algorithm['n_samples'])
                 # Run HMC inference loop
                 print('Running HMC inference loop...')
-                # Original, using our lax_scan
+                # Using our lax_scan
                 _, states = lax_scan(
                     __hmc_step,
                     warmup_state,
@@ -1049,6 +1084,7 @@ class SSM(ABC):
 
                 return warmup_params, mcmc_params, warmup_log_probs, mcmc_log_probs
 
+            # Helper function for the MH algorithm
             def _run_mh(mcmc_algo, mcmc_algorithm, _logprob, initial_unc_params_trainable, verbose, key):                
                 # MH algo, with proposal in mcmc_algorithm['parameters']['proposal']
                 mh = mcmc_algo(
@@ -1085,7 +1121,7 @@ class SSM(ABC):
                 mh_keys = jr.split(key, mcmc_algorithm['n_samples'])
                 # Run MH inference loop
                 print('Running MH inference loop...')
-                # Original, using our lax_scan
+                # Using our lax_scan
                 _, states = lax_scan(
                     _mh_step,
                     warmup_final_state,
@@ -1102,7 +1138,6 @@ class SSM(ABC):
 
                 return warmup_params, mcmc_params, warmup_log_probs, mcmc_log_probs
 
-            ### Blackjax - MCMC specific code
             # Instantiate blackjax MCMC algorithm
             mcmc_algo = eval(
                 'blackjax.{}'.format(
@@ -1110,13 +1145,25 @@ class SSM(ABC):
                 )
             )
             
-            # MCMC algorithm class
+            # Run MCMC, based on algorithm type
             if mcmc_algorithm['type'].lower() == 'nuts' or mcmc_algorithm['type'].lower() == 'hmc':
-                mcmc_algo_type = 0
-                warmup_params, mcmc_params, warmup_log_probs, mcmc_log_probs = _run_hmc(mcmc_algo, mcmc_algorithm, _logprob, initial_unc_params_trainable, verbose, key)
+                warmup_params, mcmc_params, warmup_log_probs, mcmc_log_probs = _run_hmc(
+                    mcmc_algo,
+                    mcmc_algorithm,
+                    _logprob,
+                    initial_unc_params_trainable,
+                    verbose,
+                    key
+                )
             elif mcmc_algorithm['type'].lower() == 'additive_step_random_walk' or mcmc_algorithm['type'].lower() == 'rmh':
-                mcmc_algo_type = 1
-                warmup_params, mcmc_params, warmup_log_probs, mcmc_log_probs = _run_mh(mcmc_algo, mcmc_algorithm, _logprob, initial_unc_params_trainable, verbose, key)
+                warmup_params, mcmc_params, warmup_log_probs, mcmc_log_probs = _run_mh(
+                    mcmc_algo,
+                    mcmc_algorithm,
+                    _logprob,
+                    initial_unc_params_trainable,
+                    verbose,
+                    key
+                )
             else:
                 raise ValueError('Unknown MCMC algorithm type: {}'.format(mcmc_algorithm['type']))
 
@@ -1124,8 +1171,8 @@ class SSM(ABC):
             # Untrainable parameters will appear as None in param_samples
             # We will fill in these none values with the initial unconstrained parameters,
             # and broadcast them to the correct shape.
-            # It will appear as though the sampler has not updated these parameters (in fact,
-            # it is ignoring them altogether, and we add them here for easy downstream usage).
+            # It will appear as though the sampler has not updated these parameters
+            # (in fact, it is ignoring them altogether, and we add them here for easy downstream usage).
             def _sampled_or_initial_over_tree(initial, sampled):
                 return tree_map(
                     lambda i, s: (
@@ -1202,7 +1249,7 @@ class SSM(ABC):
         """
         raise NotImplementedError
 
-    # Actual EM fitting function
+    # EM fitting function
     def fit_em(
         self,
         params: ParameterSet,
@@ -1295,15 +1342,15 @@ class SSM(ABC):
         batch_t_emissions = ensure_array_has_batch_dim(t_emissions, (1,))
         batch_inputs = ensure_array_has_batch_dim(inputs, self.inputs_shape)
 
+        # Transform initial parameters to unconstrained space
         initial_unc_params = to_unconstrained(params, props)
-
         # build initial_unc_params_trainable from initial_unc_params and props
         # by setting untrainable parameters to None
         initial_unc_params_trainable = tree_map(
             lambda param, prop: param if prop.trainable else None, initial_unc_params, props
         )
 
-        # The log probability
+        # The log probability function
         def _logprob(unc_params_trainable):
             # Combine the trainable and non-trainable parameters, then convert them to constrained space
             unc_params = tree_map(
@@ -1325,6 +1372,7 @@ class SSM(ABC):
                 t_emissions=batch_t_emissions,
                 inputs=batch_inputs
             )
+            # Compute the log posterior, including prior
             lp = self.log_prior(params) + batch_lls.sum()
             lp += log_det_jac_constrain(params, props)
             return lp
@@ -1351,6 +1399,9 @@ class SSM(ABC):
     ):
         '''
         Compute the expected Fisher information matrix with respect to the prior.
+
+        Note: for the Fisher information computation, as we need to compute gradients w.rto the parameters,
+        user must ensure that the sampled parameters are trainable
 
         Args:
             prior: prior distribution
@@ -1379,15 +1430,11 @@ class SSM(ABC):
             key=prior_key,
         ) # Sampled parameters are a PyTree, where each leave has axis=0 for the M samples 
         
-        # Note: for the Fisher information computation, as we need to compute gradients w.rto the parameters,
-        # ensure that the sampled parameters are trainable
-
-        # Sampling states and emissions from each model, given sampled parameteres
+        # Sampling states and emissions from each model, given drawn parameteres
         # split the key for each sample
         sampling_key, key = jr.split(key)
         per_sample_keys = jr.split(sampling_key, n_samples)
-        
-        # Sample from each model, given sampled parameteres, using vmap
+        # Sample from each model, given drawn parameteres, using vmap
         sampled_states, sampled_emissions = vmap(
             self.sample,
             in_axes=(0, 0, None, None, None, None)
@@ -1435,6 +1482,5 @@ class SSM(ABC):
             lambda x: jnp.mean(x, axis=0),
             sampled_H
         )
-        # This is the expected Fisher information matrix with respect to the prior
-        # Return pytree of Fisher information averaged over the prior
+        # Return the expected Fisher information matrix with respect to the prior
         return H

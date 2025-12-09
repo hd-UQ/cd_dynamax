@@ -1,7 +1,6 @@
 # JAX imports
 import jax.numpy as jnp
 import jax.random as jr
-from jax.tree_util import tree_map
 from jaxtyping import Array, Float
 
 # Type annotations
@@ -21,11 +20,11 @@ from cd_dynamax.dynamax.parameters import ParameterProperties
 from cd_dynamax.dynamax.utils.bijectors import RealToPSDBijector
 from cd_dynamax.dynamax.utils.utils import psd_solve
 
-# Imports from our codebase
+# Imports from the cd-dynamax codebase
 from ..ssm_temissions import SSM, Prior
 # To avoid unnecessary redefinitions of code,
-# We import parameters and posteriors that can be reused from LGSSM first
-from cd_dynamax.dynamax.linear_gaussian_ssm.inference import ParamsLGSSMInitial, ParamsLGSSMEmissions, PosteriorGSSMFiltered, PosteriorGSSMSmoothed
+# We import posterior classes that can be reused from dynamax LGSSM first
+from cd_dynamax.dynamax.linear_gaussian_ssm.inference import PosteriorGSSMFiltered, PosteriorGSSMSmoothed
 # Param definition
 from .cdlgssm_utils import ParamsCDLGSSM, init_cdlgssm_params, sample_cdlgssm_params
 # Filtering functions
@@ -41,35 +40,44 @@ DEBUG = False # By default, debugging is off, e.g., no extra checks in lax_scan
 class SuffStatsCDLGSSM(Protocol):
     """A :class:`NamedTuple` with sufficient statistics for CDLGSSM parameter estimation."""
     pass
-    
+
+# CD-LGSSM model definition
 class ContDiscreteLinearGaussianSSM(SSM):
     r"""
-    Continuous Discrete Linear Gaussian State Space Model.
+    Definition of a Continuous-Discrete Linear Gaussian State Space Model.
 
-    The model is defined in equation (3.134)
+    The CD-LGSSM model is defined in the following way, according to equation (3.134) in Sarkka (2019):
     
-    # TODO: replace this below
     $$p(z_0) = \mathcal{N}(z_0 \mid m, S)$$
-    $$p(z_t \mid z_{t-1}, u_t) = \mathcal{N}(z_t \mid A_t z_{t-1} + B_t u_t + b_t, Q_t)$$
-    $$p(y_t \mid z_t) = \mathcal{N}(y_t \mid H_t z_t + D_t u_t + d_t, R_t)$$
+    $$dz = F_t z_t dt + B_t u_t dt + b_t dt + L_t d\beta_t$$
+        with $\beta_t$ a standard Brownian motion, implying
+        
+        $$p(z_{t_k} \mid z_{t_{k-1}}, u_t) = \mathcal{N}(z_{t_k} \mid A_{t_k} z_{t_{k-1}} + B_{t_k} u_{t_k} + b_{t_k}, Q_{t_k})$$
+            where $A_{t_k}$ and $Q_{t_k}$ are computed as the solution to the SDE above over the interval $[t_{t_{k-1}}, t_{t_k}]$,
+    and emissions defined as
+
+    $$p(y_{t_k} \mid z_{t_k}) = \mathcal{N}(y_{t_k} \mid H_{t_k} z_{t_k} + D_{t_k} u_{t_k} + d_{t_k}, R_{t_k})$$
 
     where
 
-    * $z_t$ is a latent state of size `state_dim`,
-    * $y_t$ is an emission of size `emission_dim`
-    * $u_t$ is an input of size `input_dim` (defaults to 0)
-    * $A_t$ = are the dynamics (transition) of the state:
-                A_t is the solution to the ODE in eq (3.135)
-    * $B$ = optional input-to-state weight matrix
-    * $b$ = optional state bias vector
-    * $L$ = diffusion coefficient of the dynamics (system) 
-    * $Q$ = diffucion covariance matrix of dynamics (system) ---brownian motion
-    * $H$ = emission (observation) matrix
-    * $D$ = optional input-to-emission weight matrix
-    * $d$ = optional emission bias vector
-    * $R$ = covariance function for emission (observation) noise
+    * $z_{t_k}$ is a latent state of size `state_dim`,
     * $m$ = mean of initial state
     * $S$ = covariance matrix of initial state
+    
+    * $F_t$ = is the linear dynamics of the state, as in the SDE definition above
+    * $A_t$ = are the dynamics (transition) matrix of the state ---computed as the pushforward of the continuous dynamics---
+            A_t is the solution to the ODE in eq (3.135) in Sarkka (2019)
+    * $L$ = diffusion coefficient of the dynamics SDE, used to compute Q_t
+    * $Q$ = diffusion covariance matrix of dynamics (system) ---brownian motion--- noise, computed as the solution to the ODE in eq (3.135) in Sarkka (2019)
+    * $u_t$ is an input of size `input_dim` (defaults to 0)
+    * $B$ = (optional) input-to-state weight matrix
+    * $b$ = (optional) state bias vector
+    
+    * $y_{t_k}$ is an observed variable (emissions) of size `emission_dim`
+    * $H$ = emission (observation) matrix
+    * $R$ = covariance function for emission (observation) noise
+    * $D$ = (optional) input-to-emission weight matrix
+    * $d$ = (optional) emission bias vector
 
     The parameters of the model are stored in a :class:`ParamsCDLGSSM`.
     You can create the parameters manually, or by calling :meth:`initialize`.
@@ -79,8 +87,12 @@ class ContDiscreteLinearGaussianSSM(SSM):
     :param input_dim: Dimensionality of input vector. Defaults to 0.
     :param has_dynamics_bias: Whether model contains an offset term $b$. Defaults to True.
     :param has_emissions_bias:  Whether model contains an offset term $d$. Defaults to True.
+    :param diffeqsolve_settings: settings to pass to the differential equation solver when computing the
+        pushforward of the continuous-time dynamics. Defaults to {}.
 
     """
+
+    # Default constructor
     def __init__(
         self,
         state_dim: int,
@@ -112,7 +124,8 @@ class ContDiscreteLinearGaussianSSM(SSM):
         return self._diffeqsolve_settings
         
     # SSM methods
-    # Define default set of CD-LGSSM parameters, with all learnable parameters set to False
+    # Define default set of CD-LGSSM parameters,
+    # with all learnable parameters set to False
     def _default_cdlgssm_params(self) -> dict:
         ## Initial
         _initial_mean = {
@@ -129,6 +142,7 @@ class ContDiscreteLinearGaussianSSM(SSM):
         }
 
         ## Dynamics
+        # Just a matrix with -0.1 in the diagonal, for the drift
         _dynamics_weights = {
             "params": -0.1 * jnp.eye(self.state_dim),
             "props": ParameterProperties(trainable=False)
@@ -185,7 +199,7 @@ class ContDiscreteLinearGaussianSSM(SSM):
             'emission_cov': _emission_cov,
         }
 
-    # CD-LGSSM initialize, consistent across cd-dynamax, based on dicts
+    # CD-LGSSM initialize method, consistent across cd-dynamax, based on dicts
     def initialize(
         self,
         key: PRNGKey =jr.PRNGKey(0),
@@ -202,7 +216,7 @@ class ContDiscreteLinearGaussianSSM(SSM):
         emission_input_weights: dict = None,
         emission_cov: dict = None,
     ) -> Tuple[ParamsCDLGSSM, ParamsCDLGSSM]:
-        r"""Initialize model parameters that are set to None, and their corresponding properties.
+        r"""Initialize CD-LGSSM parameters, and their corresponding properties.
 
         Args:
             key: Random number key. Defaults to jr.PRNGKey(0).
@@ -223,7 +237,8 @@ class ContDiscreteLinearGaussianSSM(SSM):
             Tuple[ParamsCDLGSSM, ParamsCDLGSSM]: parameters and their properties.
         """
 
-        # Create CD-NLGSSM parameters and properties, based on the provided samples, init_values or defaults
+        # Create CD-NLGSSM parameters and properties,
+        # based on the provided samples, init_values or defaults
         params_dict_values, params_dict_props = init_cdlgssm_params(
             default_params = self._default_cdlgssm_params(),
             init_params = {
@@ -248,15 +263,24 @@ class ContDiscreteLinearGaussianSSM(SSM):
         # Return the parameters and properties
         return params_dict_values, params_dict_props   
 
+    # SSM distribution methods
     def initial_distribution(
         self,
         params: ParamsCDLGSSM,
         inputs: Optional[Float[Array, "ntime input_dim"]]=None
     ) -> tfd.Distribution:
+        r"""Initial distribution.
+        Args:
+            params: CD-LGSSM model parameters.
+            inputs: optional initial inputs (not used in state initialization).
+        Returns:
+            initial Gaussian state distribution.
+        """
+        # Gaussian initial distribution
         return MVN(params.initial.mean, params.initial.cov)
 
-    # NB: The discrete pushforward of the continuous state dynamics
-    #       and discrete inputs (controls) 
+    # Transition distribution: defined as the pushforward
+    # of the continuous state dynamics and discrete inputs (controls) 
     def transition_distribution(
         self,
         params: ParamsCDLGSSM,
@@ -265,8 +289,22 @@ class ContDiscreteLinearGaussianSSM(SSM):
         t1: Optional[Float]=None,
         inputs: Optional[Float[Array, "ntime input_dim"]]=None
     ) -> tfd.Distribution:
-    
+        r"""CD-LGSSM Transition distribution,
+            defined as the pushforward of the continuous-time, linear dynamics and discrete inputs (controls).
+        
+        Args:
+            params: CD-LGSSM model parameters.
+            state: current state.
+            t0: initial time.
+            t1: final time.
+            inputs: optional inputs.
+
+        Returns:
+            Gaussian, state transition distribution.
+        """
+        # Process inputs
         inputs = inputs if inputs is not None else jnp.zeros(self.input_dim)
+        
         # Compute pushforward map:
         # A maps the state from t0 to t1
         # Q is the covariance at t1
@@ -276,18 +314,32 @@ class ContDiscreteLinearGaussianSSM(SSM):
         if self.has_dynamics_bias:
             mean += params.dynamics.bias
         
+        # Return the corresponding Gaussian transition distribution
         return MVN(mean, Q)
         
+    # Emission distribution
     def emission_distribution(
         self,
         params: ParamsCDLGSSM,
         state: Float[Array, "state_dim"],
         inputs: Optional[Float[Array, "ntime input_dim"]]=None
     ) -> tfd.Distribution:
+        r"""CD-LGSSM Emission distribution.
+        Args:
+            params: CD-LGSSM model parameters.
+            state: current state.
+            inputs: optional inputs.
+        
+        Returns:
+            Gaussian, state-conditional emission distribution
+        """
+        # Process inputs
         inputs = inputs if inputs is not None else jnp.zeros(self.input_dim)
+        # Compute emission mean
         mean = params.emissions.weights @ state + params.emissions.input_weights @ inputs
         if self.has_emissions_bias:
             mean += params.emissions.bias
+        # Return the corresponding Gaussian emission distribution
         return MVN(mean, params.emissions.cov)
 
     # Sampling methods
@@ -299,7 +351,7 @@ class ContDiscreteLinearGaussianSSM(SSM):
         init_params: Optional[ParamsCDLGSSM]=None,   
         key: Optional[PRNGKey]=jr.PRNGKey(0),
     ) -> Tuple[ParamsCDLGSSM, ParamsCDLGSSM]:
-        r"""Sample from the prior distribution over model parameters.
+        r"""Sample from the prior distribution over CD-LGSSM model parameters.
 
         Args:
             :param prior: prior distribution
@@ -323,6 +375,7 @@ class ContDiscreteLinearGaussianSSM(SSM):
             key = key,
         )
     
+    # Sampling from the joint distribution of states and emissions, using the CD-LGSSM distributions
     def sample_dist(
         self,
         params: ParamsCDLGSSM,
@@ -331,7 +384,20 @@ class ContDiscreteLinearGaussianSSM(SSM):
         t_emissions: Optional[Float[Array, "ntime 1"]]=None,
         inputs: Optional[Float[Array, "ntime input_dim"]]=None
     ) -> Tuple[Float[Array, "num_timesteps state_dim"], Float[Array, "num_timesteps emission_dim"]]:
-        print('Sampling from continuous-discrete linear Gaussian SSM distributions')
+        r"""Sample from the joint distribution of the CD-LGSSM
+            to produce states and emission trajectories.
+
+        Args:
+            params: CD-LGSSM model parameters
+            key: random number generator key
+            num_timesteps: number of time steps to sample
+            t_emissions: continuous-time specific time instants of observations: if not None, it is an array 
+            inputs: optional array of inputs.
+        Returns:
+            latent states and observed emissions
+        """
+        
+        print('CD-LGSSM Sampling from continuous-discrete linear Gaussian SSM distributions')
         return cdlgssm_joint_sample(
             params,
             key,
@@ -341,6 +407,7 @@ class ContDiscreteLinearGaussianSSM(SSM):
             diffeqsolve_settings=self.diffeqsolve_settings
         )
     
+    # Sampling from the path distribution of states and emissions, using the SDE solver path
     def sample_path(
         self,
         params: ParamsCDLGSSM,
@@ -350,18 +417,20 @@ class ContDiscreteLinearGaussianSSM(SSM):
         inputs: Optional[Float[Array, "num_timesteps input_dim"]]=None
     ) -> Tuple[Float[Array, "num_timesteps state_dim"],
                 Float[Array, "num_timesteps emission_dim"]]:
-        r"""Sample from a forward path to produce state and emission trajectories.
+        r"""Sample from a forward path of the CD-LGSSM to produce state and emission trajectories.
 
         Args:
             params: model parameters
+            key: random number generator key
+            num_timesteps: number of time steps to sample
             t_emissions: continuous-time specific time instants of observations: if not None, it is an array 
             inputs: optional array of inputs.
 
         Returns:
-            latent states and emissions
+            latent states and observed emissions
 
         """
-        print('Sampling from continuous-discrete linear Gaussian SSM path')
+        print('CD-LGSSM Sampling from continuous-discrete linear Gaussian SSM path')
         return cdlgssm_path_sample(
             params=params,
             key=key,
@@ -381,9 +450,23 @@ class ContDiscreteLinearGaussianSSM(SSM):
         inputs: Optional[Float[Array, "ntime input_dim"]] = None,
         key: PRNGKey=jr.PRNGKey(0)
     ) -> Scalar:
+        r"""Compute the marginal log likelihood of a sequence of emissions under the CD-LGSSM model.
+
+        Args:
+            params: CD-LGSSM model parameters.
+            emissions: sequence of observations.
+            t_emissions: continuous-time specific time instants of observations: if not None, it is an array
+            filter_hyperparams: hyperparameters for the Kalman filter.
+            inputs: optional sequence of inputs.
+            key: random number generator.
+        Returns:
+            Marginal log likelihood of the emissions, $\log p(y_{1:T})$.
+        """
+        # Run CD-Kalman filter to compute marginal log likelihood
         filtered_posterior = cdlgssm_filter(params, emissions, t_emissions, filter_hyperparams, inputs)
         return filtered_posterior.marginal_loglik
 
+    # A high-level, user-friendly filtering interface (with default settings)
     def filter(
         self,
         params: ParamsCDLGSSM,
@@ -393,8 +476,22 @@ class ContDiscreteLinearGaussianSSM(SSM):
         inputs: Optional[Float[Array, "ntime input_dim"]] = None,
         warn: bool = True,
     ) -> PosteriorGSSMFiltered:
+        r"""Run the CD-Kalman filter to compute the filtered posterior distribution over states.
+        Args:
+            params: CD-LGSSM model parameters.
+            emissions: sequence of observations.
+            t_emissions: continuous-time specific time instants of observations: if not None, it is an array
+            filter_hyperparams: hyperparameters for the Kalman filter.
+            inputs: optional sequence of inputs.
+            warn: whether to warn about numerical issues.
+        Returns:
+            filtered posterior distribution over states.
+        """
+
+        # Directly run the CD-Kalman filter
         return cdlgssm_filter(params, emissions, t_emissions, filter_hyperparams, inputs, warn=warn)
 
+    # High-level, user-friendly interface combining filtering and forecasting steps
     def filter_and_forecast(
         self,
         params,
@@ -405,6 +502,22 @@ class ContDiscreteLinearGaussianSSM(SSM):
         inputs_forecast=None,
         warn: bool = True,
     ):
+        r"""Run the CD-Kalman filter to compute the filtered posterior distributions over states,
+        and then run forecasting from the last filtered state.
+        
+        Args:
+            params: model parameters.
+            emissions_filter: sequence of observations for filtering.
+            t_emissions_filter: continuous-time specific time instants of observations for filtering: if not None, it is an array
+            t_emissions_forecast: continuous-time specific time instants for forecasting: if not None, it is an array
+            inputs_filter: optional sequence of inputs for filtering.
+            inputs_forecast: optional sequence of inputs for forecasting.
+            warn: whether to warn about numerical issues.
+        
+        Returns:
+            filtered and forecasted posterior distributions over states.
+        """
+
         # Run filter on filtering time points
         filtered = self.filter(
             params=params,
@@ -428,8 +541,10 @@ class ContDiscreteLinearGaussianSSM(SSM):
             warn=warn,
         )
 
+        # Return both filtered and forecasted posteriors
         return filtered, forecasted
 
+    # Smoothing method
     def smoother(
         self,
         params: ParamsCDLGSSM,
@@ -438,8 +553,22 @@ class ContDiscreteLinearGaussianSSM(SSM):
         filter_hyperparams: Optional[KFHyperParams]=KFHyperParams(),
         inputs: Optional[Float[Array, "ntime input_dim"]] = None
     ) -> PosteriorGSSMSmoothed:
+        r"""Compute the smoothing distribution over states using the CD-Kalman smoother.
+
+        Args:
+            params: model parameters.
+            emissions: sequence of observations.
+            t_emissions: continuous-time specific time instants of observations: if not None, it is an array
+            filter_hyperparams: hyperparameters for the Kalman filter.
+            inputs: optional sequence of inputs.
+
+        Returns:
+            smoothed posterior distributions over states.
+        """
+
         return cdlgssm_smoother(params, emissions, t_emissions, filter_hyperparams, inputs)
 
+    # Sampling from the posterior distribution of states given emissions
     def posterior_sample(
         self,
         key: PRNGKey,
@@ -448,8 +577,20 @@ class ContDiscreteLinearGaussianSSM(SSM):
         t_emissions: Optional[Float[Array, "ntime 1"]]=None,
         inputs: Optional[Float[Array, "ntime input_dim"]]=None
     ) -> Float[Array, "ntime state_dim"]:
+        r"""Sample from the posterior distribution over states given emissions using the CD-Kalman filter/smoother.
+        Args:
+            key: random number generator.
+            params: model parameters.
+            emissions: sequence of observations.
+            t_emissions: continuous-time specific time instants of observations: if not None, it is an array
+            inputs: optional sequence of inputs.
+        Returns:
+            sampled latent states.
+        """
+        
         return cdlgssm_posterior_sample(key, params, emissions, t_emissions, inputs)
 
+    # Posterior predictive distribution for emissions
     def posterior_predictive(
         self,
         params: ParamsCDLGSSM,
@@ -463,13 +604,17 @@ class ContDiscreteLinearGaussianSSM(SSM):
         Args:
             params: model parameters.
             emissions: sequence of observations.
+            t_emissions: continuous-time specific time instants of observations: if not None, it is an array
+            filter_hyperparams: hyperparameters for the Kalman filter.
             inputs: optional sequence of inputs.
 
         Returns:
             :posterior predictive means $\mathbb{E}[y_{t,d} \mid y_{1:T}]$ and standard deviations $\mathrm{std}[y_{t,d} \mid y_{1:T}]$
 
         """
+        # Run CD-Kalman smoother to compute smoothed states
         posterior = cdlgssm_smoother(params, emissions, t_emissions, filter_hyperparams, inputs)
+        # Compute posterior predictive for emissions
         H = params.emissions.weights
         b = params.emissions.bias
         R = params.emissions.cov
@@ -478,6 +623,8 @@ class ContDiscreteLinearGaussianSSM(SSM):
         smoothed_emissions_cov = psd(H @ posterior.smoothed_covariances @ H.T + R)
         smoothed_emissions_std = jnp.sqrt(
             jnp.array([smoothed_emissions_cov[:, i, i] for i in range(emission_dim)]))
+        
+        # Return posterior predictive means and standard deviations
         return smoothed_emissions, smoothed_emissions_std
 
     # Expectation-maximization (EM) code

@@ -3,17 +3,18 @@ import os
 from configparser import ConfigParser
 import pickle
 
+# CD-Dynamax imports
 from cd_dynamax.src.utils.experiment_utils import *
 from cd_dynamax.src.utils.simulation_utils import *
 
+# Function to generate data from a configuration file
 def generate_data_from_config(
         config_path: str = '../configs/',
         data_config_file=None,
         data_save_file=None,
         overrides=None,
         ):
-    """
-    Load data from a configuration file.
+    r"""Load data from a configuration file.
     
     Args:
         data_config_file (str): Path to the configuration file.

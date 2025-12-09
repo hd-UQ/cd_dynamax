@@ -1,54 +1,70 @@
-from typing import NamedTuple, Tuple, Optional, Union
-from jaxtyping import Array, Float
+# JAX imports
 import jax.random as jr
 import jax.numpy as jnp
+
+# Type annotations
+from typing import NamedTuple, Tuple, Optional, Union
+from jaxtyping import Array, Float
+
+# Imports from dynamax
 from cd_dynamax.dynamax.parameters import ParameterProperties
 
 #### Parameter definitions
 # To avoid unnecessary redefinitions of code,
-# We import those that can be reused from LGSSM first
+# We import those that can be reused from dynamax first
 from cd_dynamax.dynamax.linear_gaussian_ssm.inference import ParamsLGSSMInitial, ParamsLGSSMEmissions
 
-# Continuous dynamic distributions are different than discrete ones, we define them here
+### CD-LGSSM parameter class definitions
+# Continuous-discrete linear Gaussian dynamics
 class ParamsCDLGSSMDynamics(NamedTuple):
-    r"""Parameters of the dynamics distribution
+    r"""Parameters of the CD-LGSSM state dynamics
+            The tuple doubles as a container for the ParameterProperties.
+    
+    We assume a model of the form
+        $dz_t = F_t z_t dt + L_t dB_t$
 
-    $$p(z_{t+1} \mid z_t, u_t) = \mathcal{N}(z_{t+1} \mid A z_t + B u_t + b, Q)$$
+    The resulting transition distribution is
+        $p(z_{t1}} | z_{t0}, u_t1) = N(z_{t1} | A z_{t0} + B u_{t1} + b, P)$
+    where A, B, b, P are computed based on the SDE defined by F_t, L_t and Q.
 
-    The tuple doubles as a container for the ParameterProperties.
-
-    :param weights: dynamics weights $F$ -> used to compute A based on ODE
+    :param weights: dynamics weights $F_t$
     :param bias: dynamics bias $b$
     :param input_weights: dynamics input weights $B$
-    :param cov: dynamics covariance $Q$
+    :param diffusion_coefficient: dynamics diffusion coefficient $L_t$
+    :param diffusion_cov: dynamics covariance $Q$
 
     """
+    # F_t: parameters and properties
     weights: Union[ParameterProperties,
         Float[Array, "state_dim state_dim"],
         Float[Array, "ntime state_dim state_dim"]]
     
+    # b: parameters and properties
     bias: Union[ParameterProperties,
         Float[Array, "state_dim"],
         Float[Array, "ntime state_dim"]]
     
+    # B: parameters and properties
     input_weights: Union[ParameterProperties,
         Float[Array, "state_dim input_dim"],
         Float[Array, "ntime state_dim input_dim"]]
     
+    # L_t: parameters and properties
     diffusion_coefficient: Union[ParameterProperties,
         Float[Array, "state_dim state_dim"],
         Float[Array, "ntime state_dim state_dim"]
     ]
+    # Q: parameters and properties
     diffusion_cov: Union[ParameterProperties,
         Float[Array, "state_dim state_dim"],
         Float[Array, "ntime state_dim state_dim"],
         Float[Array, "state_dim_triu"]]
 
-# CDLGSSM parameters are different to LGSSM due to different dynamics
+# Set of CD-LGSSM parameters
 class ParamsCDLGSSM(NamedTuple):
-    r"""Parameters of a linear Gaussian SSM.
+    r"""Parameters of a linear Gaussian CD-LGSSM.
 
-    :param initial: initial distribution parameters
+    :param initial: initial distribution parameters, same as in LGSSM
     :param dynamics: dynamics distribution parameters
     :param emissions: emission distribution parameters
 
@@ -57,6 +73,7 @@ class ParamsCDLGSSM(NamedTuple):
     dynamics: ParamsCDLGSSMDynamics
     emissions: ParamsLGSSMEmissions
 
+# Object definition used when forecasting with a CD-LGSSM (also useful for CD-NLGSSM)
 class GSSMForecast(NamedTuple):
     r"""Object definition used when forecasting.
 
@@ -72,19 +89,23 @@ class GSSMForecast(NamedTuple):
     """
 
     # If we forecast Gaussian distributions, based on filtering methods
+    # State means and covariances
     forecasted_state_means: Optional[Float[Array, "ntime state_dim"]] = None
     forecasted_state_covariances: Optional[Float[Array, "ntime state_dim"]] = None
+    # Emission means and covariances
     forecasted_emission_means: Optional[Float[Array, "ntime state_dim"]] = None
     forecasted_emission_covariances: Optional[Float[Array, "ntime state_dim"]] = None
 
     # If we forecast paths, based on solving the SDE
+    # State and emission paths
     forecasted_state_path: Optional[Float[Array, "ntime state_dim"]] = None
+    forecasted_emission_path: Optional[Float[Array, "ntime state_dim"]] = None
 
-# Some auxiliary functions for parameter handling
-## Only use the values above if the user hasn't specified their own
+### Auxiliary functions for parameter handling
 default = lambda x, x0: x if x is not None else x0
+_zeros_if_none = lambda x, shape: x if x is not None else jnp.zeros(shape)
 
-## Create CD-LGSSM parameters and properties, based on provided dictionaries
+### Create CD-LGSSM parameters and properties, based on provided dictionaries
 def create_cdlgssm_params_and_props(
         params: dict
     ) -> Tuple[ParamsCDLGSSM, ParameterProperties]:
@@ -124,14 +145,16 @@ def create_cdlgssm_params_and_props(
 
     return params_and_props["params"], params_and_props["props"]
 
-# Create CD-LGSSM parameters and properties, based on the provided prior, init_values or defaults
+# Initialize CD-LGSSM parameters and properties
+# based on the provided prior, init_values or defaults
 def init_cdlgssm_params(
         default_params,
         init_params = None,
         init_prior = None,
         key = jr.PRNGKey(0),
     ) -> Tuple[ParamsCDLGSSM, ParamsCDLGSSM]:
-    r"""Create CD-LGSSM parameters and properties, based on sampling from the provided prior, init_values or defaults
+    r"""Initialize CD-LGSSM parameters and properties,
+        based on sampling from the provided prior, init_values or defaults
 
     Args:
         :param default_params: dictionary of default parameters: we at least need some default values
@@ -175,14 +198,16 @@ def init_cdlgssm_params(
     # Create and return CD-LGSSM parameter and properties objects
     return create_cdlgssm_params_and_props(params)
 
-# Sample CD-LGSSM parameters, based on the provided prior and init_values
+# Sample CD-LGSSM parameters,
+# based on the provided prior and init_values
 def sample_cdlgssm_params(
         prior,
         M,
         init_params,
         key = jr.PRNGKey(0),
     ) -> Tuple[ParamsCDLGSSM, ParamsCDLGSSM]:
-    r"""Sample CD-LGSSM parameters from the provided prior, with init_params used for non-sampled parameters
+    r"""Sample CD-LGSSM parameters from the provided prior,
+        with init_params used for non-sampled parameters
 
     Args:
         :param prior: prior distribution for the initialization.
@@ -212,51 +237,24 @@ def sample_cdlgssm_params(
     
     # And replace the provided params with the sampled ones
     for dict_name in sampled_params.keys():
-        if dict_name not in ['initial_mean', 'initial_cov', 'dynamics_weights', 'dynamics_input_weights', 'dynamics_bias', 'dynamics_diffusion_coefficient', 'dynamics_diffusion_cov', 'emission_weights', 'emission_input_weights', 'emission_bias', 'emission_cov']:
+        if dict_name not in [
+                'initial_mean',
+                'initial_cov',
+                'dynamics_weights',
+                'dynamics_input_weights',
+                'dynamics_bias',
+                'dynamics_diffusion_coefficient',
+                'dynamics_diffusion_cov',
+                'emission_weights',
+                'emission_input_weights',
+                'emission_bias',
+                'emission_cov'
+            ]:
             raise ValueError(f"Unknown parameter dictionary name: {dict_name}")
         
-        # Replace
+        # Replace the provided params with the sampled ones
         params[dict_name]["params"] = sampled_params[dict_name]
     
     # Create and return CD-LGSSM parameter and properties objects
     return create_cdlgssm_params_and_props(params)
 
-# Auxiliary functions for parameter handling
-_zeros_if_none = lambda x, shape: x if x is not None else jnp.zeros(shape)
-def make_cdlgssm_params(initial_mean,
-                      initial_cov,
-                      dynamics_weights,
-                      dynamics_diffusion_coeff,
-                      dynamics_diffusion_cov,
-                      emissions_weights,
-                      emissions_cov,
-                      dynamics_bias=None,
-                      dynamics_input_weights=None,
-                      emissions_bias=None,
-                      emissions_input_weights=None):
-    """Helper function to construct a ParamsCDLGSSM object from arguments."""
-    state_dim = len(initial_mean)
-    emission_dim = emissions_cov.shape[-1]
-    input_dim = max(dynamics_input_weights.shape[-1] if dynamics_input_weights is not None else 0,
-                    emissions_input_weights.shape[-1] if emissions_input_weights is not None else 0)
-
-    params = ParamsCDLGSSM(
-        initial=ParamsLGSSMInitial(
-            mean=initial_mean,
-            cov=initial_cov
-        ),
-        dynamics=ParamsCDLGSSMDynamics(
-            weights=dynamics_weights,
-            bias=_zeros_if_none(dynamics_bias,state_dim),
-            input_weights=_zeros_if_none(dynamics_input_weights, (state_dim, input_dim)),
-            diffusion_coefficient=dynamics_diffusion_coeff,
-            diffusion_cov=dynamics_diffusion_cov,
-        ),
-        emissions=ParamsLGSSMEmissions(
-            weights=emissions_weights,
-            bias=_zeros_if_none(emissions_bias, emission_dim),
-            input_weights=_zeros_if_none(emissions_input_weights, (emission_dim, input_dim)),
-            cov=emissions_cov
-        )
-    )
-    return params

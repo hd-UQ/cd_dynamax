@@ -2,9 +2,11 @@
 import jax.numpy as jnp
 from jax import lax
 from jax import vmap
+from jax.tree_util import tree_map
+
+# Typing annotations
 from jaxtyping import Array, Float
 from typing import NamedTuple, Optional, List
-from jax.tree_util import tree_map
 
 # Distributions, compatible with JAX, from TensorFlow Probability
 import tensorflow_probability.substrates.jax as tfp
@@ -14,14 +16,15 @@ tfd = tfp.distributions
 tfb = tfp.bijectors
 
 # Dynamax shared code
-from cd_dynamax.dynamax.types import PRNGKey
 from cd_dynamax.dynamax.utils.utils import psd_solve
+# To avoid unnecessary redefinitions of code,
+# We import those posterior filtering and smoothing equivalent classes that can be reused from dynamax
 from cd_dynamax.dynamax.linear_gaussian_ssm.inference import PosteriorGSSMFiltered, PosteriorGSSMSmoothed
 
 # Our codebase
-# CDLGSSM forecasting definition
+# CDLGSSM forecasting definition is reused
 from ..continuous_discrete_linear_gaussian_ssm.cdlgssm_utils import GSSMForecast
-# CDNLGSSM param and function definition
+# CDNLGSSM specific param and function definitions
 from .cdnlgssm_utils import *
 # Diffrax based diff-eq solver
 from ..utils.diffrax_utils import diffeqsolve
@@ -29,11 +32,21 @@ from ..utils.diffrax_utils import diffeqsolve
 from ..utils.debug_utils import *
 DEBUG = False
 
-# We redefine UKFHyperParams, due to dt_final
+#### Helper functions
+# Helper functions --- from dynamax 
+_outer = vmap(lambda x, y: jnp.atleast_2d(x).T @ jnp.atleast_2d(y), 0, 0)
+_process_fn = lambda f, u: (lambda x, y: f(x)) if u is None else f
+_process_input = lambda x, y: jnp.zeros((y,)) if x is None else x
+_compute_lambda = lambda x, y, z: x**2 * (y + z) - z
+
+#### CD-NLGSSM filtering: Unscented Kalman Filter (UKF)
+
+# Default UKF filtering hyperparameters, as class
+# We redefine UKFHyperParams for cd-dynamax, due to dt_final
 class UKFHyperParams(NamedTuple):
     """Lightweight container for UKF hyperparameters.
 
-    Default values taken from https://github.com/sbitzer/UKF-exposed
+        Default values taken from https://github.com/sbitzer/UKF-exposed
     """
     dt_final: float = 1e-4 # Small dt_final for predicted mean and covariance at the end of sequence 
     alpha: float = jnp.sqrt(3)
@@ -44,14 +57,7 @@ class UKFHyperParams(NamedTuple):
     state_order: str = "first"
     dt_average: float = 0.1 # Average timestep for discrete state order, if applicable
 
-
-# Helper functions --- from dynamax 
-_outer = vmap(lambda x, y: jnp.atleast_2d(x).T @ jnp.atleast_2d(y), 0, 0)
-_process_fn = lambda f, u: (lambda x, y: f(x)) if u is None else f
-_process_input = lambda x, y: jnp.zeros((y,)) if x is None else x
-_compute_lambda = lambda x, y, z: x**2 * (y + z) - z
-
-
+#  UKF auxiliary functions: sigma point computation
 def _compute_sigmas(m, P, n, lamb):
     """Compute (2n+1) sigma points used for inputs to  unscented transform.
         These are independent of Continuous or Discrete solutions
@@ -69,7 +75,7 @@ def _compute_sigmas(m, P, n, lamb):
     sigma_minus = jnp.array([m - distances[:, i] for i in range(n)])
     return jnp.concatenate((jnp.array([m]), sigma_plus, sigma_minus))
 
-
+#  UKF auxiliary functions: weights computation
 def _compute_weights(n, alpha, beta, lamb):
     """Compute weights used to compute predicted mean and covariance.
         These are different from Continuous and Discrete solutions
@@ -98,12 +104,12 @@ def _compute_weights(n, alpha, beta, lamb):
 
     return w_mean, w_cov, W_matrix
 
-
-# TODO: Revise and implement push-forward here
+### CD-NLGSSM filtering key functions: predict and condition_on
+# Predict next mean and covariance, under UKF approximations
 def _predict(
     m,
     P,  # priors
-    params: ParamsCDNLGSSM,  # All necessary CD dynamic params
+    params: ParamsCDNLGSSM,
     t0: Float,
     t1: Float,
     lamb,
@@ -119,7 +125,10 @@ def _predict(
     Args:
         m (D_hid,): prior mean.
         P (D_hid,D_hid): prior covariance.
-        params: parameters of CD nonlinear dynamics, containing dynamics RHS function, coeff matrix and Brownian covariance matrix.
+        params: CD-NLGSSM parameters, containing
+            - dynamics RHS drift function
+            - diffusion coefficient matrix L
+            - Brownian covariance matrix Q
         t0: initial time-instant
         t1: final time-instant
         lamb (float): lamb = alpha**2 *(n + kappa) - n.
@@ -127,7 +136,7 @@ def _predict(
         w_cov (2*D_hid+1,): 2n+1 weights to compute predicted covariance.
         W_matrix (2*D_hid+1,2*D_hid+1): matrix of weights defined by combining w_mean and w_cov as in eq. 3.82 of Saarka's Thesis.
         u (D_in,): inputs.
-        filter_hyperparams: hyper-parameters of the UKF.
+        filter_hyperparams: UKF hyper-parameters.
         warn: whether to issue warnings (e.g., about PSD issues)
 
     Returns:
@@ -135,35 +144,51 @@ def _predict(
         P_pred (D_hid,D_hid): predicted covariance.
 
     """
+
+    # Dimensions
     n = len(m)
 
+    # Dynamics drift function
     f = params.dynamics.drift.f
 
-    # solve Saarka's ODE 3.183 in thesis
+    # Zeroth order UKF approximation
     if filter_hyperparams.state_order in ['zeroth', 'discrete']:
-        # This is the zeroth order approximation
+        # According to Saarka's ODE 3.183 in thesis
+
         # First, we need to compute the sigma points
         X_t = _compute_sigmas(m, P, n, lamb)
 
         # Then we propagate them through the deterministic part of the dynamics
         # by solving the ODE for each sigma point X_t as initial condition
-        # We simply solve the ODE with RHS f
         # Note that the control is not time-varying across interval [t0, t1]
+
+        # The RHS ODE is f(y, u, t)
         def rhs(t, y, args):
             return f(y, u, t)
+        
         # We solve the ODE for each sigma point X_t as initial condition
-        def my_solve(x_t):
-            return diffeqsolve(rhs, t0=t0, t1=t1, y0=x_t, **filter_hyperparams.diffeqsolve_settings)
+        def this_solve(x_t):
+            return diffeqsolve(
+                rhs,
+                t0=t0,
+                t1=t1,
+                y0=x_t,
+                **filter_hyperparams.diffeqsolve_settings
+            )
 
-        # vmapping over the sigma points
-        sol = vmap(my_solve)(X_t) # X_t.shape = (2*state_dim+1, state_dim)
+        # We vmap each solve over all the sigma points
+        sol = vmap(
+            this_solve
+        )(X_t) # X_t.shape = (2*state_dim+1, state_dim)
+        # Extract final state for each sigma point
         X_pred = sol[:, -1, :]  # (2*state_dim+1, state_dim)
 
         # We then compute the predicted mean and covariance
+        # Following UKF formulas
         m_pred = jnp.tensordot(w_mean, X_pred, axes=1)
         P_pred = jnp.tensordot(w_cov, _outer(X_pred - m_pred, X_pred - m_pred), axes=1)
 
-        # Finally, we add state noise
+        # Finally, add state noise
         if filter_hyperparams.state_order == 'zeroth':
             # For zeroth order, we use the timestep at each step
             dt = t1 - t0
@@ -173,51 +198,65 @@ def _predict(
             # but the same amount of noise is added after each measurement.
             dt = filter_hyperparams.dt_average
 
+        # Get diffusion parameters at time t0 and input u
         Qc_t = params.dynamics.diffusion_cov.f(None, u, t0)
         L_t = params.dynamics.diffusion_coefficient.f(None, u, t0) * filter_hyperparams.cov_rescaling
+        # Compute state noise covariance
         P_pred += dt * L_t @ Qc_t @ L_t.T
         P_pred = psd(P_pred)
+
     else:
-        # Sarkka Thesis's algo 3.24
-        # weights are defined in eq. 3.69;
+        # Sarkka Thesis's algo 3.24, with weights defined in eq. 3.69;
         # the related weight vector w_m and matrix W are defined in eq 3.81-3.82;
         def rhs_all(t, y, args):
-            # TODO: reconsider when we want time-varying dynamics functions
-            f = params.dynamics.drift.f
-            Qc_t = params.dynamics.diffusion_cov.f(None, u, t)
-            L_t = params.dynamics.diffusion_coefficient.f(None, u, t) * filter_hyperparams.cov_rescaling
-
-            # create sigma points X_t
+            # Unpack mean and covariance
             m_t, P_t = y
+
+            # Create sigma points X_t
             X_t = _compute_sigmas(m_t, P_t, n, lamb)
 
-            # TODO: add controls u
-            # f_X_t = vmap(f_t, (0, 0), 0)(X_t, u)
+            # Get dynamics parameters at time t and input u
+            f = params.dynamics.drift.f # TODO: reconsider when we want time-varying dynamics functions
+            Qc_t = params.dynamics.diffusion_cov.f(None, u, t)
+            L_t = params.dynamics.diffusion_coefficient.f(None, u, t) * filter_hyperparams.cov_rescaling
+            
+            # Propagate sigma points through dynamics f
             f_X_t = vmap(f, in_axes=(0, None, None))(X_t, u, t)
             # dimensions of f_X_t are (2*state_dim+1, state_dim)
 
-            # dmdt = f_X_t  w_mean
+            # Compute RHS for mean updates
             dmdt = f_X_t.T @ w_mean
 
+            # Compute RHS for covariance updates
             # dPdt = f_x W X^T + X W f_x^T + L Qc L^T (Transposes flipped due to shape of f_X_t and X_t)
             foo = f_X_t.T @ W_matrix @ X_t
             dPdt = foo + foo.T + L_t @ Qc_t @ L_t.T
 
+            # Return combined RHS
             return (dmdt, dPdt)
 
-        # solve Saarka's ODE 3.183 in thesis
+        # Solve ODE 3.183 in Sarkka's thesis
+        # Initial condition
         y0 = (m, P)
-        sol = diffeqsolve(rhs_all, t0=t0, t1=t1, y0=y0, **filter_hyperparams.diffeqsolve_settings)
+        # Numerical solve of ODE
+        sol = diffeqsolve(
+            rhs_all,
+            t0=t0,
+            t1=t1,
+            y0=y0,
+            **filter_hyperparams.diffeqsolve_settings
+        )
+        # Extract final mean and covariance
         m_pred, P_pred = sol[0][-1], psd(sol[1][-1])
 
-    # According to Sarkka's algo 3.24, we only need to return m_pred and P_pred (not P_cross) in continuous-discrete
+    # According to Sarkka's algo 3.24
+    # we only need to return m_pred and P_pred (not P_cross) in continuous-discrete
     return m_pred, P_pred
 
-
+# Condition on a new observation, under UKF approximations
 def _condition_on(m, P, h, R, lamb, w_mean, w_cov, u, y, t, warn: bool = True):
-    """Condition a Gaussian potential on a new observation
-
-    Duplicate of the _condition_on function in discrete case of inference_ukf.py
+    """Condition a Gaussian potential on a new observation,
+        using additive UKF approximations.
 
     Args:
         m (D_hid,): prior mean.
@@ -238,30 +277,57 @@ def _condition_on(m, P, h, R, lamb, w_mean, w_cov, u, y, t, warn: bool = True):
         P_cond (D_hid,D_hid): filtered covariance.
 
     """
+    # Dimensions
     n = len(m)
+    
     # Form sigma points and propagate
     sigmas_cond = _compute_sigmas(m, P, n, lamb)
+    # Replicate inputs for each sigma point
     u_s = jnp.array([u] * len(sigmas_cond))
-    sigmas_cond_prop = vmap(h, in_axes=(0, None, None))(sigmas_cond, u_s, t)
+    # Propagate sigma points through emission function at time t with input u
+    sigmas_cond_prop = vmap(
+        h,
+        in_axes=(0, None, None)
+    )(sigmas_cond, u_s, t)
 
-    # Compute parameters needed to filter
-    pred_mean = jnp.tensordot(w_mean, sigmas_cond_prop, axes=1)
+    # Compute predicted mean, covariance, and cross-covariance
+    pred_mean = jnp.tensordot(
+        w_mean,
+        sigmas_cond_prop,
+        axes=1
+    )
     pred_cov = psd(
-        jnp.tensordot(w_cov, _outer(sigmas_cond_prop - pred_mean, sigmas_cond_prop - pred_mean), axes=1) + R,
+        R + jnp.tensordot(
+            w_cov,
+            _outer(
+                sigmas_cond_prop - pred_mean,
+                sigmas_cond_prop - pred_mean
+            ),
+        axes=1),
         warn=warn,
     )
-    pred_cross = jnp.tensordot(w_cov, _outer(sigmas_cond - m, sigmas_cond_prop - pred_mean), axes=1)
+    pred_cross = jnp.tensordot(
+        w_cov,
+        _outer(
+            sigmas_cond - m,
+            sigmas_cond_prop - pred_mean
+        ),
+        axes=1
+    )
 
-    # Compute log-likelihood of observation
+    # Compute log-likelihood of observation based on Gaussian distribution,
+    # using predicted mean and covariance
     ll = MVN(pred_mean, pred_cov).log_prob(y)
 
-    # Compute filtered mean and covariace
-    K = psd_solve(pred_cov, pred_cross.T).T  # Filter gain
+    # UKF gain
+    K = psd_solve(pred_cov, pred_cross.T).T
+    # Compute UKF filtered mean and covariance
     m_cond = m + K @ (y - pred_mean)
     P_cond = psd(P - K @ pred_cov @ K.T, warn=warn)
+    # Return log-likelihood, filtered mean and covariance
     return ll, m_cond, P_cond
 
-
+# UKF filtering main function
 def unscented_kalman_filter(
     params: ParamsCDNLGSSM,
     emissions: Float[Array, "ntime emission_dim"],
@@ -276,11 +342,14 @@ def unscented_kalman_filter(
     ],
     warn: bool = True,
 ) -> PosteriorGSSMFiltered:
-    """Run a unscented Kalman filter to produce the marginal likelihood and
-    filtered state estimates.
+    r"""Run a unscented Kalman filter
+        to produce the marginal likelihood and filtered state estimates.
 
     Args:
-        params: model parameters.
+        params: CD-NLGSSM parameters, containing
+            - dynamics RHS drift function
+            - diffusion coefficient matrix L
+            - Brownian covariance matrix Q
         emissions: array of observations.
         t_emissions: continuous-time specific time instants of observations: if not None, it is an array
         filter_hyperparams: hyper-parameters.
@@ -309,21 +378,24 @@ def unscented_kalman_filter(
         t0 = jnp.arange(num_timesteps)
         t1 = jnp.arange(1, num_timesteps + 1)
 
+    # Set-up indexing
     t0_idx = jnp.arange(num_timesteps)
+    # Process inputs
+    inputs = _process_input(inputs, num_timesteps)
 
+    # Only emission function
+    h = params.emissions.emission_function.f
+
+    # # UKF Preliminaries
     state_dim = params.dynamics.diffusion_cov.f(None, None, None).shape[0]
-
     # Compute lambda and weights from from hyperparameters
     alpha, beta, kappa = filter_hyperparams.alpha, filter_hyperparams.beta, filter_hyperparams.kappa
     lamb = _compute_lambda(alpha, kappa, state_dim)
     w_mean, w_cov, W_matrix = _compute_weights(state_dim, alpha, beta, lamb)
 
-    # Only emission function
-    h = params.emissions.emission_function.f
-    # h = _process_fn(h, inputs)
-    inputs = _process_input(inputs, num_timesteps)
-
+    # Define one step of UKF filtering
     def _step(carry, args):
+        # Unpack the inputs
         ll, pred_mean, pred_cov = carry
         t0, t1, t0_idx = args
 
@@ -334,14 +406,37 @@ def unscented_kalman_filter(
 
         # Condition on this emission
         log_likelihood, filtered_mean, filtered_cov = _condition_on(
-            pred_mean, pred_cov, h, R, lamb, w_mean, w_cov, u, y, t0, warn=warn
+            pred_mean,
+            pred_cov,
+            h,
+            R,
+            lamb,
+            w_mean,
+            w_cov,
+            u,
+            y,
+            t0,
+            warn=warn
         )
 
         # Update the log likelihood
         ll += log_likelihood
 
         # Predict the next state, based on UKF predict
-        pred_mean, pred_cov = _predict(filtered_mean, filtered_cov, params, t0, t1, lamb, w_mean, w_cov, W_matrix, u, filter_hyperparams, warn=warn)
+        pred_mean, pred_cov = _predict(
+            filtered_mean,
+            filtered_cov,
+            params,
+            t0,
+            t1,
+            lamb,
+            w_mean,
+            w_cov,
+            W_matrix,
+            u,
+            filter_hyperparams,
+            warn=warn
+        )
 
         # Build carry and output states
         carry = (ll, pred_mean, pred_cov)
@@ -353,122 +448,26 @@ def unscented_kalman_filter(
             "marginal_loglik": ll,
         }
         outputs = {key: val for key, val in outputs.items() if key in output_fields}
+
+        # Return carry and outputs
         return carry, outputs
 
-    # Run the Unscented Kalman Filter
+    # Initialize carry with initial distribution
     carry = (0.0, params.initial.mean.f(), params.initial.cov.f())
-    (ll, *_), outputs = lax.scan(_step, carry, (t0, t1, t0_idx))
-    # for i in range(num_timesteps):
-    #     carry, outputs = _step(carry, (t0[i], t1[i], t0_idx[i]))
-    # ll, _, _ = carry
-
+    # Run the UKF filter, via lax.scan
+    (ll, *_), outputs = lax.scan(
+        _step,
+        carry,
+        (t0, t1, t0_idx)
+    )
+    # Build and return posterior object
     outputs = {"marginal_loglik": ll, **outputs}
     posterior_filtered = PosteriorGSSMFiltered(
         **outputs,
     )
     return posterior_filtered
 
-
-def unscented_kalman_smoother(
-    params: ParamsCDNLGSSM,
-    emissions: Float[Array, "ntime emission_dim"],
-    t_emissions: Optional[Float[Array, "num_timesteps 1"]] = None,
-    filter_hyperparams: UKFHyperParams = UKFHyperParams(),
-    inputs: Optional[Float[Array, "ntime input_dim"]] = None,
-    warn: bool = True,
-) -> PosteriorGSSMSmoothed:
-    """Run a unscented Kalman (RTS) smoother.
-
-    #TODO: NOT YET IMPLEMENTED.
-    Args:
-        params: model parameters.
-        emissions: array of observations.
-        hyperperams: hyper-parameters.
-        inputs: optional inputs.
-        warn: whether to issue warnings (e.g., about PSD issues)
-
-    Returns:
-        nlgssm_posterior: posterior object.
-
-    """
-
-    raise NotImplementedError("Unscented Kalman Smoother not yet implemented in continuous-discrete case, have a look at dynamax for inspiration!")
-    # Figure out timestamps, as vectors to scan over
-    # t_emissions is of shape num_timesteps \times 1
-    # t0 and t1 are num_timesteps \times 0
-    if t_emissions is not None:
-        num_timesteps = t_emissions.shape[0]
-        t0 = tree_map(lambda x: x[:, 0], t_emissions)
-        t1 = tree_map(
-            lambda x: jnp.concatenate(
-                (t_emissions[1:, 0], jnp.array([t_emissions[-1, 0] + filter_hyperparams.dt_final]))  # NB: t_{N+1} is simply t_{N}+dt_final
-            ),
-            t_emissions,
-        )
-    else:
-        num_timesteps = len(emissions)
-        t0 = jnp.arange(num_timesteps)
-        t1 = jnp.arange(1, num_timesteps + 1)
-
-    t0_idx = jnp.arange(num_timesteps)
-
-    state_dim = params.dynamics.diffusion_cov.shape[0]
-
-    # Run the unscented Kalman filter
-    ukf_posterior = unscented_kalman_filter(params, emissions, t_emissions, filter_hyperparams, inputs)
-    ll = ukf_posterior.marginal_loglik
-    filtered_means = ukf_posterior.filtered_means
-    filtered_covs = ukf_posterior.filtered_covariances
-
-    # Compute lambda and weights from from hyperparameters
-    alpha, beta, kappa = filter_hyperparams.alpha, filter_hyperparams.beta, filter_hyperparams.kappa
-    lamb = _compute_lambda(alpha, kappa, state_dim)
-    w_mean, w_cov, W_matrix = _compute_weights(state_dim, alpha, beta, lamb)
-
-    # Only emission functions
-    h = params.emissions.emission_function
-    h = _process_fn(h, inputs)
-    inputs = _process_input(inputs, num_timesteps)
-
-    def _step(carry, args):
-        # Unpack the inputs
-        smoothed_mean_next, smoothed_cov_next = carry
-        t0, t1, t0_idx, filtered_mean, filtered_cov = args
-
-        # Get parameters and inputs for time t0
-        R = _get_params(params.emissions.emission_cov, 2, t0)
-        u = inputs[t0_idx]
-        y = emissions[t0_idx]
-
-        # Prediction step
-        # TODO: Make sure we return all components needed for smoothing!
-        pred_mean, pred_cov, _ = _predict(filtered_mean, filtered_cov, params, t0, t1, lamb, w_mean, w_cov, W_matrix, u)
-        m_pred, S_pred, S_cross = _predict(filtered_mean, filtered_cov, f, Q, lamb, w_mean, w_cov, W_matrix, u)
-        # TODO: what is G???
-        G = psd_solve(S_pred, S_cross.T).T
-
-        # Compute smoothed mean and covariance
-        smoothed_mean = filtered_mean + G @ (smoothed_mean_next - m_pred)
-        smoothed_cov = filtered_cov + G @ (smoothed_cov_next - S_pred) @ G.T
-
-        return (smoothed_mean, smoothed_cov), (smoothed_mean, smoothed_cov)
-
-    # Run the unscented Kalman smoother
-    init_carry = (filtered_means[-1], filtered_covs[-1])
-    args = (t0[::-1], t1[::-1], t0_idx[::-1], filtered_means[:-1][::-1], filtered_covs[:-1][::-1])
-    _, (smoothed_means, smoothed_covs) = lax.scan(_step, init_carry, args)
-
-    # Reverse the arrays and return
-    smoothed_means = jnp.row_stack((smoothed_means[::-1], filtered_means[-1][None, ...]))
-    smoothed_covs = jnp.row_stack((smoothed_covs[::-1], filtered_covs[-1][None, ...]))
-    return PosteriorGSSMSmoothed(
-        marginal_loglik=ll,
-        filtered_means=filtered_means,
-        filtered_covariances=filtered_covs,
-        smoothed_means=smoothed_means,
-        smoothed_covariances=smoothed_covs,
-    )
-
+# CD-NLGSSM forecast function: Unscented Kalman Filter Forecast
 def forecast_unscented_kalman_filter(
     params: ParamsCDNLGSSM,
     init_forecast: tfd.Distribution,
@@ -485,19 +484,23 @@ def forecast_unscented_kalman_filter(
     r"""Run an Unscented Kalman filter to forecast states.
 
     Args:
-        params: model parameters.
+        params: CD-NLGSSM parameters, containing
+            - dynamics RHS drift function
+            - diffusion coefficient matrix L
+            - Brownian covariance matrix Q
         init_forecast: initial distribution to forecast with.
         t_init: time-instant of the initial condition of forecast
         t_forecast: continuous-time specific time instants to forecast
-        filter_hyperparams: hyper-parameters of the EKF, related to the approximation order
+        filter_hyperparams: hyper-parameters of the UKF, related to the approximation order
         inputs: optional array of inputs.
         output_fields: list of fields to return 
         warn: whether to issue warnings (e.g., about PSD issues)
 
     Returns:
-        post: forecast object.
+        forecast: forecast object.
 
     """
+
     # Figure out timestamps, as vectors to scan over
     # t_forecast is of shape num_timesteps \times 1
     # t0 and t1 are num_timesteps \times 0
@@ -517,19 +520,20 @@ def forecast_unscented_kalman_filter(
     t0_idx = jnp.arange(num_timesteps)
     inputs = _process_input(inputs, num_timesteps+1)
     
-    # Preliminaries
+    # UKF Preliminaries
     state_dim = params.dynamics.diffusion_cov.f(None, None, None).shape[0]
-
     # Compute lambda and weights from from hyperparameters
     alpha, beta, kappa = filter_hyperparams.alpha, filter_hyperparams.beta, filter_hyperparams.kappa
     lamb = _compute_lambda(alpha, kappa, state_dim)
     w_mean, w_cov, W_matrix = _compute_weights(state_dim, alpha, beta, lamb)
     
+    # Define one step of UKF forecasting
     def _step(carry, args):
+        # Unpack the inputs
         current_state_mean, current_state_cov = carry
         t0, t1, t0_idx = args
         
-        # Predict the next state based on EKF approximations
+        # Predict the next state based on UKF approximations
         pred_state_mean, pred_state_cov = _predict(
             current_state_mean,
             current_state_cov,
@@ -553,10 +557,11 @@ def forecast_unscented_kalman_filter(
 
         return carry, outputs
 
-    # Initialize the state, based on provided initial distribution's mean and covariance
+    # Initialize the state,
+    # based on provided initial distribution's mean and covariance
     carry = (init_forecast.mean(), init_forecast.covariance())
     
-    # Run the Unscented Kalman filter
+    # Run the Unscented Kalman filter, via lax.scan
     _, outputs = lax_scan(
         _step,
         carry,
@@ -570,6 +575,7 @@ def forecast_unscented_kalman_filter(
     )
     return forecast
 
+# CD-NLGSSM emission function: Emissions from UKF approximation
 def emissions_unscented_kalman_filter(
     params: ParamsCDNLGSSM,
     t_states: Float[Array, "num_timesteps 1"],
@@ -584,7 +590,10 @@ def emissions_unscented_kalman_filter(
     r"""Compute the emissions corresponding to the UKF linearization of the model.
     
     Args:
-        params: model parameters.
+        params: CD-NLGSSM parameters, containing
+            - dynamics RHS drift function
+            - diffusion coefficient matrix L
+            - Brownian covariance matrix Q
         t_states: continuous-time specific time instants of states
         state_means: state means at time instants t_states, always required
         state_covs: state covariances at time instants t_states, optional
@@ -597,6 +606,7 @@ def emissions_unscented_kalman_filter(
     Returns:
         emissions_mean: mean of emissions
         emissions_covariance: covariance of emissions, if available
+    
     """
     
     # Figure out timestamps, as vectors to scan over
@@ -612,18 +622,19 @@ def emissions_unscented_kalman_filter(
     t0_idx = jnp.arange(num_timesteps)
     inputs = _process_input(inputs, num_timesteps)
 
-    # Preliminaries
+    # Emission function
+    h = params.emissions.emission_function.f
+    
+    # UKF Preliminaries
     state_dim = params.dynamics.diffusion_cov.f(None, None, None).shape[0]
-
     # Compute lambda and weights from from hyperparameters
     alpha, beta, kappa = filter_hyperparams.alpha, filter_hyperparams.beta, filter_hyperparams.kappa
     lamb = _compute_lambda(alpha, kappa, state_dim)
     w_mean, w_cov, W_matrix = _compute_weights(state_dim, alpha, beta, lamb)
 
-    # Emission function
-    h = params.emissions.emission_function.f
-    
+    # Define one step of UKF emissions computation
     def _step(carry, args):
+        # Unpack the inputs
         state_mean, state_cov, t0, t0_idx = args
         
         # Form sigma points
@@ -634,15 +645,17 @@ def emissions_unscented_kalman_filter(
             lamb
         )
         
-        # Propagate with inputs
+        # Replicate inputs for each sigma point
         u_s = jnp.array(
             [inputs[t0_idx]] * len(sigmas_cond)
         )
+        # Propagate sigma points through emission function at time t0 with input u
         sigmas_cond_prop = vmap(
             h, in_axes=(0, None, None)
         )(sigmas_cond, u_s, t0)
 
-        # Emission mean, by computing sufficient statistics of sigmas
+        # Emission mean,
+        # by computing sufficient statistics of sigmas
         emission_mean = jnp.tensordot(
             w_mean,
             sigmas_cond_prop,
@@ -655,24 +668,25 @@ def emissions_unscented_kalman_filter(
             t0
         )
         emission_cov = psd(
-                jnp.tensordot(
+            R + jnp.tensordot(
                 w_cov,
-                _outer(sigmas_cond_prop - emission_mean,
+                _outer(
+                    sigmas_cond_prop - emission_mean,
                     sigmas_cond_prop - emission_mean
                 ),
-                axes=1
-            ) + R,
+                axes=1),
             warn=warn,
         )
         
         # Return carry and output states
         return (state_mean, state_cov), (emission_mean, emission_cov)
 
-    # Initialize the state, based on provided initial distribution's mean and covariance
+    # Initialize the state,
+    # based on provided initial distribution's mean and covariance
     carry = (
         state_means[0], state_covs[0]
     )
-    # Run the extended Kalman filter
+    # Run the Unscented Kalman filter, via lax.scan
     _, (emissions_mean, emissions_covariance) = lax_scan(
         _step,
         carry,
@@ -680,4 +694,5 @@ def emissions_unscented_kalman_filter(
         debug=DEBUG
     ) # type: ignore
 
+    # Return emissions mean and covariance
     return emissions_mean, emissions_covariance

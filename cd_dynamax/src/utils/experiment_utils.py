@@ -1,14 +1,17 @@
 # System imports
 import os
 from configparser import ConfigParser
+
 # Jax imports
 import jax.numpy as jnp
 import jax.random as jr
+
+# Typing imports
 # Import floating types, to avoid float64' is not defined error
 from numpy import array
 from typing import Tuple, NamedTuple, Union
 
-# CD-Nonlinear Gaussian models
+# CD-dynamax imports
 from cd_dynamax import ContDiscreteLinearGaussianSSM, ContDiscreteNonlinearGaussianSSM
 from cd_dynamax.src.continuous_discrete_linear_gaussian_ssm.models import *
 from cd_dynamax.src.continuous_discrete_nonlinear_gaussian_ssm.models import *

@@ -1,20 +1,35 @@
-from typing import NamedTuple, Union
-from jaxtyping import Array, Float, Integer
+# JAX imports
 import jax.numpy as jnp
 
-# From Dynamax
+# Typing imports
+from typing import NamedTuple, Union
+from jaxtyping import Array, Float, Integer
+
+# Imports from dynamax
 from cd_dynamax.dynamax.parameters import ParameterProperties
-# From our own codebase
+
+# Imports from the cd-dynamax codebase
 from cd_dynamax.src.continuous_discrete_nonlinear_gaussian_ssm.cdnlgssm_utils import _get_params
 from cd_dynamax import adjust_rhs
 
+### Learnable physics-based models: Lorenz63, Lorenz96, FitzHugh-Nagumo, Van der Pol, Rossler
+
+# Learnable Lorenz63 model
 class LearnableLorenz63_Drift(NamedTuple):
+    r""" Learnable Lorenz63 dynamical system drift model.
+        
+        The Lorenz63 system is defined by the following ODEs:
+            $dx/dt = sigma * (y - x)$
+            $dy/dt = rho * x - y - x * z$
+            $dz/dt = -beta * z + x * y$
+        where sigma, rho, and beta are parameters of the system.
+    """
+    # Learnable parameters
     sigma: Union[Float[Array, "1"], ParameterProperties]
     rho: Union[Float[Array, "1"], ParameterProperties]
     beta: Union[Float[Array, "1"], ParameterProperties]
-    '''    params are (sigma, rho, beta)
-    '''
-
+    
+    # Function to compute the drift
     def f(self, x, u=None, t=None):
         foo = jnp.array(
             [
@@ -35,12 +50,19 @@ class LearnableLorenz63_Drift(NamedTuple):
     def get_params(self):
         return _get_params(self)
 
+# Learnable Lorenz96 model
 class LearnableLorenz96_Drift(NamedTuple):
-    F: Union[Float[Array, "1"], ParameterProperties]
-    '''
-        params are (F)
-    '''
+    r""" Learnable Lorenz96 dynamical system drift model.
 
+        The Lorenz96 system is defined by the following ODEs:
+            $dx_k/dt = (x_{k+1} - x_{k-2}) * x_{k-1} - x_k + F$
+        where F is a parameter of the system.
+    """
+
+    # Learnable parameter
+    F: Union[Float[Array, "1"], ParameterProperties]
+    
+    # Function to compute the drift
     def f(self, x, u=None, t=None):
         foo = (jnp.roll(x, -1) - jnp.roll(x, 2)) * jnp.roll(x, 1) - x + self.F
 
@@ -55,7 +77,19 @@ class LearnableLorenz96_Drift(NamedTuple):
     def get_params(self):
         return _get_params(self)
 
+# Learnable Lorenz96 multiscale model
 class LearnableLorenz96MultiScale_Drift(NamedTuple):
+    r""" Learnable Lorenz96 multiscale dynamical system drift model.
+        The Lorenz96 multiscale system is defined by the following ODEs:
+            $dX_k/dt = f_k(X) + h_x * Y_bar$
+            $dY_{k,j}/dt = (1/eps) * r_j(X, Y)$
+        where:
+            $f_k(X) = -X_{k-1} * (X_{k-2} - X_{k+1}) - X_k + F$
+            $r_j(X, Y) = -Y_{k,j+1} * (Y_{k,j+2} - Y_{k,j-1}) - Y_{k,j} + h_y * X_k$
+        and Y_bar is the average of the fast variables Y over j.
+    """
+
+    # Learnable parameters
     F: Union[Float[Array, "1"], ParameterProperties]
     hx: Union[Float[Array, "1"], ParameterProperties]
     hy: Union[Float[Array, "1"], ParameterProperties]
@@ -124,19 +158,22 @@ class LearnableLorenz96MultiScale_Drift(NamedTuple):
     def get_params(self):
         return _get_params(self)
 
+# Learnable FitzHugh-Nagumo model
 class LearnableFitzHughNagumo(NamedTuple):
+    r""" Learnable FitzHugh-Nagumo dynamical system drift model.
+        
+        The FitzHugh-Nagumo system is defined by the following ODEs:
+            $dv/dt = v - v^3/3 - w + RI_{ext}$
+            $dw/dt = (1/tau) * (v + a - b * w)$
+        where a, b, tau, and RI_{ext} are parameters of the system.
+    """
+    # Learnable parameters
     a: Union[Float[Array, "1"], ParameterProperties]
     b: Union[Float[Array, "1"], ParameterProperties]
     tau: Union[Float[Array, "1"], ParameterProperties]
     RIext: Union[Float[Array, "1"], ParameterProperties]
-    
-    '''    params are (a, b, tau, RIext)
-    a: parameter for the cubic nonlinearity
-    b: parameter for the linear term
-    tau: time constant for the recovery variable
-    RIext: external input to the system
-    '''
 
+    # Function to compute the drift
     def f(self, x, u=None, t=None):
 
         foo = jnp.array(
@@ -157,13 +194,19 @@ class LearnableFitzHughNagumo(NamedTuple):
     def get_params(self):
         return _get_params(self)
 
+# Learnable Van der Pol model
 class LearnableVanDerPol(NamedTuple):
+    r""" Learnable Van der Pol dynamical system drift model.
+        
+        The Van der Pol system is defined by the following ODEs:
+            $dx1/dt = x2$
+            $dx2/dt = mu * (1 - x1^2) * x2 - x1$
+        where mu is a parameter of the system.
+    """
+    # Learnable parameter
     mu: Union[Float[Array, "1"], ParameterProperties]
     
-    ''' params
-        mu
-    '''
-
+    # Function to compute the drift
     def f(self, x, u=None, t=None):
         foo = jnp.array(
             [
@@ -183,18 +226,23 @@ class LearnableVanDerPol(NamedTuple):
 
     def get_params(self):
         return _get_params(self)
+
+# Learnable Rossler model
 class LearnableRossler(NamedTuple):
+    r""" Learnable Rossler dynamical system drift model.
+        
+        The Rossler system is defined by the following ODEs:
+            $dx/dt = -y - z$
+            $dy/dt = x + a * y$
+            $dz/dt = b + z * (x - c)$
+        where a, b, and c are parameters of the system.
+    """
+    # Learnable parameters
     a: Union[Float[Array, "1"], ParameterProperties]
     b: Union[Float[Array, "1"], ParameterProperties]
     c: Union[Float[Array, "1"], ParameterProperties]
 
-    '''
-        params are a,b,c
-
-        a: 
-
-    '''
-
+    # Function to compute the drift
     def f(self, x, u=None, t=None):
         foo = jnp.array(
             [

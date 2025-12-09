@@ -22,13 +22,13 @@ from cd_dynamax.dynamax.parameters import ParameterProperties
 from cd_dynamax.dynamax.utils.bijectors import RealToPSDBijector
 from cd_dynamax.dynamax.linear_gaussian_ssm.inference import PosteriorGSSMFiltered
 
-# Imports from our codebase
+# Imports from the cd-dynamax codebase
 from ..ssm_temissions import SSM, Prior
 # CDLGSSM forecasting definition
 from ..continuous_discrete_linear_gaussian_ssm.cdlgssm_utils import GSSMForecast
 # CDNLGSSM param and function definition
 from .cdnlgssm_utils import *
-# CDNLGSSM filtering functions
+# CDNLGSSM filtering functions, based on different Kalman filter variants
 from .inference_ekf import EKFHyperParams, iterated_extended_kalman_filter, iterated_extended_kalman_smoother, forecast_extended_kalman_filter, emissions_extended_kalman_filter
 from .inference_enkf import EnKFHyperParams, ensemble_kalman_filter, forecast_ensemble_kalman_filter, emissions_ensemble_kalman_filter
 from .inference_ukf import UKFHyperParams, unscented_kalman_filter, forecast_unscented_kalman_filter, emissions_unscented_kalman_filter
@@ -41,7 +41,9 @@ DEBUG = False # By default, debugging is off, e.g., no extra checks in lax_scan
 # Auxiliary function to process inputs ---from dynamax
 _process_input = lambda x, y: jnp.zeros((y,1)) if x is None else x
 
-# CDNLGSSM push-forward is model-specific
+# CD-NLGSSM push-forward: this is a model-specific push-forward function
+# computed based on the assumed continuous-discrete nonlinear Gaussian SSM dynamics
+# using different SDE approximations (zeroth, first, second order) solved numerically via diffrax
 def compute_pushforward(
     x0: Float[Array, "state_dim"],
     P0: Float[Array, "state_dim state_dim"],
@@ -51,9 +53,25 @@ def compute_pushforward(
     inputs: Optional[Float[Array, "input_dim"]] = None,
     diffeqsolve_settings: dict = {},
 ) -> Tuple[Float[Array, "state_dim state_dim"], Float[Array, "state_dim state_dim"]]:
+    r"""Compute the push-forward of the sufficient statistics of a Gaussian distribution through the CDNLGSSM dynamics.
+
+    Args:
+        x0: initial mean
+        P0: initial covariance
+        params: model parameters
+        t0: initial time
+        t1: final time
+        inputs: optional inputs
+        diffeqsolve_settings: settings for the diffrax diffeqsolve function
+    
+    Returns:
+        mean and covariance of the push-forward distribution
+    """
 
     # Initialize
     y0 = (x0, P0)
+
+    # Define the right-hand side of the SDEs for mean and covariance
     def rhs_all(t, y, args):
         x, P = y
 
@@ -65,7 +83,7 @@ def compute_pushforward(
         L_t = params.dynamics.diffusion_coefficient.f(None,inputs,t)
 
         # Different SDE approximations to the dynamics
-        # TODO: double-check this JAX-style implementation
+        # Zeroth-order (no gradient information), 
         def dynamics_order0():
             # Mean evolution
             dxdt = f(x, inputs, t)
@@ -73,6 +91,7 @@ def compute_pushforward(
             dPdt = L_t @ Qc_t @ L_t.T
             return (dxdt, dPdt)
         
+        # First order (using Jacobian of the dynamics)
         def dynamics_order1():
             # Evaluate the jacobian of the dynamics function at x and inputs
             F_t=jacfwd(f)(x, inputs, t)
@@ -83,11 +102,12 @@ def compute_pushforward(
             dPdt = F_t @ P + P @ F_t.T + L_t @ Qc_t @ L_t.T
             return (dxdt, dPdt)
         
+        # Second order (using Jacobian and Hessian of the dynamics)
         def dynamics_order2():
             # Evaluate the jacobian of the dynamics function at x and inputs
             F_t=jacfwd(f)(x, inputs, t)
             # Evaluate the Hessian of the dynamics function at x and inputs
-            # Based on these recommendationshttps://jax.readthedocs.io/en/latest/notebooks/autodiff_cookbook.html#jacobians-and-hessians-using-jacfwd-and-jacrev
+            # Based on these recommendations: https://jax.readthedocs.io/en/latest/notebooks/autodiff_cookbook.html#jacobians-and-hessians-using-jacfwd-and-jacrev
             H_t=jacfwd(jacrev(f))(x, inputs, t)
 
             # Mean evolution
@@ -102,41 +122,46 @@ def compute_pushforward(
             [dynamics_order0, dynamics_order1, dynamics_order2]
         )
 
+    # Solve the SDE as specified by rhs_all
     sol = diffeqsolve(rhs_all, t0=t0, t1=t1, y0=y0, **diffeqsolve_settings)
+    # Extract final mean and covariance, ensure PSD covariance
     x, P = sol[0][-1], psd(sol[1][-1])
-
+    # Return mean and covariance
     return x, P
 
+# CD-NLGSSM model definition
 class ContDiscreteNonlinearGaussianSSM(SSM):
     """
-    Continuous Discrete Nonlinear Gaussian State Space Model.
+    Definition of a Continuous-Discrete Nonlinear Gaussian State Space Model.
 
-    We instead assume a model of the form
+    We assume a model of the form
     $$ dz=f(z,u_t,t)dt  $$
     $$ dP=L(t) Q_c L(t) $$ or $$ dP = F_t @ P + P @ F.T + L(t) Q_c_t @ L_t.T $$
     
     The resulting transition and emission distributions are
-    $$p(z_1) = N(z_1 | m, S)$$
-    $$p(z_t | z_{t-1}, u_t) = N(z_t | z_t, P_t)$$
-    $$p(y_t | z_t) = N(y_t | h(z_t, u_t), R_t)$$
+    $$p(z_0) = N(z_0 | m, S)$$
+    $$p(z_{t_k} | z_{t_{k-1}}, u_t) = N(z_{t_k} | z_{t_{k-1}}, P_{t_k})$$
+    $$p(y_{t_k} | z_{t_k}) = N(y_{t_k} | h(z_{t_k}, u_{t_k}), R_{t_k})$$
 
     where the model parameters are
 
-    * $z_t$ = hidden variables of size `state_dim`,
-    * $y_t$ = observed variables of size `emission_dim`
-    * $u_t$ = input covariates of size `input_dim` (defaults to 0).
-    * $f$ = dynamics deterministic function (RHS), used to compute transition function
-    * $L$ = dynamics coefficient multiplying brownian motion 
-    * $Q$ = dynamics brownian motion's covariance (system) noise
-    * $h$ = emission (observation) function
-    * $R$ = covariance matrix for emission (observation) noise
+    * $z_{t_k}$ is a latent state of size `state_dim`,
     * $m$ = mean of initial state
     * $S$ = covariance matrix of initial state
 
+    * $f$ = dynamics deterministic function (RHS), used to compute transition function
+    * $L$ = dynamics coefficient multiplying brownian motion 
+    * $Q$ = dynamics brownian motion's covariance (system) noise
+    * $u_t$ = input covariates of size `input_dim` (defaults to 0).
+    
+    * $y_{t_k}$ is an observed variable (emissions) of size `emission_dim`    
+    * $h$ = emission (observation) function
+    * $R$ = covariance matrix for emission (observation) noise
 
     These parameters of the model are stored in a separate object of type :class:`ParamsCDNLGSSM`.
     """
 
+    # Default constructor
     def __init__(
         self,
         state_dim: int,
@@ -164,7 +189,8 @@ class ContDiscreteNonlinearGaussianSSM(SSM):
         return self._diffeqsolve_settings
 
     # SSM methods
-    # Define default set of CD-NLGSSM parameters, with all learnable parameters set to False
+    # Define default set of CD-NLGSSM parameters,
+    # with all learnable parameters set to False
     def _default_cdnlgssm_params(self) -> dict:
         ## Initial
         _initial_mean = {
@@ -218,6 +244,7 @@ class ContDiscreteNonlinearGaussianSSM(SSM):
                 )
         }
 
+        # Dynamics approximation: second order
         _dynamics_approx_order = {
             "params": 2.,
             "props": ParameterProperties(trainable=False), # never trainable, no constraints to apply.
@@ -226,7 +253,7 @@ class ContDiscreteNonlinearGaussianSSM(SSM):
         ## Emission
         # Randomly drawn weights
         key = jr.PRNGKey(0)
-        # Random matrix
+        # Linear emission function: with identity weights and zero bias
         _emission_function = {
             "params": LearnableLinear(
                 weights=jnp.eye(self.emission_dim, self.state_dim),
@@ -273,7 +300,7 @@ class ContDiscreteNonlinearGaussianSSM(SSM):
         emission_function: dict = None,
         emission_cov: dict = None,
     ) -> Tuple[ParamsCDNLGSSM, ParamsCDNLGSSM]:
-        r"""Initialize the model parameters.
+        r"""Initialize CD-NLGSSM parameters, and their corresponding properties.
 
             Args:
                 key: Random number key. Defaults to jr.PRNGKey(0).
@@ -291,7 +318,8 @@ class ContDiscreteNonlinearGaussianSSM(SSM):
                 Tuple[ParamsCDNLGSSM, ParamsCDNLGSSM]: parameters and their properties.
         """
         
-        # Create CD-NLGSSM parameters and properties, based on the provided prior, init_values or defaults
+        # Create CD-NLGSSM parameters and properties,
+        # based on the provided prior, init_values or defaults
         params_dict_values, params_dict_props = init_cdnlgssm_params(
             default_params = self._default_cdnlgssm_params(),
             init_params = {
@@ -316,14 +344,26 @@ class ContDiscreteNonlinearGaussianSSM(SSM):
         # Return the parameters and properties
         return params_dict_values, params_dict_props
 
-    # Define the initial, transition and emission distributions
+    # SSM distribution methods
     def initial_distribution(
         self,
         params: ParamsCDNLGSSM,
         inputs: Optional[Float[Array, "input_dim"]] = None
     ) -> tfd.Distribution:
+        r"""Initial distribution.
+        
+        Args:
+            params: CD-NLGSSM model parameters.
+            inputs: optional initial inputs (not used in state initialization).
+
+        Returns:
+            initial Gaussian state distribution.
+        """
+        # Gaussian initial distribution
         return MVN(params.initial.mean.f(), params.initial.cov.f())
 
+    # Transition distribution: defined as the pushforward
+    # of the continuous state dynamics and discrete inputs (controls) 
     def transition_distribution(
         self,
         params: ParamsCDNLGSSM,
@@ -332,7 +372,24 @@ class ContDiscreteNonlinearGaussianSSM(SSM):
         t1: Optional[Float] = None,
         inputs: Optional[Float[Array, "input_dim"]] = None,
     ) -> tfd.Distribution:
-        # Push-forward with assumed CDNLGSSM
+        r"""CD-NLGSSM Transition distribution,
+            defined as the pushforward of the continuous-time, nonlinear dynamics and discrete inputs (controls).
+        
+        Args:
+            params: CD-NLGSSM model parameters.
+            state: current state.
+            t0: initial time.
+            t1: final time.
+            inputs: optional inputs.
+
+        Returns:
+            Gaussian, state transition distribution.
+            
+            # NOTE: for general CD-NLSSMs, we can not return a specific distribution,
+            # unless we solve the Fokker-Planck equation for the model SDE
+            # Here, we are dealing with CD-NLGSSM: we return a Gaussian distribution.
+        """
+        # Push-forward with assumed CD-NLGSSM
         mean, covariance = compute_pushforward(
             x0 = state,
             P0 = jnp.zeros((state.shape[-1], state.shape[-1])), # TODO: check that last dimension is always state-dimension, even when vectorized
@@ -341,21 +398,30 @@ class ContDiscreteNonlinearGaussianSSM(SSM):
             inputs=inputs,
             diffeqsolve_settings=self.diffeqsolve_settings
         )
-        # TODO: for CDNLSSM we can not return a specific distribution,
-        # unless we solve the Fokker-Planck equation for the model SDE
-        # However, we should be able to sample from it!
-
+        
+        # Return the Gaussian transition distribution
         return MVN(mean,covariance)
 
+    # Emission distribution
     def emission_distribution(
         self,
         params: ParamsCDNLGSSM,
         state: Float[Array, "state_dim"],
         inputs: Optional[Float[Array, "input_dim"]] = None
      ) -> tfd.Distribution:
+        r"""CD-NLGSSM Emission distribution.
+        Args:
+            params: CD-NLGSSM model parameters.
+            state: current state.
+            inputs: optional inputs.
+        
+        Returns:
+            Gaussian, state-conditional emission distribution
+        """
         # TODO: change the emission distribution function to be time-dependent
         mean = params.emissions.emission_function.f(state, inputs, t=None)
         R = params.emissions.emission_cov.f(state, inputs, t=None)
+        # Return the corresponding Gaussian emission distribution
         return MVN(mean, R)
     
     # Sampling methods
@@ -367,7 +433,7 @@ class ContDiscreteNonlinearGaussianSSM(SSM):
         init_params: Optional[ParamsCDNLGSSM]=None,
         key: Optional[PRNGKey]=jr.PRNGKey(0),
     ) -> Tuple[ParamsCDNLGSSM, ParamsCDNLGSSM]:
-        r"""Sample from the prior distribution over model parameters.
+        r"""Sample from the prior distribution over CD-NLGSSM model parameters.
 
         Args:
             :param prior: prior distribution
@@ -391,6 +457,7 @@ class ContDiscreteNonlinearGaussianSSM(SSM):
             key = key,
         )
     
+    # Sampling from the joint distribution of states and emissions, using the CD-NLGSSM distributions
     def sample_dist(
         self,
         params: ParamsCDNLGSSM,
@@ -400,18 +467,21 @@ class ContDiscreteNonlinearGaussianSSM(SSM):
         inputs: Optional[Float[Array, "num_timesteps input_dim"]]=None
     ) -> Tuple[Float[Array, "num_timesteps state_dim"],
                 Float[Array, "num_timesteps emission_dim"]]:
-        r"""Sample from the joint distribution to produce state and emission trajectories.
+        r"""Sample from the joint distribution of the CD-NLGSSM
+            to produce state and emission trajectories.
         
         Args:
-            params: model parameters
+            params: CD-NLGSSM model parameters
+            key: random number generator key
+            num_timesteps: number of time steps to sample
             t_emissions: continuous-time specific time instants of observations: if not None, it is an array 
             inputs: optional array of inputs.
         
         Returns:
-            latent states and emissions
+            latent states and observed emissions
         
         """
-        print('Sampling from continuous-discrete non-linear Gaussian SSM distributions')
+        print('CD-NLGSSM Sampling from continuous-discrete non-linear Gaussian SSM distributions')
         return cdnlgssm_joint_sample(
             params=params,
             key=key,
@@ -421,6 +491,7 @@ class ContDiscreteNonlinearGaussianSSM(SSM):
             diffeqsolve_settings=self.diffeqsolve_settings
         )
     
+    # Sampling from the path distribution of states and emissions, using the SDE solver path
     def sample_path(
         self,
         params: ParamsCDNLGSSM,
@@ -430,18 +501,20 @@ class ContDiscreteNonlinearGaussianSSM(SSM):
         inputs: Optional[Float[Array, "num_timesteps input_dim"]]=None
     ) -> Tuple[Float[Array, "num_timesteps state_dim"],
                 Float[Array, "num_timesteps emission_dim"]]:
-        r"""Sample from a forward path to produce state and emission trajectories.
+        r"""Sample from a forward path of the CD-NLGSSM to produce state and emission trajectories.
 
         Args:
             params: model parameters
+            key: random number generator key
+            num_timesteps: number of time steps to sample
             t_emissions: continuous-time specific time instants of observations: if not None, it is an array 
             inputs: optional array of inputs.
 
         Returns:
-            latent states and emissions
+            latent states and observed emissions
 
         """
-        print('Sampling from continuous-discrete non-linear Gaussian SSM path')
+        print('CD-NLGSSM Sampling from continuous-discrete non-linear Gaussian SSM path')
         return cdnlgssm_path_sample(
             params=params,
             key=key,
@@ -461,6 +534,19 @@ class ContDiscreteNonlinearGaussianSSM(SSM):
         inputs: Optional[Float[Array, "ntime input_dim"]] = None,
         key: PRNGKey=jr.PRNGKey(0)
     ) -> Scalar:
+        r"""Compute the marginal log-likelihood of a sequence of emissions under the CD-NLGSSM model,
+        Args:
+            params: CD-NLGSSM model parameters.
+            emissions: sequence of observations.
+            t_emissions: continuous-time specific time instants of observations: if not None, it is an array
+            filter_hyperparams: Hyperparameters for the filtering algorithm.
+            inputs: Optional input sequence.
+            key: Random number generator key.
+        Returns:
+            Marginal log-likelihood of the emissions, $\log p(y_{1:T})$.
+        """
+
+        # Run a CD-filter, as specified via filter_hyperparams, to compute marginal log likelihood
         filtered_posterior = cdnlgssm_filter(
             params=params,
             emissions=emissions,
@@ -471,7 +557,7 @@ class ContDiscreteNonlinearGaussianSSM(SSM):
         )
         return filtered_posterior.marginal_loglik
     
-    # High-level, user-friendly filtering interface
+    # A high-level, user-friendly filtering interface (with default settings)
     def filter(
         self,
         params,
@@ -494,12 +580,12 @@ class ContDiscreteNonlinearGaussianSSM(SSM):
         extra_filter_kwargs: Optional[dict] = {},
         warn: bool = True,
     ):
-        """High-level filtering interface.
+        """A high-level filtering interface, to compute the filtered posterior distribution over states.
 
         Args:
-            params: Model parameters.
-            emissions: Emission sequence.
-            t_emissions: Time points corresponding to emissions (continuous-time only).
+            params: CD-NLGSSM model parameters.
+            emissions: sequence of observations.
+            t_emissions: continuous-time specific time instants of observations: if not None, it is an array
             inputs: Optional input sequence.
             filter_type: Which filter to run ("EKF", "EnKF", "UKF").
             filter_state_order: Order of Taylor expansion for dynamics used in the filter.
@@ -520,6 +606,7 @@ class ContDiscreteNonlinearGaussianSSM(SSM):
             warn: whether to issue warnings (e.g., about PSD issues)
         """
 
+        # Build filter hyperparameters, using the provided settings
         filter_hyperparams = build_filter_hyperparams(
             filter_type=filter_type,
             filter_state_order=filter_state_order,
@@ -534,6 +621,7 @@ class ContDiscreteNonlinearGaussianSSM(SSM):
             extra_filter_kwargs=extra_filter_kwargs,
         )
 
+        # Run the filter
         return cdnlgssm_filter(
             params=params,
             emissions=emissions,
@@ -546,7 +634,7 @@ class ContDiscreteNonlinearGaussianSSM(SSM):
             warn=warn,
         )
 
-    # High-level, user-friendly filtering interface with forecasting
+    # High-level, user-friendly interface combining filtering and forecasting steps
     def filter_and_forecast(
         self,
         params,
@@ -570,9 +658,43 @@ class ContDiscreteNonlinearGaussianSSM(SSM):
         extra_filter_kwargs: Optional[dict] = {},
         warn: bool = True,
     ):
-      
+        r"""A high-level interface combining filtering and forecasting steps.
+            It computes the filtered posterior distributions over states,
+            and then runs forecasting from the last filtered state.
+
+        Args:
+            params: CD-NLGSSM model parameters.
+            emissions_filter: sequence of observations for filtering.
+            t_emissions_filter: continuous-time specific time instants of observations for filtering: if not None, it is an array
+            t_emissions_forecast: continuous-time specific time instants of observations for forecasting: if not None, it is an array
+            inputs_filter: Optional input sequence for filtering.
+            inputs_forecast: Optional input sequence for forecasting.
+            filter_type: Which filter to run ("EKF", "EnKF", "UKF").
+            filter_state_order: Order of Taylor expansion for dynamics used in the filter.
+            filter_emission_order: Order of Taylor expansion for emissions used in the EKF filter only.
+            filter_num_iter: Number of iterations for iterated filters (EKF only).
+            filter_state_cov_rescaling: Rescale state covariance by this factor after each update (inflation delta is better for accurate likelihoods)
+            filter_dt_average: [Only for state_order="Discrete"] Average step size to determine constant state noise cov in filter.
+            enkf_N_particles: Number of particles (for EnKF only).
+            enkf_inflation_delta: EnKF covariance inflation (ignored by EKF/UKF).
+            diffeqsolve_max_steps: Max steps for ODE solver between observations.
+            diffeqsolve_dt0: Initial step size for ODE/SDE solver (default is fixed step size).
+            key: Random number generator key.
+            diffeqsolve_kwargs: Extra kwargs for the ODE solver
+                (e.g., {"solver": diffrax.Heun(), "dt0": 1e-2}).
+            filter_kwargs: Extra kwargs specific to the chosen filter
+                (e.g., {"emission_order": "zeroth"} for EKF).
+            warn: whether to issue warnings (e.g., about PSD issues)
+        
+        Returns:
+            filtered: filtering posterior over states
+            forecasted: forecasting distribution over future states
+        """
+
+        # Split key for filtering and forecasting steps
         key_filter, key_forecast = jr.split(key)
   
+        # Build filter hyperparameters, using the provided settings
         filter_hyperparams = build_filter_hyperparams(
             filter_type=filter_type,
             filter_state_order=filter_state_order,
@@ -615,14 +737,15 @@ class ContDiscreteNonlinearGaussianSSM(SSM):
             warn=warn,
         )
 
+        # Return both filtered and forecasted posteriors
         return filtered, forecasted
 
     # High-level, user-friendly smoothing interface
     def smoother(self, *args, **kwargs):
         return cdnlgssm_smoother(*args, **kwargs)
     
-
-# CDNLGSSM sampling function    
+#### CD-NLGSSM interface functions, outside the class definition, for convenience
+# CD-NLGSSM sampling function, based on the model distributions 
 def cdnlgssm_joint_sample(
     params: ParamsCDNLGSSM,
     key: PRNGKey,
@@ -632,20 +755,28 @@ def cdnlgssm_joint_sample(
     diffeqsolve_settings={}
 )-> Tuple[Float[Array, "num_timesteps state_dim"],
           Float[Array, "num_timesteps emission_dim"]]:
-    r"""Sample from the joint distribution of a CD-NLGSSM to produce state and emission trajectories.
+    r"""Sample from the joint distribution of a CD-NLGSSM
+        to produce state and emission trajectories.
     
     Args:
-        params: model parameters
+        params: CD-NLGSSM model parameters
+        key: random number generator key
+        num_timesteps: number of time steps to sample
         t_emissions: continuous-time specific time instants of observations: if not None, it is an array 
         inputs: optional array of inputs.
+        diffeqsolve_settings: settings for the SDE solver.
 
     Returns:
-        latent states and emissions
+        latent states and observed emissions
 
     """
+
+    # Function to sample initial state and emission
     def _sample_initial(key, params, inputs):
+        # Split key for initial state and emission sampling
         key1, key2 = jr.split(key)
 
+        # Sample initial state
         initial_state = MVN(
             params.initial.mean.f(),
             params.initial.cov.f()
@@ -653,6 +784,7 @@ def cdnlgssm_joint_sample(
 
         # Sample from emission
         u0 = tree_map(lambda x: x[0], inputs)
+        # Compute emission mean and covariance at initial time
         emission_mean = params.emissions.emission_function.f(
             initial_state,
             u0,
@@ -663,6 +795,7 @@ def cdnlgssm_joint_sample(
             u0,
             t=0
         )
+        # Draw initial emission
         initial_emission = MVN(
             emission_mean,
             emission_cov
@@ -670,8 +803,11 @@ def cdnlgssm_joint_sample(
 
         return initial_state, initial_emission
 
+    # Function to sample next state and emission given previous state
     def _step(prev_state, args):
+        # Unpack arguments
         key, t0, t1, inpt = args
+        # Split key for state and emission sampling
         key1, key2 = jr.split(key, 2)
 
         # Push-forward with assumed CDNLGSSM
@@ -683,10 +819,12 @@ def cdnlgssm_joint_sample(
             inputs=inpt,
             diffeqsolve_settings=diffeqsolve_settings
         )
+        
         # Sample from transition 
         state = MVN(mean, covariance).sample(seed=key1)
         
         # Sample from emission
+        # Compute emission mean and covariance at time t1
         emission_mean = params.emissions.emission_function.f(
             state,
             inpt,
@@ -697,6 +835,7 @@ def cdnlgssm_joint_sample(
             inpt,
             t=t1
         )
+        # Draw emission at time t1
         emission = MVN(
             emission_mean,
             emission_cov
@@ -707,9 +846,10 @@ def cdnlgssm_joint_sample(
     # Sample the initial state
     key1, key2 = jr.split(key)
     
+    # Sample the initial state and emission
     initial_state, initial_emission = _sample_initial(key1, params, inputs)
 
-    # Sample the remaining emissions and states
+    # Set keys for the remaining time steps
     next_keys = jr.split(key2, num_timesteps - 1)
 
     # Figure out timestamps, as vectors to scan over
@@ -723,7 +863,9 @@ def cdnlgssm_joint_sample(
         t0 = jnp.arange(num_timesteps-1)
         t1 = jnp.arange(1,num_timesteps)
     
+    # Get inputs for remaining time steps
     next_inputs = tree_map(lambda x: x[1:], inputs)
+    
     # Sample the remaining emissions and states via scan
     _, (next_states, next_emissions) = lax.scan(
         _step,
@@ -738,7 +880,7 @@ def cdnlgssm_joint_sample(
 
     return states, emissions
 
-# CDNLGSSM path sampling function
+# CDNLGSSM path sampling function, based on the model distributions and SDE solver
 def cdnlgssm_path_sample(
         params: ParamsCDNLGSSM,
         key: PRNGKey,
@@ -748,20 +890,27 @@ def cdnlgssm_path_sample(
         diffeqsolve_settings={}
     ) -> Tuple[Float[Array, "num_timesteps state_dim"],
                 Float[Array, "num_timesteps emission_dim"]]:
-    r"""Sample from a forward path of the CD-NLGSSM to produce state and emission trajectories.
+    r"""Sample from a forward path of the CD-NLGSSM
+        to produce state and emission trajectories.
     
     Args:
-        params: model parameters
+        params: CD-NLGSSM parameters
+        key: random number generator key
+        num_timesteps: number of time steps to sample
         t_emissions: continuous-time specific time instants of observations: if not None, it is an array 
         inputs: optional array of inputs.
+        diffeqsolve_settings: settings for the SDE solver.
 
     Returns:
-        latent states and emissions
+        latent states and observed emissions
 
     """
+    # Function to sample initial state and emission
     def _sample_initial(key, params, inputs):
+        # Split key for initial state and emission sampling
         key1, key2 = jr.split(key)
 
+        # Sample initial state
         initial_state = MVN(
             params.initial.mean.f(),
             params.initial.cov.f()
@@ -769,6 +918,7 @@ def cdnlgssm_path_sample(
 
         # Sample from emission
         u0 = tree_map(lambda x: x[0], inputs)
+        # Compute emission mean and covariance at initial time
         emission_mean = params.emissions.emission_function.f(
             initial_state,
             u0,
@@ -779,6 +929,7 @@ def cdnlgssm_path_sample(
             u0,
             t=0
         )
+        # Draw initial emission
         initial_emission = MVN(
             emission_mean,
             emission_cov
@@ -786,14 +937,16 @@ def cdnlgssm_path_sample(
 
         return initial_state, initial_emission
     
+    # Function to path-sample next state and emission given previous state
     def _step(prev_state, args):
+        # Unpack arguments
         key, t0, t1, inpt = args
+        # Split key for state and emission sampling
         key1, key2 = jr.split(key, 2)
 
         # SDE definition as per the CD-NLGSSM
         def drift(t, y, args):
             return params.dynamics.drift.f(y, inpt, t)
-
         def diffusion(t, y, args):
             Qc_t = params.dynamics.diffusion_cov.f(None, inpt, t)
             L_t = params.dynamics.diffusion_coefficient.f(None, inpt, t)
@@ -801,7 +954,7 @@ def cdnlgssm_path_sample(
             combined_diffusion = L_t @ Q_sqrt
             return combined_diffusion
 
-        # solve the SDE
+        # Numerically solve the SDE, from t0 to t1
         state = diffeqsolve(
             key=key1,
             drift=drift,
@@ -812,7 +965,8 @@ def cdnlgssm_path_sample(
             **diffeqsolve_settings
         )[0]
         
-        # Sample from emission
+        # Sample from emission, conditional on the new state
+        # Compute emission mean and covariance at time t1
         emission_mean = params.emissions.emission_function.f(
             state,
             inpt,
@@ -823,6 +977,7 @@ def cdnlgssm_path_sample(
             inpt,
             t=t1
         )
+        # Draw emission at time t1
         emission = MVN(
             emission_mean,
             emission_cov
@@ -830,12 +985,13 @@ def cdnlgssm_path_sample(
 
         return state, (state, emission)
 
-    # Sample the initial state
+    # Split key for initial state and emission sampling
     key1, key2 = jr.split(key)
     
+    # Sample the initial state and emission
     initial_state, initial_emission = _sample_initial(key1, params, inputs)
 
-    # Sample the remaining emissions and states
+    # Set keys for the remaining time steps
     next_keys = jr.split(key2, num_timesteps - 1)
 
     # Figure out timestamps, as vectors to scan over
@@ -849,21 +1005,15 @@ def cdnlgssm_path_sample(
         t0 = jnp.arange(num_timesteps-1)
         t1 = jnp.arange(1,num_timesteps)
     
+    # Get inputs for remaining time steps
     next_inputs = tree_map(lambda x: x[1:], inputs)
+    
     # Sample the remaining emissions and states via scan
     _, (next_states, next_emissions) = lax.scan(
          _step,
          initial_state,
          (next_keys, t0, t1, next_inputs)
     )
-    '''
-    _, (next_states, next_emissions) = lax_scan(
-        _step,
-        initial_state,
-        (next_keys, t0, t1, next_inputs),
-        debug=True
-    )
-    '''
 
     # Concatenate the initial state and emission with the following ones
     expand_and_cat = lambda x0, x1T: jnp.concatenate((jnp.expand_dims(x0, 0), x1T))
@@ -872,7 +1022,7 @@ def cdnlgssm_path_sample(
 
     return states, emissions
 
-# CDNLGSSM filtering function
+# CDNLGSSM filtering function, dependent on the chosen filter type
 def cdnlgssm_filter(
     params: ParamsCDNLGSSM,
     emissions: Float[Array, "ntime emission_dim"],
@@ -884,13 +1034,13 @@ def cdnlgssm_filter(
     key: PRNGKey=jr.PRNGKey(0),
     warn: bool = True,
 ) -> PosteriorGSSMFiltered:
-    r"""Run an continuous-discrete nonlinear filter to produce the
-        marginal likelihood and filtered state estimates.
+    r"""Run an continuous-discrete nonlinear filter
+        to produce the marginal likelihood and filtered state estimates.
         
         Depending on the hyperparameter class provided, it can execute EKF, UKF or EnKF
     
     Args:
-        params: model parameters.
+        params: CD-NLGSSM parameters.
         emissions: observation sequence.
         t_emissions: continuous-time specific time instants of observations: if not None, it is an array 
         filter_hyperparams: hyper-parameters of the filter
@@ -903,13 +1053,14 @@ def cdnlgssm_filter(
         warn: whether to issue warnings during filtering.
 
     Returns:
-        post: posterior object.
+        post: filtered posterior object.
 
     """
     # Double-check filter_hyperparams is not None
     if filter_hyperparams is None:
         filter_hyperparams = EKFHyperParams()
     
+    # Common arguments for different filters
     common_args = {
         "params": params,
         "emissions": emissions,
@@ -919,10 +1070,12 @@ def cdnlgssm_filter(
         "warn": warn,
     }
     
+    # Include output_fields if provided
     if output_fields is not None:
+        # Use output_fields to have more or less granular returned posterior object
         common_args["output_fields"] = output_fields
         
-    # TODO: this can be condensed, by incorporating num_iter into hyperparams of EKF
+    # Run the appropriate filter based on filter_hyperparams type
     if isinstance(filter_hyperparams, EKFHyperParams):
         filtered_posterior=iterated_extended_kalman_filter(**common_args,num_iter = num_iter)
     elif isinstance(filter_hyperparams, EnKFHyperParams):
@@ -930,10 +1083,10 @@ def cdnlgssm_filter(
     elif isinstance(filter_hyperparams, UKFHyperParams):
         filtered_posterior=unscented_kalman_filter(**common_args)
     
-    # TODO: use and leverage output_fields to have more or less granular returned posterior object
+    # Return the filtered posterior
     return filtered_posterior
 
-# CDNLGSSM smoothing function
+# CDNLGSSM smoothing function, dependent on the chosen smoother type
 def cdnlgssm_smoother(
     params: ParamsCDNLGSSM,
     emissions: Float[Array, "ntime emission_dim"],
@@ -945,13 +1098,13 @@ def cdnlgssm_smoother(
     key: PRNGKey=jr.PRNGKey(0),
     warn: bool = True,
 ) -> PosteriorGSSMFiltered:
-    r"""Run an continuous-discrete nonlinear smoother to produce the
-        marginal likelihood and smoothed state estimates.
+    r"""Run an continuous-discrete nonlinear smoother
+        to produce the marginal likelihood and smoothed state estimates.
         
-        Depending on the hyperparameter class provided, it can execute EKF, UKF or EnKF
+        Depending on the hyperparameter class provided, it can execute different smoothers
     
     Args:
-        params: model parameters.
+        params: CD-NLGSSM parameters.
         emissions: observation sequence.
         t_emissions: continuous-time specific time instants of observations: if not None, it is an array 
         filter_hyperparams: hyper-parameters of the smoother to use
@@ -967,7 +1120,7 @@ def cdnlgssm_smoother(
         post: posterior object.
 
     """
-    # TODO: this can be condensed, by incorporating num_iter into hyperparams of EKF
+    # Run the appropriate smoother based on filter_hyperparams type
     if isinstance(filter_hyperparams, EKFHyperParams):
         smoothed_posterior=iterated_extended_kalman_smoother(
             params = params,
@@ -982,11 +1135,11 @@ def cdnlgssm_smoother(
         raise ValueError('EnKS not implemented yet')
     elif isinstance(filter_hyperparams, UKFHyperParams):
         raise ValueError('UKS not implemented yet')
-    
-    # TODO: use and leverage output_fields to have more or less granular returned posterior object
+
+    # Return the smoothed posterior    
     return smoothed_posterior
 
-# CDNLGSSM forecasting function
+# CDNLGSSM forecasting function, dependent on the chosen filter type
 def cdnlgssm_forecast(
     params: ParamsCDNLGSSM,
     init_forecast: Union[tfd.Distribution, Float[Array, "state_dim 1"]],
@@ -1002,12 +1155,14 @@ def cdnlgssm_forecast(
     diffeqsolve_settings: dict = {},
     warn: bool = True,
 ) -> GSSMForecast:
-    r"""Run an continuous-discrete nonlinear model to produce the forecasted state estimates.
+    r"""Run an continuous-discrete nonlinear model
+        to produce the forecasted state estimates.
         
-        Depending on the hyperparameter class provided, it can execute EKF, UKF or EnKF
+        Depending on the hyperparameter class provided,
+            it can execute EKF, UKF or EnKF
     
     Args:
-        params: model parameters.
+        params: CD-NLGSSM parameters.
         init_forecast: initial condition to start forecasting with:
             - if init_forecast is a distribution, then we forecast such distribution based on different filtering methods
             - if init_forecast is a point estimate of state, then we forecast a forward path starting at that state
@@ -1035,6 +1190,7 @@ def cdnlgssm_forecast(
     if filter_hyperparams is None:
         filter_hyperparams = EKFHyperParams()
 
+    # Common arguments for different methods
     common_args = {
         "params": params,
         "init_forecast": init_forecast,
@@ -1079,6 +1235,7 @@ def cdnlgssm_forecast(
 
         # Define the function to scan over
         def _step(prev_state, args):
+            # Unpack arguments
             key, t0, t1, t0_idx = args
 
             # Define the drift and diffusion functions
@@ -1103,7 +1260,7 @@ def cdnlgssm_forecast(
                 combined_diffusion = L_t @ Q_sqrt
                 return combined_diffusion
             
-            # Solve the SDE to compute the next state
+            # Solve the SDE numerically, from t0 to t1
             state = diffeqsolve(
                 key=key,
                 drift=drift,
@@ -1113,13 +1270,13 @@ def cdnlgssm_forecast(
                 **diffeqsolve_settings
             )[0]
                         
-            # Return the state and emission
+            # Return the state
             return state, (state)
 
-        # Split the key
+        # Split keys for each time step
         next_keys = jr.split(key, num_timesteps)
 
-        # Forecast states and emissions, over time, via scan       
+        # Forecast states over time, via scan       
         _, (next_states) = lax_scan(
             _step,
             init_forecast,
@@ -1132,9 +1289,10 @@ def cdnlgssm_forecast(
             forecasted_state_path=next_states
         )
     
+    # Return the forecasted object
     return forecast
 
-# CDNLGSSM emissions function
+# CDNLGSSM emissions function, dependent on the chosen filter type
 def cdnlgssm_emissions(
     params: ParamsCDNLGSSM,
     t_states: Float[Array, "num_timesteps 1"],
@@ -1199,7 +1357,7 @@ def cdnlgssm_emissions(
                 filter_hyperparams = filter_hyperparams,
             )
     else:
-        # Emissions of point estimates, based on pushing the state through the model emission function
+        # Emissions, based on pushing the state through the model emission function
         
         # Figure out timestamps, as vectors to scan over
         # t_states is of shape num_timesteps \times 1
@@ -1216,6 +1374,7 @@ def cdnlgssm_emissions(
 
         # Define the function to scan over
         def _step(state, args):
+            # Unpack arguments
             this_state, t0, t0_idx = args
 
             # Push the state through the emission function
@@ -1231,7 +1390,7 @@ def cdnlgssm_emissions(
                 t=t0
             )
             
-            # Return the state and emission
+            # Return the state and emission's mean and covariance
             return this_state, (emission_mean, emission_cov)
 
         # Compute emissions, over time, via scan       
@@ -1242,7 +1401,7 @@ def cdnlgssm_emissions(
             debug=DEBUG
         ) # type: ignore
 
-    # Return the emissions
+    # Return the emission mean and covariance
     return emissions_mean, emissions_covariance
 
 # Helper function to build filter hyperparameters ---useful in high-level interfaces

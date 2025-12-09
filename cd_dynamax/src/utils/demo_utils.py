@@ -1,18 +1,23 @@
+# JAX imports
 import jax
-import numpy as np
 import jax.numpy as jnp
 import jax.random as jr
 
+# Other imports
+import itertools
+
+# CD-Dynamax imports
 from cd_dynamax import (
     EnKFHyperParams, EKFHyperParams, UKFHyperParams
 )
 
+# Plotting imports
+import numpy as np
 import matplotlib.pyplot as plt
 import matplotlib.colors as mcolors
 import seaborn as sns
 from sklearn.decomposition import PCA
 from scipy.stats import gaussian_kde
-import itertools
 
 # -----------------------
 # Data-generation helpers
