@@ -566,11 +566,13 @@ def cdlgssm_smoother(
         return (smoothed_mean, smoothed_cov), (smoothed_mean, smoothed_cov, smoothed_cross)
 
     # Select the smoothing step function, using jax.switch
-    _step = lax.switch(
-        0 if smoother_type == 'cd_smoother_1' else 1,
-        [_step_1, _step_2],
-        None
-    )
+    def _step(carry, args):
+        return lax.switch(
+            0 if smoother_type == 'cd_smoother_1' else 1,
+            [_step_1, _step_2],
+            carry,
+            args
+        )
 
     # Run smoother steps via lax scan, using reverse mode
     _, (smoothed_means, smoothed_covs, smoothed_cross) = lax.scan(
