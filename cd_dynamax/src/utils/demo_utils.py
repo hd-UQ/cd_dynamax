@@ -14,6 +14,8 @@ import seaborn as sns
 from sklearn.decomposition import PCA
 from scipy.stats import gaussian_kde
 import itertools
+import numpyro
+
 
 # -----------------------
 # Data-generation helpers
@@ -671,3 +673,14 @@ def make_filter_hyperparams(cfg):
         )
     else:
         raise ValueError(f"Unknown filter type: {cfg.filter_type}")
+
+# ------------------------
+# Inference/model helpers in numpyro
+# ------------------------
+def get_or_sample(name, dist_obj, value):
+    return (
+        numpyro.sample(name, dist_obj)
+        if value is None
+        else numpyro.deterministic(name, value)
+    )
+
