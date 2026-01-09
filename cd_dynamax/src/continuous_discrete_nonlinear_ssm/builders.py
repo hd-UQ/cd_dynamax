@@ -60,10 +60,10 @@ class GaussianEmission(eqx.Module):
         cov = self.emission_cov.f(x, u, t)
         return tfd.MultivariateNormalFullCovariance(mean, cov).log_prob(y)
 
-    def sample(self, x=None, u=None, t=None):
+    def sample(self, x=None, u=None, t=None, *args, **kwargs):
         mean = self.emission_function.f(x, u, t)
         cov = self.emission_cov.f(x, u, t)
-        return tfd.MultivariateNormalFullCovariance(mean, cov).sample()
+        return tfd.MultivariateNormalFullCovariance(mean, cov).sample(*args, **kwargs)
 
 
 class PoissonEmission(eqx.Module):
@@ -87,9 +87,9 @@ class TransformedDistribution(eqx.Module):
     def log_prob(self, y, x=None, u=None, t=None):
         return self.base_distribution.log_prob(self.transform.f(y, u, t), x, u, t)
 
-    def sample(self, x=None, u=None, t=None):
+    def sample(self, x=None, u=None, t=None, *args, **kwargs):
         base_sample = self.base_distribution.sample(x, u, t)
-        return self.transform.f(base_sample, u, t)
+        return self.transform.f(base_sample, u, t, *args, **kwargs)
 
 
 # -------------------------
