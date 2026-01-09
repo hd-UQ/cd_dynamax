@@ -177,7 +177,9 @@ class ContDiscreteNonlinearSSM(SSM):
         inputs: Optional[Array] = None,
     ):
         """Sample states and emissions by integrating the SDE and drawing from the emission distribution."""
-        key_state0, key_emit0, key_loop = jr.split(key, 3)
+        # Splitting keys like this is necessary for consistency with the CDNLGSSM path sampler.
+        key0, key_loop = jr.split(key)
+        key_state0, key_emit0 = jr.split(key0, 2)
 
         # Time grid
         if t_emissions is not None:
@@ -197,6 +199,7 @@ class ContDiscreteNonlinearSSM(SSM):
         init_state = params.initial.initial_distribution.distribution.sample(
             seed=key_state0
         )
+
         init_emission = params.emissions.emission_distribution.sample(
             x=init_state, u=u0, t=ts[0], seed=key_emit0
         )
