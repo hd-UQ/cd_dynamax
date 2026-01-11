@@ -2,8 +2,12 @@ from typing import List, NamedTuple, Optional, Tuple
 
 import jax.numpy as jnp
 import jax.random as jr
-from jax import vmap, lax
+from jax import vmap, lax, jacfwd, jacrev
 from jaxtyping import Array, Float, PRNGKeyArray
+
+from tensorflow_probability.substrates.jax.distributions import (
+    MultivariateNormalFullCovariance as MVN,
+)
 
 from cd_dynamax.dynamax.parameters import ParameterProperties
 from cd_dynamax.dynamax.utils.bijectors import RealToPSDBijector
@@ -159,13 +163,14 @@ class ContDiscreteNonlinearSSM(SSM):
         t_emissions: Optional[Array] = None,
         inputs: Optional[Array] = None,
     ):
-        # CD-NLSSM has no closed-form transition; reuse the path sampler.
-        return self.sample_path(
+        """Sample a joint trajectory of states and emissions."""
+        return cdnlssm_joint_sample(
             params=params,
             key=key,
             num_timesteps=num_timesteps,
             t_emissions=t_emissions,
             inputs=inputs,
+            diffeqsolve_settings=self.diffeqsolve_settings,
         )
 
     def sample_path(
@@ -358,6 +363,156 @@ class ContDiscreteNonlinearSSM(SSM):
             init_params=init_params,
             key=key,
         )
+
+
+def compute_pushforward(
+    x0: Array,
+    P0: Array,
+    params: ParamsCDNLSSM,
+    t0: Float,
+    t1: Float,
+    inputs: Optional[Array] = None,
+    diffeqsolve_settings: Optional[dict] = None,
+) -> Tuple[Array, Array]:
+    """Propagate mean/covariance using chosen approximation order."""
+    diffeqsolve_settings = diffeqsolve_settings or {}
+    y0 = (x0, P0)
+
+    def rhs_all(t, y, args):
+        x, P = y
+        f = params.dynamics.drift.f
+        Qc_t = params.dynamics.diffusion_cov.f(None, inputs, t)
+        L_t = params.dynamics.diffusion_coefficient.f(None, inputs, t)
+
+        def dynamics_order0():
+            dxdt = f(x, inputs, t)
+            dPdt = L_t @ Qc_t @ L_t.T
+            return (dxdt, dPdt)
+
+        def dynamics_order1():
+            F_t = jacfwd(f)(x, inputs, t)
+            dxdt = f(x, inputs, t)
+            dPdt = F_t @ P + P @ F_t.T + L_t @ Qc_t @ L_t.T
+            return (dxdt, dPdt)
+
+        def dynamics_order2():
+            F_t = jacfwd(f)(x, inputs, t)
+            H_t = jacfwd(jacrev(f))(x, inputs, t)
+            dxdt = f(x, inputs, t) + 0.5 * jnp.trace(H_t @ P)
+            dPdt = F_t @ P + P @ F_t.T + L_t @ Qc_t @ L_t.T
+            return (dxdt, dPdt)
+
+        return lax.switch(
+            jnp.squeeze(params.dynamics.approx_order).astype(int),
+            [dynamics_order0, dynamics_order1, dynamics_order2],
+        )
+
+    sol = diffeqsolve(rhs_all, t0=t0, t1=t1, y0=y0, **diffeqsolve_settings)
+    mean, covariance = sol[0][-1], sol[1][-1]
+    return mean, covariance
+
+
+def cdnlssm_joint_sample(
+    params: ParamsCDNLSSM,
+    key: PRNGKeyArray,
+    num_timesteps: int,
+    t_emissions: Optional[Array] = None,
+    inputs: Optional[Array] = None,
+    diffeqsolve_settings: Optional[dict] = None,
+):
+    """Sample states and emissions jointly by integrating the SDE and drawing emissions."""
+    diffeqsolve_settings = diffeqsolve_settings or {}
+
+    key0, key_loop = jr.split(key)
+    key_state0, key_emit0 = jr.split(key0, 2)
+
+    ts = (
+        jnp.squeeze(t_emissions)
+        if t_emissions is not None
+        else jnp.arange(num_timesteps)
+    )
+
+    if inputs is not None:
+        u_prev = inputs[:-1]
+        u0 = inputs[0]
+    else:
+        u_prev = None
+        u0 = None
+
+    init_state = params.initial.initial_distribution.distribution.sample(
+        seed=key_state0
+    )
+    init_emission = params.emissions.emission_distribution.sample(
+        x=init_state, u=u0, t=ts[0], seed=key_emit0
+    )
+
+    if num_timesteps == 1:
+        return init_state[None, ...], init_emission[None, ...]
+
+    keys_scan = jr.split(key_loop, num_timesteps - 1)
+    t0 = ts[:-1]
+    t1 = ts[1:]
+    state_dim = init_state.shape[-1]
+    zero_cov = jnp.zeros((state_dim, state_dim))
+
+    if u_prev is not None:
+
+        def _step(state_prev, args):
+            key_t, t0_t, t1_t, u_prev_t = args
+            key_drift, key_emit = jr.split(key_t)
+
+            mean, covariance = compute_pushforward(
+                x0=state_prev,
+                P0=zero_cov,
+                params=params,
+                t0=t0_t,
+                t1=t1_t,
+                inputs=u_prev_t,
+                diffeqsolve_settings=diffeqsolve_settings,
+            )
+            state = MVN(mean, covariance).sample(seed=key_drift)
+
+            emission = params.emissions.emission_distribution.sample(
+                x=state, u=u_prev_t, t=t1_t, seed=key_emit
+            )
+            return state, (state, emission)
+
+        _, (next_states, next_emissions) = lax.scan(
+            _step,
+            init_state,
+            (keys_scan, t0, t1, u_prev),
+        )
+    else:
+
+        def _step(state_prev, args):
+            key_t, t0_t, t1_t = args
+            key_drift, key_emit = jr.split(key_t)
+
+            mean, covariance = compute_pushforward(
+                x0=state_prev,
+                P0=zero_cov,
+                params=params,
+                t0=t0_t,
+                t1=t1_t,
+                inputs=None,
+                diffeqsolve_settings=diffeqsolve_settings,
+            )
+            state = MVN(mean, covariance).sample(seed=key_drift)
+
+            emission = params.emissions.emission_distribution.sample(
+                x=state, u=None, t=t1_t, seed=key_emit
+            )
+            return state, (state, emission)
+
+        _, (next_states, next_emissions) = lax.scan(
+            _step,
+            init_state,
+            (keys_scan, t0, t1),
+        )
+
+    states = jnp.concatenate([init_state[None, ...], next_states], axis=0)
+    emissions = jnp.concatenate([init_emission[None, ...], next_emissions], axis=0)
+    return states, emissions
 
 
 def build_dpf_hyperparams(
