@@ -24,6 +24,9 @@ from .cdnlssm_utils import (
     init_cdnlssm_params,
     sample_cdnlssm_params,
 )
+from ..continuous_discrete_nonlinear_gaussian_ssm.models import (
+    compute_pushforward as compute_pushforward_cdnlgssm,
+)
 
 
 class PosteriorCDNLSSMFiltered(NamedTuple):
@@ -35,7 +38,26 @@ class PosteriorCDNLSSMFiltered(NamedTuple):
 
 
 class ContDiscreteNonlinearSSM(SSM):
-    """Continuous-discrete nonlinear SSM with generic (possibly non-Gaussian) initial and emission distributions."""
+    r"""Continuous-discrete nonlinear SSM with generic (possibly non-Gaussian) initial and emission distributions.
+
+    We assume a model of the form
+    $$ dz=f(z,u_t,t)dt  $$
+    $$ dP=L(t) Q_c L(t) $$ or $$ dP = F_t @ P + P @ F.T + L(t) Q_c_t @ L_t.T $$
+
+    We allow for arbitrary initial and emission distributions,
+    $$p(z_0) = p(z_0)$$
+    $$p(y_{t_k} | z_{t_k}) = p(y_{t_k} | z_{t_k})$$
+
+    where the model parameters are
+    * $z_t$ = hidden variables of size `state_dim`,
+
+    * $f$ = dynamics deterministic function (RHS), used to compute transition function
+    * $L$ = dynamics coefficient multiplying brownian motion
+    * $Q$ = dynamics brownian motion's covariance (system) noise
+    * $u_t$ = input covariates of size `input_dim` (defaults to 0).
+
+    * $y_t$ = observed variables of size `emission_dim`
+    """
 
     def __init__(
         self,
@@ -136,6 +158,21 @@ class ContDiscreteNonlinearSSM(SSM):
         dynamics_approx_order: Optional[float] = 1.0,
         emission_distribution: dict = None,
     ) -> Tuple[ParamsCDNLSSM, ParamsCDNLSSM]:
+        """Initialize the model parameters.
+
+        Args:
+            key: Random key.
+            init_prior: Prior distribution.
+            initial_distribution: Initial distribution.
+            dynamics_drift: Dynamics drift.
+            dynamics_diffusion_coefficient: Dynamics diffusion coefficient.
+            dynamics_diffusion_cov: Dynamics diffusion covariance.
+            dynamics_approx_order: Dynamics approximation order.
+            emission_distribution: Emission distribution.
+
+        Returns:
+            Tuple[ParamsCDNLSSM, ParamsCDNLSSM]: Parameters and their properties.
+        """
         params_values, params_props = init_cdnlssm_params(
             default_params=self._default_cdnlssm_params(),
             init_params={
@@ -163,7 +200,18 @@ class ContDiscreteNonlinearSSM(SSM):
         t_emissions: Optional[Array] = None,
         inputs: Optional[Array] = None,
     ):
-        """Sample a joint trajectory of states and emissions."""
+        """Sample from the joint distribution to produce state and emission trajectories.
+
+        Args:
+            params: Parameters of the CDNLSSM.
+            key: Random key.
+            num_timesteps: Number of timesteps.
+            t_emissions: Time instants of observations.
+            inputs: Inputs.
+
+        Returns:
+            Tuple[Array, Array]: States and emissions.
+        """
         return cdnlssm_joint_sample(
             params=params,
             key=key,
@@ -181,7 +229,18 @@ class ContDiscreteNonlinearSSM(SSM):
         t_emissions: Optional[Array] = None,
         inputs: Optional[Array] = None,
     ):
-        """Sample states and emissions by integrating the SDE and drawing from the emission distribution."""
+        """Sample states and emissions by integrating the SDE and drawing from the emission distribution.
+
+        Args:
+            params: Parameters of the CDNLSSM.
+            key: Random key.
+            num_timesteps: Number of timesteps.
+            t_emissions: Time instants of observations.
+            inputs: Inputs.
+
+        Returns:
+            Tuple[Array, Array]: States and emissions.
+        """
         # Splitting keys like this is necessary for consistency with the CDNLGSSM path sampler.
         key0, key_loop = jr.split(key)
         key_state0, key_emit0 = jr.split(key0, 2)
@@ -216,76 +275,39 @@ class ContDiscreteNonlinearSSM(SSM):
         t0 = ts[:-1]
         t1 = ts[1:]
 
-        if u_prev is not None:
+        def _step(state_prev, args):
+            key_t, t0_t, t1_t, u_prev_t = args
+            key_drift, key_emit = jr.split(key_t)
 
-            def _step(state_prev, args):
-                key_t, t0_t, t1_t, u_prev_t = args
-                key_drift, key_emit = jr.split(key_t)
+            def drift(t, y, _):
+                return params.dynamics.drift.f(y, u_prev_t, t)
 
-                def drift(t, y, _):
-                    return params.dynamics.drift.f(y, u_prev_t, t)
+            def diffusion(t, y, _):
+                Qc_t = params.dynamics.diffusion_cov.f(None, u_prev_t, t)
+                L_t = params.dynamics.diffusion_coefficient.f(None, u_prev_t, t)
+                Q_sqrt = jnp.linalg.cholesky(Qc_t)
+                return L_t @ Q_sqrt
 
-                def diffusion(t, y, _):
-                    Qc_t = params.dynamics.diffusion_cov.f(None, u_prev_t, t)
-                    L_t = params.dynamics.diffusion_coefficient.f(None, u_prev_t, t)
-                    Q_sqrt = jnp.linalg.cholesky(Qc_t)
-                    return L_t @ Q_sqrt
+            state = diffeqsolve(
+                key=key_drift,
+                drift=drift,
+                diffusion=diffusion,
+                t0=t0_t,
+                t1=t1_t,
+                y0=state_prev,
+                **self.diffeqsolve_settings,
+            )[0]
 
-                state = diffeqsolve(
-                    key=key_drift,
-                    drift=drift,
-                    diffusion=diffusion,
-                    t0=t0_t,
-                    t1=t1_t,
-                    y0=state_prev,
-                    **self.diffeqsolve_settings,
-                )[0]
-
-                emission = params.emissions.emission_distribution.sample(
-                    x=state, u=u_prev_t, t=t1_t, seed=key_emit
-                )
-                return state, (state, emission)
-
-            _, (next_states, next_emissions) = lax.scan(
-                _step,
-                init_state,
-                (keys_scan, t0, t1, u_prev),
+            emission = params.emissions.emission_distribution.sample(
+                x=state, u=u_prev_t, t=t1_t, seed=key_emit
             )
-        else:
+            return state, (state, emission)
 
-            def _step(state_prev, args):
-                key_t, t0_t, t1_t = args
-                key_drift, key_emit = jr.split(key_t)
-
-                def drift(t, y, _):
-                    return params.dynamics.drift.f(y, None, t)
-
-                def diffusion(t, y, _):
-                    Qc_t = params.dynamics.diffusion_cov.f(None, None, t)
-                    L_t = params.dynamics.diffusion_coefficient.f(None, None, t)
-                    Q_sqrt = jnp.linalg.cholesky(Qc_t)
-                    return L_t @ Q_sqrt
-
-                state = diffeqsolve(
-                    key=key_drift,
-                    drift=drift,
-                    diffusion=diffusion,
-                    t0=t0_t,
-                    t1=t1_t,
-                    y0=state_prev,
-                    **self.diffeqsolve_settings,
-                )[0]
-
-                emission = params.emissions.emission_distribution.sample(
-                    x=state, u=None, t=t1_t, seed=key_emit
-                )
-                return state, (state, emission)
-
-            _, (next_states, next_emissions) = lax.scan(
-                _step,
-                init_state,
-                (keys_scan, t0, t1),
-            )
+        _, (next_states, next_emissions) = lax.scan(
+            _step,
+            init_state,
+            (keys_scan, t0, t1, u_prev),
+        )
 
         states = jnp.concatenate([init_state[None, ...], next_states], axis=0)
         emissions = jnp.concatenate([init_emission[None, ...], next_emissions], axis=0)
@@ -326,7 +348,34 @@ class ContDiscreteNonlinearSSM(SSM):
         extra_filter_kwargs: Optional[dict] = None,
         warn: bool = True,
     ):
-        """Run particle filtering (soft DPF) as the default filtering routine."""
+        """Filters a CD-NLSSM; by default, this runs a bootstrap differentiable particle filter (DPF).
+
+        Depending on the filter_type, certain arguments are ignored.
+
+        Args:
+            params: Parameters of the CDNLSSM.
+            emissions: Emission sequence.
+            t_emissions: Time instants of observations.
+            inputs: Inputs.
+            filter_state_order: Order of Taylor expansion for dynamics used in the filter.
+            filter_emission_order: Order of Taylor expansion for emissions used in the filter.
+            filter_num_iter: Number of iterations for iterated filters.
+            filter_state_cov_rescaling: Rescale state covariance by this factor after each update (inflation delta is better for accurate likelihoods)
+            filter_dt_average: [Only for state_order="Discrete"] Average step size to determine constant state noise cov in filter.
+            N_particles: Number of particles (for DPF only).
+            diffeqsolve_max_steps: Max steps for ODE solver between observations.
+            diffeqsolve_dt0: Initial step size for ODE/SDE solver (default is fixed step size).
+            output_fields: Which fields to return from the filter.
+            key: Random key.
+            diffeqsolve_kwargs: Extra kwargs for the ODE solver
+                (e.g., {"solver": diffrax.Heun(), "dt0": 1e-2}).
+            filter_kwargs: Extra kwargs specific to the chosen filter
+                (e.g., {"emission_order": "zeroth"} for EKF).
+            warn: whether to issue warnings (e.g., about PSD issues)
+
+        Returns:
+            PosteriorCDNLSSMFiltered: Posterior distribution of the CDNLSSM.
+        """
         filter_hyperparams = build_dpf_hyperparams(
             filter_state_order=filter_state_order,
             filter_state_cov_rescaling=filter_state_cov_rescaling,
@@ -355,6 +404,17 @@ class ContDiscreteNonlinearSSM(SSM):
         init_params: Optional[ParamsCDNLSSM] = None,
         key: Float[Array, "2"] = jr.PRNGKey(0),
     ) -> Tuple[ParamsCDNLSSM, ParamsCDNLSSM]:
+        """Sample from the prior distribution over CD-NLGSSM model parameters.
+
+        :param prior: prior distribution.
+        :param M: number of samples to draw.
+        :param init_params: dictionary of parameters to use as initialization
+            if not provided, default parameters are used
+        :param key: random number generator key
+
+        Returns:
+            Tuple[ParamsCDNLSSM, ParamsCDNLSSM]: Parameters and their properties.
+        """
         if init_params is None:
             init_params = self._default_cdnlssm_params()
         return sample_cdnlssm_params(
@@ -374,42 +434,22 @@ def compute_pushforward(
     inputs: Optional[Array] = None,
     diffeqsolve_settings: Optional[dict] = None,
 ) -> Tuple[Array, Array]:
-    """Propagate mean/covariance using chosen approximation order."""
-    diffeqsolve_settings = diffeqsolve_settings or {}
-    y0 = (x0, P0)
+    """Compute the pushforward of particles through the CD-NLSSM dynamics.
 
-    def rhs_all(t, y, args):
-        x, P = y
-        f = params.dynamics.drift.f
-        Qc_t = params.dynamics.diffusion_cov.f(None, inputs, t)
-        L_t = params.dynamics.diffusion_coefficient.f(None, inputs, t)
+    Currently, as only Brownian motion-driven SDEs are supported, this simply calls the CDNLGSSM pushforward.
 
-        def dynamics_order0():
-            dxdt = f(x, inputs, t)
-            dPdt = L_t @ Qc_t @ L_t.T
-            return (dxdt, dPdt)
-
-        def dynamics_order1():
-            F_t = jacfwd(f)(x, inputs, t)
-            dxdt = f(x, inputs, t)
-            dPdt = F_t @ P + P @ F_t.T + L_t @ Qc_t @ L_t.T
-            return (dxdt, dPdt)
-
-        def dynamics_order2():
-            F_t = jacfwd(f)(x, inputs, t)
-            H_t = jacfwd(jacrev(f))(x, inputs, t)
-            dxdt = f(x, inputs, t) + 0.5 * jnp.trace(H_t @ P)
-            dPdt = F_t @ P + P @ F_t.T + L_t @ Qc_t @ L_t.T
-            return (dxdt, dPdt)
-
-        return lax.switch(
-            jnp.squeeze(params.dynamics.approx_order).astype(int),
-            [dynamics_order0, dynamics_order1, dynamics_order2],
-        )
-
-    sol = diffeqsolve(rhs_all, t0=t0, t1=t1, y0=y0, **diffeqsolve_settings)
-    mean, covariance = sol[0][-1], sol[1][-1]
-    return mean, covariance
+    Returns:
+        Tuple[Array, Array]: Mean and covariance of the pushforward.
+    """
+    return compute_pushforward_cdnlgssm(
+        x0=x0,
+        P0=P0,
+        params=params,
+        t0=t0,
+        t1=t1,
+        inputs=inputs,
+        diffeqsolve_settings=diffeqsolve_settings,
+    )
 
 
 def cdnlssm_joint_sample(
@@ -455,60 +495,31 @@ def cdnlssm_joint_sample(
     state_dim = init_state.shape[-1]
     zero_cov = jnp.zeros((state_dim, state_dim))
 
-    if u_prev is not None:
+    def _step(state_prev, args):
+        key_t, t0_t, t1_t, u_prev_t = args
+        key_drift, key_emit = jr.split(key_t)
 
-        def _step(state_prev, args):
-            key_t, t0_t, t1_t, u_prev_t = args
-            key_drift, key_emit = jr.split(key_t)
-
-            mean, covariance = compute_pushforward(
-                x0=state_prev,
-                P0=zero_cov,
-                params=params,
-                t0=t0_t,
-                t1=t1_t,
-                inputs=u_prev_t,
-                diffeqsolve_settings=diffeqsolve_settings,
-            )
-            state = MVN(mean, covariance).sample(seed=key_drift)
-
-            emission = params.emissions.emission_distribution.sample(
-                x=state, u=u_prev_t, t=t1_t, seed=key_emit
-            )
-            return state, (state, emission)
-
-        _, (next_states, next_emissions) = lax.scan(
-            _step,
-            init_state,
-            (keys_scan, t0, t1, u_prev),
+        mean, covariance = compute_pushforward(
+            x0=state_prev,
+            P0=zero_cov,
+            params=params,
+            t0=t0_t,
+            t1=t1_t,
+            inputs=u_prev_t,
+            diffeqsolve_settings=diffeqsolve_settings,
         )
-    else:
+        state = MVN(mean, covariance).sample(seed=key_drift)
 
-        def _step(state_prev, args):
-            key_t, t0_t, t1_t = args
-            key_drift, key_emit = jr.split(key_t)
-
-            mean, covariance = compute_pushforward(
-                x0=state_prev,
-                P0=zero_cov,
-                params=params,
-                t0=t0_t,
-                t1=t1_t,
-                inputs=None,
-                diffeqsolve_settings=diffeqsolve_settings,
-            )
-            state = MVN(mean, covariance).sample(seed=key_drift)
-
-            emission = params.emissions.emission_distribution.sample(
-                x=state, u=None, t=t1_t, seed=key_emit
-            )
-            return state, (state, emission)
-
-        _, (next_states, next_emissions) = lax.scan(
-            _step,
-            init_state,
-            (keys_scan, t0, t1),
+        emission = params.emissions.emission_distribution.sample(
+            x=state, u=u_prev_t, t=t1_t, seed=key_emit
         )
+        return state, (state, emission)
+
+    _, (next_states, next_emissions) = lax.scan(
+        _step,
+        init_state,
+        (keys_scan, t0, t1, u_prev),
+    )
 
     states = jnp.concatenate([init_state[None, ...], next_states], axis=0)
     emissions = jnp.concatenate([init_emission[None, ...], next_emissions], axis=0)
@@ -558,7 +569,21 @@ def cdnlssm_filter(
     key: PRNGKeyArray = jr.PRNGKey(0),
     warn: bool = True,
 ):
-    """Run particle filtering (configurable DPF) for a CD-NLSSM and return particles, log-weights, and log-evidence."""
+    """Run particle filtering (configurable DPF) for a CD-NLSSM and return particles, log-weights, and log-evidence.
+
+    Args:
+        params: Parameters of the CDNLSSM.
+        emissions: Emission sequence.
+        t_emissions: Time instants of observations.
+        filter_hyperparams: Hyperparameters of the filter.
+        inputs: Inputs.
+        output_fields: Fields to return.
+        key: Random key.
+        warn: Whether to warn.
+
+    Returns:
+        PosteriorCDNLSSMFiltered: Posterior distribution of the CDNLSSM.
+    """
     if filter_hyperparams is None:
         filter_hyperparams = DPFHyperParams()
 

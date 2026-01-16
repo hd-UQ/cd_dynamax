@@ -6,12 +6,12 @@ from jax import Array as JaxArray
 from cd_dynamax.dynamax.parameters import ParameterProperties, ParameterSet
 import tensorflow_probability.substrates.jax.distributions as tfd
 
-
 from ..continuous_discrete_nonlinear_gaussian_ssm.cdnlgssm_utils import (
     _get_params,
     LearnableFunction,
     LearnableVector,
     LearnableMatrix,
+    ParamsCDNLGSSMDynamics,
 )
 
 
@@ -67,12 +67,8 @@ class LearnableTransformedDistribution(LearnableDistribution):
         return self.transform.f(base_sample, u, t)
 
 
-# Dynamics container for CD-NLSSM
-class ParamsCDNLSSMDynamics(NamedTuple):
-    drift: LearnableFunction
-    diffusion_coefficient: LearnableFunction
-    diffusion_cov: LearnableFunction
-    approx_order: Union[float, ParameterProperties]
+# Currently, we only support Brownian motion-driven SDEs, so we can reuse the CDNLGSSM dynamics parameters
+ParamsCDNLSSMDynamics = ParamsCDNLGSSMDynamics
 
 
 ## CDNLSSM parameter class definitions
@@ -88,17 +84,16 @@ class ParamsCDNLSSMEmissions(NamedTuple):
 
 # CDNLGSSM parameters are different to CDLGSSM due to nonlinearities
 class ParamsCDNLSSM(NamedTuple):
-    r"""Parameters of a nonlinear Gaussian SSM.
+    r"""Parameters of a continuous-discrete nonlinear SSM.
 
     :param initial: initial distribution parameters
     :param dynamics: dynamics distribution parameters
     :param emissions: emission distribution parameters
 
     The assumed transition and emission distributions are
-    $$p(z_1) = N(z_1 | m, S)$$
-    $$p(z_t | z_{t-1}, u_t) = N(z_t | m_t, P_t)$$
-    $$p(y_t | z_t) = N(y_t | h(z_t, u_t), R_t)$$
-
+    $$p(z_0) = p_initial(z_0)$$
+    $$p(z_{t_k} | z_{t_{k-1}}, u_{t_k}) = solve_sde(z_{t_{k-1}}, u_{t_k}, t_{k-1}, t_k, f_dynamics, L_dynamics, Q_dynamics)$$
+    $$p(y_{t_k} | z_{t_k}) = p_emissions(y_{t_k} | z_{t_k})$$
     """
 
     initial: ParamsCDNLSSMInitial
