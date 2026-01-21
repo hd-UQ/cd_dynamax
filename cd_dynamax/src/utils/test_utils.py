@@ -4,15 +4,17 @@ from jax import vmap
 
 ### Aux functions for tests
 
+
 # Check if two arrays are close with increasing tolerance
 def try_all_close(x, y, start_tol=-8, end_tol=-4):
     """Try all close with increasing tolerance"""
     # create list of tols 1e-8, 1e-7, 1e-6, ..., 1e1
-    tol_list = jnp.array([10 ** i for i in range(start_tol, end_tol+1)])
+    tol_list = jnp.array([10**i for i in range(start_tol, end_tol + 1)])
     for tol in tol_list:
         if jnp.allclose(x, y, atol=tol):
             return True, tol
     return False, tol
+
 
 # Compare two arrays and print MSE if not close
 def compare(x, x_ref, do_det=False, accept_failure=False):
@@ -36,7 +38,7 @@ def compare(x, x_ref, do_det=False, accept_failure=False):
             rel_mse = mse / (x_ref**2)
         else:
             mse = jnp.mean((x - x_ref) ** 2, axis=1)
-            rel_mse = mse / jnp.mean(x_ref ** 2, axis=1)
+            rel_mse = mse / jnp.mean(x_ref**2, axis=1)
 
         print("\tInitial relative MSE: ", rel_mse[0])
         print("\tFinal relative MSE: ", rel_mse[-1])
@@ -45,16 +47,22 @@ def compare(x, x_ref, do_det=False, accept_failure=False):
 
         allclose, tol = try_all_close(rel_mse, 0, end_tol=-3)
         if not accept_failure:
-            assert allclose, f"Relative MSE allclose FAILED with atol={tol}. UNACCEPTABLE!"
+            assert allclose, (
+                f"Relative MSE allclose FAILED with atol={tol}. UNACCEPTABLE!"
+            )
         else:
-            print(f"Relative MSE allclose FAILED with atol={tol} but accepting this failure.")
+            print(
+                f"Relative MSE allclose FAILED with atol={tol} but accepting this failure."
+            )
 
     pass
+
 
 # Helper to check for namedtuple
 def is_namedtuple(instance):
     """Check if an instance is a namedtuple."""
     return isinstance(instance, tuple) and hasattr(instance, "_fields")
+
 
 # Compare two arrays with given tolerances
 def compare_new(array1, array2, atol=1e-5, rtol=1e-5):
@@ -70,8 +78,9 @@ def get_array(data):
     else:
         try:
             return data.params
-        except:
+        except Exception:
             return data
+
 
 # Recursive function to compare leaves of two nested structures
 def compare_leaves(node1, node2, path="", atol=1e-5, rtol=1e-5):
@@ -88,7 +97,11 @@ def compare_leaves(node1, node2, path="", atol=1e-5, rtol=1e-5):
         for field in common_fields:
             new_path = f"{path}.{field}" if path else field
             diff, sim, unique1, unique2 = compare_leaves(
-                getattr(node1, field), getattr(node2, field), new_path, atol=atol, rtol=rtol
+                getattr(node1, field),
+                getattr(node2, field),
+                new_path,
+                atol=atol,
+                rtol=rtol,
             )
             differences.extend(diff)
             similarities.extend(sim)
@@ -107,7 +120,9 @@ def compare_leaves(node1, node2, path="", atol=1e-5, rtol=1e-5):
 
         for key in common_keys:
             new_path = f"{path}.{key}" if path else key
-            diff, sim, unique1, unique2 = compare_leaves(node1[key], node2[key], new_path, atol=atol, rtol=rtol)
+            diff, sim, unique1, unique2 = compare_leaves(
+                node1[key], node2[key], new_path, atol=atol, rtol=rtol
+            )
             differences.extend(diff)
             similarities.extend(sim)
             unique_to_struct1.extend(unique1)
@@ -122,7 +137,9 @@ def compare_leaves(node1, node2, path="", atol=1e-5, rtol=1e-5):
         array1 = get_array(node1)
         array2 = get_array(node2)
         if array1 is not None and array2 is not None:
-            are_close, comparison_result = compare_new(array1, array2, atol=atol, rtol=rtol)
+            are_close, comparison_result = compare_new(
+                array1, array2, atol=atol, rtol=rtol
+            )
             if are_close:
                 similarities.append(path)
             else:
@@ -141,9 +158,14 @@ def compare_leaves(node1, node2, path="", atol=1e-5, rtol=1e-5):
 
     return differences, similarities, unique_to_struct1, unique_to_struct2
 
+
 # Compare two nested structures with given tolerances
-def _compare_structs(struct1, struct2, accept_failure=False, atol=1e-5, rtol=1e-5, verbose=False):
-    differences, similarities, unique_to_struct1, unique_to_struct2 = compare_leaves(struct1, struct2, atol=atol)
+def _compare_structs(
+    struct1, struct2, accept_failure=False, atol=1e-5, rtol=1e-5, verbose=False
+):
+    differences, similarities, unique_to_struct1, unique_to_struct2 = compare_leaves(
+        struct1, struct2, atol=atol
+    )
 
     if len(unique_to_struct1) > 0 or len(unique_to_struct2) > 0:
         if verbose:
@@ -152,25 +174,44 @@ def _compare_structs(struct1, struct2, accept_failure=False, atol=1e-5, rtol=1e-
 
     if len(differences) > 0:
         if verbose:
-            print(f"Fields that are close within atol={atol} and rtol={rtol}:", similarities)
-            print(f"Fields that are different within tol={atol} and rtol={rtol}:", differences)
+            print(
+                f"Fields that are close within atol={atol} and rtol={rtol}:",
+                similarities,
+            )
+            print(
+                f"Fields that are different within tol={atol} and rtol={rtol}:",
+                differences,
+            )
         return False
     else:
         if verbose:
-            print(f"Fields that are close within tol={atol} and rtol={rtol}:", similarities)
+            print(
+                f"Fields that are close within tol={atol} and rtol={rtol}:",
+                similarities,
+            )
         return True
 
-# Compare two nested structures with increasing tolerances
-def compare_structs(struct1, struct2, min_tol=-10, max_tol=-4, 
-                    min_tol_rel=-5, max_tol_rel=-5,
-                    accept_failure=False):
 
+# Compare two nested structures with increasing tolerances
+def compare_structs(
+    struct1,
+    struct2,
+    min_tol=-10,
+    max_tol=-4,
+    min_tol_rel=-5,
+    max_tol_rel=-5,
+    accept_failure=False,
+):
     for rtol in range(min_tol_rel, max_tol_rel + 1):
         for atol in range(min_tol, max_tol + 1):
-            close_enough = _compare_structs(struct1, struct2, atol=10**atol, rtol=10**rtol, verbose=False)
+            close_enough = _compare_structs(
+                struct1, struct2, atol=10**atol, rtol=10**rtol, verbose=False
+            )
             if close_enough:
                 # run again in verbose mode
-                _compare_structs(struct1, struct2, atol=10**atol, rtol=10**rtol, verbose=True)
+                _compare_structs(
+                    struct1, struct2, atol=10**atol, rtol=10**rtol, verbose=True
+                )
                 print(f"Comparison passed with atol=1e-{atol} and reltol=1e-{rtol}.")
                 return
 

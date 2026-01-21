@@ -1,4 +1,4 @@
-from typing import NamedTuple, Tuple, Union
+from typing import NamedTuple, Tuple
 import abc
 import jax.numpy as jnp
 import jax.random as jr

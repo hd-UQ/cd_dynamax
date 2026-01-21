@@ -1,18 +1,29 @@
 # Imports
+import jax
 import jax.numpy as jnp
 import jax.random as jr
 
 from cd_dynamax import ContDiscreteLinearGaussianSSM, ContDiscreteNonlinearSSM
-from cd_dynamax.src.utils.test_utils import compare, compare_structs
-
+from cd_dynamax.src.utils.test_utils import compare
 from cd_dynamax import DPFHyperParams, cdnlssm_filter
+from cd_dynamax.src.continuous_discrete_linear_gaussian_ssm.models import (
+    cdlgssm_filter,
+)
+from cd_dynamax.dynamax.parameters import ParameterProperties
+from cd_dynamax.dynamax.utils.bijectors import RealToPSDBijector
+import tensorflow_probability.substrates.jax.distributions as tfd
+from tensorflow_probability.substrates.jax.distributions import (
+    MultivariateNormalFullCovariance as MVN,
+)
+from cd_dynamax.src.continuous_discrete_linear_gaussian_ssm.inference import (
+    KFHyperParams,
+)
 
 # Whether to plot test results or not
 PLOT_TEST_RESULTS = False
 
 # JAX device check
 print("************* Checking JAX device *************")
-import jax
 
 print("Running on jax device:{}".format(jax.devices()))
 print("Running on jax device platform:{}".format(jax.devices()[0].platform))
@@ -46,7 +57,6 @@ cd_model = ContDiscreteLinearGaussianSSM(
     has_emissions_bias=True,
 )
 # Initialize, controlling what is learned
-from cd_dynamax.src.continuous_discrete_linear_gaussian_ssm.models import *
 
 cd_params, cd_param_props = cd_model.initialize(
     key1,
@@ -101,7 +111,7 @@ cd_states, cd_emissions = cd_model.sample(
     cd_params, key2, num_timesteps=NUM_TIMESTEPS, t_emissions=t_emissions, inputs=inputs
 )
 
-print(f"Sampling CDLGSSM path in continuous-discrete time")
+print("Sampling CDLGSSM path in continuous-discrete time")
 cd_states_path, cd_emissions_path = cd_model.sample(
     cd_params,
     key2,
@@ -118,10 +128,6 @@ print("\tChecking emissions...")
 compare(cd_num_timesteps_emissions, cd_emissions)
 
 print("Continuous-Discrete time filtering: pre-fit")
-from cd_dynamax.src.continuous_discrete_linear_gaussian_ssm.inference import (
-    cdlgssm_filter,
-    KFHyperParams,
-)
 
 # We set dt_final=1 so that predicted mean and covariance at the end of sequence match those of discrete filtering
 kf_hyperparams = KFHyperParams(dt_final=1.0)
@@ -156,8 +162,7 @@ cd_sgd_fitted_filtered_posterior = cdlgssm_filter(
 
 ########### Now make non-linear models, assuming linearity ########
 print("************* Continuous-Discrete Non-linear GSSM *************")
-from cd_dynamax.src.continuous_discrete_nonlinear_gaussian_ssm.models import *
-from cd_dynamax import cdnlgssm_filter, EKFHyperParams
+# No additional imports needed from nonlinear models - ContDiscreteNonlinearSSM already imported
 
 # Model def
 inputs = None  # Not interested in inputs for now
@@ -183,7 +188,7 @@ def build_cdnl_params(dynamics_approx_order=1.0, initial_distribution=None):
 
 
 cdnl_params = build_cdnl_params()
-print(f"Sampling CDNLSSM path in continuous-discrete time")
+print("Sampling CDNLSSM path in continuous-discrete time")
 cdnl_states_path, cdnl_emissions_path = cdnl_model.sample_path(
     params=cdnl_params,
     key=key2,
@@ -205,7 +210,7 @@ for dynamics_approx_order in [1.0, 2.0]:
     cdnl_params = build_cdnl_params(dynamics_approx_order=dynamics_approx_order)
 
     # Simulate from continuous-discrete nl model
-    print(f"**********************************")
+    print("**********************************")
     print(
         f"Simulating {dynamics_approx_order} order CDNLSSM in continuous-discrete time"
     )
@@ -226,7 +231,7 @@ for dynamics_approx_order in [1.0, 2.0]:
 
 
 ######## Continuous-discrete Differentiable Particle Filter
-print(f"**********************************")
+print("**********************************")
 for N_particles in [1e2, 1e3, 1e4]:
     for resample_method in ["stop_gradient", "soft"]:
         print(
@@ -254,7 +259,7 @@ for N_particles in [1e2, 1e3, 1e4]:
         print("\tComparing filtered means...")
         try:
             compare(cd_dpf_post.filtered_means, cd_filtered_posterior.filtered_means)
-        except:
+        except AssertionError:
             if N_particles < 1e5:
                 print("Test failed because too few particles")
                 pass
@@ -270,7 +275,7 @@ for N_particles in [1e2, 1e3, 1e4]:
                 cd_filtered_posterior.filtered_covariances,
                 do_det=True,
             )
-        except:
+        except AssertionError:
             if N_particles < 1e5:
                 print("Test failed because too few particles")
                 pass

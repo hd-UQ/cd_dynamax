@@ -2,7 +2,7 @@ from typing import List, NamedTuple, Optional, Tuple
 
 import jax.numpy as jnp
 import jax.random as jr
-from jax import vmap, lax, jacfwd, jacrev
+from jax import vmap, lax
 from jaxtyping import Array, Float, PRNGKeyArray
 
 from tensorflow_probability.substrates.jax.distributions import (

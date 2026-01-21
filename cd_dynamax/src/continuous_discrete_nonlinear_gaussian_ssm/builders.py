@@ -2,6 +2,7 @@ import equinox as eqx
 import jax.numpy as jnp
 import inspect
 
+
 # -------------------------
 # Callable + Constant wrappers
 # -------------------------
@@ -10,6 +11,7 @@ class ConstantFunction(eqx.Module):
 
     def f(self, x=None, u=None, t=None):
         return self.constant
+
 
 class CallableFunction(eqx.Module):
     func: callable
@@ -25,6 +27,7 @@ class CallableFunction(eqx.Module):
             kwargs["t"] = t
         return self.func(**kwargs)
 
+
 def wrap_function_or_constant(obj, expected_shape=None) -> eqx.Module:
     """
     Wraps a user-provided constant or callable into an eqx.Module with `.f(x, u, t)`.
@@ -35,13 +38,16 @@ def wrap_function_or_constant(obj, expected_shape=None) -> eqx.Module:
         sig = inspect.signature(obj)
         extra = set(sig.parameters) - {"x", "u", "t"}
         if extra:
-            raise ValueError(f"Callable has unexpected arguments: {extra}. Only (x, u, t) allowed.")
+            raise ValueError(
+                f"Callable has unexpected arguments: {extra}. Only (x, u, t) allowed."
+            )
         return CallableFunction(func=obj)
 
     arr = jnp.asarray(obj)
     if expected_shape is not None:
         arr = jnp.broadcast_to(arr, expected_shape)
     return ConstantFunction(constant=arr)
+
 
 # -------------------------
 # Param containers
@@ -50,27 +56,33 @@ class CDNLGSSMInitialParams(eqx.Module):
     mean: eqx.Module
     cov: eqx.Module
 
+
 class CDNLGSSMDynamicsParams(eqx.Module):
     drift: eqx.Module
     diffusion_cov: eqx.Module
     diffusion_coefficient: eqx.Module
     approx_order: float = 1.0
 
+
 class CDNLGSSMEmissionsParams(eqx.Module):
     emission_function: eqx.Module
     emission_cov: eqx.Module
+
 
 class CDNLGSSMParams(eqx.Module):
     initial: CDNLGSSMInitialParams
     dynamics: CDNLGSSMDynamicsParams
     emissions: CDNLGSSMEmissionsParams
 
+
 # -------------------------
 # Param construction
 # -------------------------
 
+
 def _default(value, default):
     return value if value is not None else default
+
 
 def build_params(
     state_dim,
@@ -83,13 +95,13 @@ def build_params(
     diffusion_coeff=None,
     diffusion_cov=None,
 ):
-    ''' Build parameters for a CDNLGSSM model.
+    """Build parameters for a CDNLGSSM model.
     Parameters
     ----------
     state_dim : int
         Dimension of the state space.
     emission_dim : int
-        Dimension of the emission space.    
+        Dimension of the emission space.
     drift : array-like or callable
         Drift function for the state dynamics.
         Should only accept (x, u, t) or a subset of these (can also return a constant).
@@ -118,17 +130,21 @@ def build_params(
     Notes
     -----
     The callable parameters should only accept (x, u, t) or a subset of these.
-    If they accept additional arguments, a ValueError will be raised.    
-    '''
-        
+    If they accept additional arguments, a ValueError will be raised.
+    """
+
     return CDNLGSSMParams(
         initial=CDNLGSSMInitialParams(
-            mean=wrap_function_or_constant(_default(initial_mean, jnp.zeros(state_dim))),
+            mean=wrap_function_or_constant(
+                _default(initial_mean, jnp.zeros(state_dim))
+            ),
             cov=wrap_function_or_constant(_default(initial_cov, jnp.eye(state_dim))),
         ),
         dynamics=CDNLGSSMDynamicsParams(
             drift=wrap_function_or_constant(drift),
-            diffusion_cov=wrap_function_or_constant(_default(diffusion_cov, jnp.eye(state_dim))),
+            diffusion_cov=wrap_function_or_constant(
+                _default(diffusion_cov, jnp.eye(state_dim))
+            ),
             diffusion_coefficient=wrap_function_or_constant(
                 _default(diffusion_coeff, 1e-2 * jnp.ones(state_dim))
             ),
@@ -137,6 +153,8 @@ def build_params(
             emission_function=wrap_function_or_constant(
                 _default(emission_function, lambda x: x[:emission_dim])
             ),
-            emission_cov=wrap_function_or_constant(_default(emission_cov, jnp.eye(emission_dim))),
+            emission_cov=wrap_function_or_constant(
+                _default(emission_cov, jnp.eye(emission_dim))
+            ),
         ),
     )

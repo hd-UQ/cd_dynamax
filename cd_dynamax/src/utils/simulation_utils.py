@@ -3,7 +3,6 @@
 # Imports
 import jax.numpy as jnp
 import jax.random as jr
-from cd_dynamax.dynamax.types import PRNGKey
 
 from itertools import count
 
@@ -14,17 +13,28 @@ from jaxtyping import Float, Array
 from jax.tree_util import tree_map
 
 # For distributional forecasting, import MVN
-from tensorflow_probability.substrates.jax.distributions import MultivariateNormalFullCovariance as MVN
+from tensorflow_probability.substrates.jax.distributions import (
+    MultivariateNormalFullCovariance as MVN,
+)
 
 # Our own custom src codebase
 # continuous-discrete nonlinear Gaussian SSM codebase
-from cd_dynamax.src.continuous_discrete_linear_gaussian_ssm import cdlgssm_filter, cdlgssm_forecast, ParamsCDLGSSM
-from cd_dynamax.src.continuous_discrete_nonlinear_gaussian_ssm import cdnlgssm_filter, cdnlgssm_forecast, ParamsCDNLGSSM
+from cd_dynamax.src.continuous_discrete_linear_gaussian_ssm import (
+    cdlgssm_filter,
+    cdlgssm_forecast,
+    ParamsCDLGSSM,
+)
+from cd_dynamax.src.continuous_discrete_nonlinear_gaussian_ssm import (
+    cdnlgssm_filter,
+    cdnlgssm_forecast,
+    ParamsCDNLGSSM,
+)
 
 
 def tree_to_dict(tree):
     """Convert a JAX tree to a dictionary."""
     return tree_map(lambda x: x if x is not None else None, tree._asdict())
+
 
 def make_key_sequence(seed: int):
     """Returns an infinite sequence of PRNG keys based on the given seed."""
@@ -35,11 +45,11 @@ def make_key_sequence(seed: int):
 # Function to generate irregular measurement time-points
 # uniformly sampled from a time domain $[0,T_total]$
 def generate_irregular_t_emissions(
-        T_total: Float,
-        num_timesteps: int,
-        T_filter: Optional[Float] = None,
-        key=jr.PRNGKey(0)
-    ) -> Tuple[Array, Array, Array, int, int, int]:
+    T_total: Float,
+    num_timesteps: int,
+    T_filter: Optional[Float] = None,
+    key=jr.PRNGKey(0),
+) -> Tuple[Array, Array, Array, int, int, int]:
     """
     Generate random time points for measurements, filtering and forecasting.
     sampled uniformly from a time domain $[0,T_total]$
@@ -59,7 +69,7 @@ def generate_irregular_t_emissions(
     - num_timesteps_filter: int, number of time points for filtering
     - num_timesteps_forecast: int, number of time points for forecasting
     """
-    
+
     # This procedure produces times sampled uniformly from [0, T_total].
     u = jr.uniform(key, (num_timesteps,), minval=0, maxval=1)
     s = jnp.cumsum(u)  # Convert them into sorted cumulative sum
@@ -81,9 +91,17 @@ def generate_irregular_t_emissions(
     num_timesteps = len(t_emissions)
     num_timesteps_filter = len(t_filter)
     num_timesteps_forecast = len(t_forecast) if t_forecast is not None else 0
-    
+
     # Return time points and counts
-    return t_emissions, t_filter, t_forecast, num_timesteps, num_timesteps_filter, num_timesteps_forecast
+    return (
+        t_emissions,
+        t_filter,
+        t_forecast,
+        num_timesteps,
+        num_timesteps_filter,
+        num_timesteps_forecast,
+    )
+
 
 # Function to filter and forecast, based on model with given parameters
 def filter_and_forecast(
@@ -95,8 +113,7 @@ def filter_and_forecast(
     T_filter_end=70,
     T_forecast_end=100,
     key=0,
-    ):
-
+):
     # Create a sequence of keys
     keys = make_key_sequence(key)
 
@@ -107,9 +124,11 @@ def filter_and_forecast(
     # Figure out the time points for forecasting
     start_idx_forecast = jnp.where(t_emissions >= T_filter_end)[0][0]
     stop_idx_forecast = jnp.where(t_emissions >= T_forecast_end)[0][0]
-    
+
     assert start_idx_filter < stop_idx_filter, "Filtering time points are invalid."
-    assert start_idx_forecast < stop_idx_forecast, "Forecasting time points are invalid."
+    assert start_idx_forecast < stop_idx_forecast, (
+        "Forecasting time points are invalid."
+    )
 
     # Check whether model_params are linear or nonlinear, based on class type
     if isinstance(model_params, ParamsCDLGSSM):
@@ -122,8 +141,8 @@ def filter_and_forecast(
         # Nonlinear case
         filtering_function = cdnlgssm_filter
         forecasting_function = cdnlgssm_forecast
-        extra_args_filter = {'key': next(keys)}
-        extra_args_forecast = {'key': next(keys)}
+        extra_args_filter = {"key": next(keys)}
+        extra_args_forecast = {"key": next(keys)}
 
     # Run filter on filtering time points
     filtered = filtering_function(
@@ -133,10 +152,12 @@ def filter_and_forecast(
         filter_hyperparams=filter_hyperparams,
         **extra_args_filter,
     )
-    
+
     # Initialize forecast with last filtered state
-    init_time = t_emissions[stop_idx_filter-1]
-    init_forecast = MVN(filtered.filtered_means[-1, :], filtered.filtered_covariances[-1, :])
+    init_time = t_emissions[stop_idx_filter - 1]
+    init_forecast = MVN(
+        filtered.filtered_means[-1, :], filtered.filtered_covariances[-1, :]
+    )
 
     # Run forecast on forecasting time points
     forecasted = forecasting_function(
@@ -148,4 +169,11 @@ def filter_and_forecast(
         **extra_args_forecast,
     )
 
-    return filtered, forecasted, start_idx_filter, stop_idx_filter, start_idx_forecast, stop_idx_forecast
+    return (
+        filtered,
+        forecasted,
+        start_idx_filter,
+        stop_idx_filter,
+        start_idx_forecast,
+        stop_idx_forecast,
+    )
