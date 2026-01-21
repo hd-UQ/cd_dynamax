@@ -1,0 +1,32 @@
+name: Tests
+
+on:
+  push:
+    branches: [public]
+  pull_request:
+    branches: 
+        - public
+        - '*'
+    workflow_dispatch:
+
+jobs:
+  pytest:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: "pip"
+          cache-dependency-path: pyproject.toml
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install .[dev]
+
+      - name: Run pytest
+        run: pytest --ignore cd_dynamax/dynamax
