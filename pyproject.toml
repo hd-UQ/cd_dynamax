@@ -53,3 +53,6 @@ include = ["cd_dynamax*"]
 dev = [
     "pytest>=8.0",
 ]
+
+[tool.ruff.lint]
+ignore = ["F722", "E731"]  # Ignore jaxtyping shape annotation syntax errors
