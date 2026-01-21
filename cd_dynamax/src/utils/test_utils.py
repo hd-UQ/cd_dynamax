@@ -1,7 +1,10 @@
+# JAX imports
 import jax.numpy as jnp
 from jax import vmap
 
-# Aux functions for tests
+### Aux functions for tests
+
+# Check if two arrays are close with increasing tolerance
 def try_all_close(x, y, start_tol=-8, end_tol=-4):
     """Try all close with increasing tolerance"""
     # create list of tols 1e-8, 1e-7, 1e-6, ..., 1e1
@@ -11,6 +14,7 @@ def try_all_close(x, y, start_tol=-8, end_tol=-4):
             return True, tol
     return False, tol
 
+# Compare two arrays and print MSE if not close
 def compare(x, x_ref, do_det=False, accept_failure=False):
     allclose, tol = try_all_close(x, x_ref)
     if allclose:
@@ -47,12 +51,12 @@ def compare(x, x_ref, do_det=False, accept_failure=False):
 
     pass
 
-
+# Helper to check for namedtuple
 def is_namedtuple(instance):
     """Check if an instance is a namedtuple."""
     return isinstance(instance, tuple) and hasattr(instance, "_fields")
 
-
+# Compare two arrays with given tolerances
 def compare_new(array1, array2, atol=1e-5, rtol=1e-5):
     """Compare two arrays and return a tuple indicating if they are close and the comparison result."""
     are_close = jnp.allclose(array1, array2, atol=atol, rtol=rtol)
@@ -69,7 +73,7 @@ def get_array(data):
         except:
             return data
 
-
+# Recursive function to compare leaves of two nested structures
 def compare_leaves(node1, node2, path="", atol=1e-5, rtol=1e-5):
     differences = []
     similarities = []
@@ -137,7 +141,7 @@ def compare_leaves(node1, node2, path="", atol=1e-5, rtol=1e-5):
 
     return differences, similarities, unique_to_struct1, unique_to_struct2
 
-
+# Compare two nested structures with given tolerances
 def _compare_structs(struct1, struct2, accept_failure=False, atol=1e-5, rtol=1e-5, verbose=False):
     differences, similarities, unique_to_struct1, unique_to_struct2 = compare_leaves(struct1, struct2, atol=atol)
 
@@ -156,7 +160,7 @@ def _compare_structs(struct1, struct2, accept_failure=False, atol=1e-5, rtol=1e-
             print(f"Fields that are close within tol={atol} and rtol={rtol}:", similarities)
         return True
 
-
+# Compare two nested structures with increasing tolerances
 def compare_structs(struct1, struct2, min_tol=-10, max_tol=-4, 
                     min_tol_rel=-5, max_tol_rel=-5,
                     accept_failure=False):

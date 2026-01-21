@@ -1,14 +1,31 @@
-from typing import NamedTuple, Tuple, Union
-from jaxtyping import Array, Float
-import jax.numpy as jnp
-from jax import Array
+# JAX imports
 import jax.random as jr
 import jax.numpy as jnp
-from cd_dynamax.dynamax.parameters import ParameterProperties, ParameterSet
-import abc
 
+# Type annotations
+from typing import NamedTuple, Tuple, Optional, Union
+from jaxtyping import Array, Float
+from jax import Array
+
+# For cd-dynamax's abstract SSM class and method
+from abc import abstractmethod
+
+# Imports from dynamax
+from cd_dynamax.dynamax.parameters import ParameterProperties, ParameterSet
+
+#### Parameter definitions
+# To avoid unnecessary redefinitions of code,
+# We import those that can be reused from dynamax first
+from cd_dynamax.dynamax.linear_gaussian_ssm.inference import ParamsLGSSMInitial
+
+### Auxiliary functions for learnable functions
+# Auxiliary functions for parameter handling
+default = lambda x, x0: x if x is not None else x0
+
+# Function to get parameters of a learnable function
 def _get_params(self):
-    ''' A function to return the parameters of the learnable function
+    r''' A function to return the parameters of the learnable function of a CD-NLGSSM
+        
         This is used for parameter initialization and sampling
 
         Returns:
@@ -18,207 +35,219 @@ def _get_params(self):
                 "params" (the actual parameters)
     '''
 
+    # Initialize list of parameters
     params = []
+    # Loop over all fields of the NamedTuple
     for field in self._fields:
+        # Get the value of the field
         value = getattr(self, field)
+        # Get the shape of the value
         shape = getattr(value, "shape", ())  # use empty tuple if no .shape
+        # Append to the list
         params.append({
             "param_name": field,
             "param_shape": shape,
             "params": value
         })
 
+    # Return the list of parameters
     return params
 
 ### CD-NLGSSM learnable functions
-# Learnable function abstract definition
+# Definition of an abstract learnable function
 class LearnableFunction(NamedTuple):
-    ''' All Learnable functions should have
-        params propertie
-        a definiton of a function that takes as input x, u and t
+    r'''A definiton of a function that takes as input x, u and t
+     
+        All Learnable functions should have params properties
     '''
+    
     # Parameters as properties of the class
     params: ParameterSet
 
-    '''
-    def __init__(
-        self,
-        params,
-    ):
-        self.params = params
-    '''
-    # A function definition
-    @abc.abstractmethod
+    # Abstract function definition
+    @abstractmethod
     def f(self, x, u=None, t=None):
-        ''' A function to be defined by specific classes
+        ''' A function to be defined by each specific class
             With inputs
-            x: state
-            u: inputs
-            t: time
+                x: state
+                u: inputs
+                t: time
         '''
 
+    # Method to get parameters
     def get_params(self):
         return _get_params(self)
 
-# Simple learnable function examples
+# Simple learnable vector
 class LearnableVector(NamedTuple):
+    r'''A learnable vector
+            i.e., f(x,u,t) = params = vector
+
+    '''
+    # Parameters and properties
     params: Union[Float[Array, "dim"], ParameterProperties]
 
+    # Function definition
     def f(self, x=None, u=None, t=None):
         return self.params
     
+    # Method to get parameters
     def get_params(self):
         return _get_params(self)
 
+# Simple learnable matrix
 class LearnableMatrix(NamedTuple):
+    r'''A learnable matrix
+            i.e., f(x,u,t) = params = matrix
+
+    '''
+    # Parameters and properties
     params: Union[Float[Array, "row_dim col_dim"], ParameterProperties]
 
+    # Function definition
     def f(self, x=None, u=None, t=None):
         return self.params
     
+    # Method to get parameters
     def get_params(self):
         return _get_params(self)
 
-# Typically use this with learnable scale and a fixed (e.g. Identity) matrix
+# Learnable matrix: scale and a fixed (e.g. Identity) matrix
 class LearnableScaledMatrix(NamedTuple):
+    r'''A learnable scaled matrix
+            i.e., f(x,u,t) = scale * matrix
+
+    '''
+    # Parameters and properties
     scale: Union[Float[Array, "1"], ParameterProperties]
     matrix: Union[Float[Array, "row_dim col_dim"], ParameterProperties]
 
+    # Function definition
     def f(self, x=None, u=None, t=None):
         return self.scale * self.matrix
 
+    # Method to get parameters
     def get_params(self):
         return _get_params(self)
 
-# Typically use this for learnable diagonal matrix
+# Learnable diagonal matrix
 class LearnableDiagonalMatrix(NamedTuple):
+    r'''A learnable diagonal matrix
+            i.e., f(x,u,t) = diag_params = diagonal matrix
+
+    '''
+    # Parameters and properties
     diag_params: Union[Float[Array, "row_dim"], ParameterProperties]
 
+    # Function definition
     def f(self, x=None, u=None, t=None):
         return jnp.diag(self.diag_params)
 
+    # Method to get parameters
     def get_params(self):
         return _get_params(self)
 
+# A learnable linear function, based on weights and bias
 class LearnableLinear(NamedTuple):
-    '''Linear function with learnable parameters
-            weights: weights of the linear function
-            bias: bias of the linear function
-
-            f(x) = weights @ x + bias
+    r'''A linear function with learnable parameters
+            i.e., f(x,u,t) = weights @ x + bias
+        
+        weights: weights of the linear function
+        bias: bias of the linear function
+        
     '''
+    # Parameters and properties
     weights: Union[Float[Array, "output_dim input_dim"], ParameterProperties]
     bias: Union[Float[Array, "output_dim"], ParameterProperties]
 
+    # Function definition
     def f(self, x, u=None, t=None):
         return self.weights @ x + self.bias
     
+    # Method to get parameters
     def get_params(self):
         return _get_params(self)
 
-# More examples, specific to data_driven or physics_driven models are provided separately
+# More learnable function examples
+# specific to data_driven or physics_driven models are provided separately in
+# ../utils/data_driven_models.py
+# ../utils/physics_based_models.py
 
-#### Parameter definitions
-# To avoid unnecessary redefinitions of code,
-# We import parameters that can be reused from LGSSM first
-# And define the rest later
-from cd_dynamax.dynamax.linear_gaussian_ssm.inference import ParamsLGSSMInitial
-
-## CDNLGSSM parameter class definitions
-# Continuous non-linear Gaussian dynamics
+### CDNLGSSM parameter class definitions
+# Continuous-discrete non-linear Gaussian dynamics
 class ParamsCDNLGSSMDynamics(NamedTuple):
-    r"""Parameters of the state dynamics of a CDNLGSSM model.
+    r"""Parameters of the CD-NLGSSM state dynamics
+        The tuple doubles as a container for the ParameterProperties.
 
-    This model does not obey an SDE as in Sarkaa's equation (3.151):
-        the solution to 3.151 is not necessarily a Gaussian Process
+    We assume a model of the form
+        $dz_t = f(z_t, u_t) dt + L_t dB_t$
+
+    The resulting transition distribution is
+        $p(z_{t1}| z_{t0}, u_{t1}) = N(z_{t1} | m(z_{t0}, u_{t1}), P)$
+    where the mean m(z_{t0}, u_{t1}) and covariance Q are computed
+        based on numerically solving the SDE defined by f, L_t and Q.
+
+    For the solution of the SDE, we use an approximation of order defined by dynamics_approx:
+        
+    This model does not obey the solution to the SDE as in Särkkä's equation (3.151):
+        the true solution is not necessarily a Gaussian Process
             (note there are cases where that is indeed the case)
-
-    We instead assume an approximation to the model of zero-th, first or second order
-
-    The resulting transition and emission distributions are
-    $$p(z_1) = N(z_1 | m, S)$$
-    $$p(z_t | z_{t-1}, u_t) = N(z_t | z_t, P_t)$$
-    $$p(y_t | z_t) = N(y_t | h(z_t, u_t), R_t)$$
-
-    If you have no inputs, the dynamics and emission functions do not to take $u_t$ as an argument.
-
-    The tuple doubles as a container for the ParameterProperties.
-
+        we here approximate the solution at each time step with a Gaussian distribution.
+            
     :param drift_function: $f$
-    :param diffusion_coefficient: $L$
+    :param diffusion_coefficient: $L_t$
     :param diffusion_cov: $Q$
     :param dynamics_approx: 'zeroth', 'first' or 'second'
 
     """
-    '''
-    # the deterministic drift $f$ of the nonlinear RHS of the state
-    drift_function: Union[FnStateToState, FnStateAndInputToState]
-    # the coefficient matrix L of the state's diffusion process
-    diffusion_coefficient: Union[Float[Array, "state_dim state_dim"], Float[Array, "ntime state_dim state_dim"], ParameterProperties]
-    # The covariance matrix Q of the state noise process
-    diffusion_cov: Union[Float[Array, "state_dim state_dim"], Float[Array, "ntime state_dim state_dim"], Float[Array, "state_dim_triu"], ParameterProperties]
-    '''
     
-    # These are all learnable functions to be initialized
+    # CD-NLGSSM dynamics are all defined in terms of learnable functions to be initialized
+    # Drift function f
     drift: LearnableFunction
+    # Diffusion coefficient L_t
     diffusion_coefficient: LearnableFunction
+    # Diffusion covariance Q
     diffusion_cov: LearnableFunction
     
     # Dynamics SDE approximation order, defined as a Float
     approx_order: Union[Float, ParameterProperties]
 
-# Discrete non-linear emission parameters
+# CD-NLGSSM emission parameters
 class ParamsCDNLGSSMEmissions(NamedTuple):
-    r"""Parameters of the state dynamics
+    r"""Parameters of the CD-NLGSSM emission model.
+            The tuple doubles as a container for the ParameterProperties.
 
-    $$p(z_{t+1} \mid z_t, u_t) = \mathcal{N}(z_{t+1} \mid A z_t + B u_t + b, Q)$$
+    We assume a Gaussian observation model
+        $p(y_k | z_k) = N(y_k | h(z_k), R)$
+    where h is the emission function and R the observation noise covariance.
 
-    The tuple doubles as a container for the ParameterProperties.
-
-    :param drift_function: $f$
-    :param diffusion_coefficient: $L$
-    :param diffusion_cov: $Q$
-    :param dynamics_approx: 'zeroth', 'first' or 'second'
+    :param emission_function: emission function h
+    :param emission_cov: observation noise covariance R
 
     """
     # These are all learnable functions to be initialized
     emission_function: LearnableFunction
     emission_cov: LearnableFunction
     
-    '''
-    # Emission distribution h
-    emission_function: Union[FnStateToEmission, FnStateAndInputToEmission]
-    # The covariance matrix R of the observation noise process
-    emission_cov: Union[Float[Array, "emission_dim emission_dim"], ParameterProperties]
-    '''
 
-# CDNLGSSM parameters are different to CDLGSSM due to nonlinearities
+# Set of CD-NLGSSM parameters
 class ParamsCDNLGSSM(NamedTuple):
-    r"""Parameters of a nonlinear Gaussian SSM.
+    r"""Parameters of a nonlinear Gaussian CD-NLGSSM.
 
-    :param initial: initial distribution parameters
+    :param initial: initial distribution parameters, same as in LGSSM
     :param dynamics: dynamics distribution parameters
-    :param emissions: emission distribution parameters
-
-    The assumed transition and emission distributions are
-    $$p(z_1) = N(z_1 | m, S)$$
-    $$p(z_t | z_{t-1}, u_t) = N(z_t | m_t, P_t)$$
-    $$p(y_t | z_t) = N(y_t | h(z_t, u_t), R_t)$$
+    :param emissions: emission distribution parameters, same as in LGSSM
 
     """
     initial: ParamsLGSSMInitial
     dynamics: ParamsCDNLGSSMDynamics
     emissions: ParamsCDNLGSSMEmissions 
 
-# Some auxiliary functions for parameter handling
-## Only use the values above if the user hasn't specified their own
-default = lambda x, x0: x if x is not None else x0
-
-## Create CD-NLGSSM parameters and properties, based on provided dictionaries
+### Create CD-NLGSSM parameters and properties, based on provided dictionaries
 def create_cdnlgssm_params_and_props(
         params: dict
     ) -> Tuple[ParamsCDNLGSSM, ParameterProperties]:
-    r"""Create CD-LGSSM parameters and properties, based on provided dictionaries
+    r"""Create CD-NLGSSM parameters and properties, based on provided dictionaries
 
     Args:
         :param params: dictionary of parameters
@@ -229,6 +258,7 @@ def create_cdnlgssm_params_and_props(
     ## Create nested dictionary of params
     params_and_props = {"params": {}, "props": {}}
 
+    # Iterate over params and properties
     for key in params_and_props.keys():
         params_and_props[key] = ParamsCDNLGSSM(
             initial=ParamsLGSSMInitial(
@@ -249,14 +279,16 @@ def create_cdnlgssm_params_and_props(
 
     return params_and_props["params"], params_and_props["props"]
 
-# Create CD-NLGSSM parameters and properties, based on the provided prior, init_values or defaults
+# Initialize CD-NLGSSM parameters and properties
+# based on the provided prior, init_values or defaults
 def init_cdnlgssm_params(
         default_params,
         init_params = None,
         init_prior = None,
         key = jr.PRNGKey(0),
     ) -> Tuple[ParamsCDNLGSSM, ParamsCDNLGSSM]:
-    r"""Create CD-NLGSSM parameters and properties, based on the provided prior, init_values or defaults
+    r"""Initialize CD-NLGSSM parameters and properties,
+        based on the provided prior, init_values or defaults
 
     Args:
         :param default_params: dictionary of default parameters: we at least need some default values
@@ -265,7 +297,7 @@ def init_cdnlgssm_params(
         :param key: random key for sampling. Defaults to jr.PRNGKey(0).
 
     Returns:
-        :return: dictionary of parameters and properties
+        :return: Tuple of CD-NLGSSM parameters and properties objects
     """
     # First, make sure we have all the necessary default parameters
     params = default_params
@@ -290,12 +322,11 @@ def init_cdnlgssm_params(
             
             # Replace the provided params with the sampled ones
             print('Initializing {} with sampled parameters'.format(dict_name))
-            # Note that for CD-NLGSSM we have learnable functions, so reinstantiate them
+            # Note that for CD-NLGSSM we have learnable functions, so we reinstantiate them
             
             # Because we sample only one set of parameters, we need to remove the extra dimension
             # We create a new dictionary for the parameters,
-            # with key=param['param_name']
-            # value = param['params'][0] (the first and only sample)
+            # with key=param['param_name'] and value = param['params'][0] (the first and only sample)
             params_dict = {}
             for param in sampled_params[dict_name].get_params(): params_dict[param['param_name']] = param['params'][0]
             # And create a new learnable function with the sampled parameters
@@ -306,15 +337,16 @@ def init_cdnlgssm_params(
     # Create and return CD-NLGSSM parameter and properties objects
     return create_cdnlgssm_params_and_props(params)
 
-
-# Sample CD-NLGSSM parameters, based on the provided prior and init_values
+# Sample CD-NLGSSM parameters,
+# based on the provided prior and init_values
 def sample_cdnlgssm_params(
         prior,
         M,
         init_params,
         key = jr.PRNGKey(0),
-    ) -> ParamsCDNLGSSM:
-    r"""Sample CD-NLGSSM parameters from the provided prior, with init_params used for non-sampled parameters
+    ) -> Tuple[ParamsCDNLGSSM, ParamsCDNLGSSM]:
+    r"""Sample CD-NLGSSM parameters from the provided prior,
+        with init_params used for non-sampled parameters
 
     Args:
         :param prior: prior distribution for the initialization.
@@ -323,7 +355,7 @@ def sample_cdnlgssm_params(
         :param key: random key for sampling from the prior. Defaults to jr.PRNGKey(0).
 
     Returns:
-        :return: ParamsCDNLGSSM object
+        :return: Tuple of CD-NLGSSM parameters and properties
     """
 
     # First, make sure we have all the necessary parameters
@@ -331,15 +363,18 @@ def sample_cdnlgssm_params(
     
     # Making sure we broadcast actual "params" to the number of samples
     for dict_key in init_params.keys():
-        # Consider only parameters defined as dictionaries (with keys "params" and "props")
+        # Consider only parameters defined as dictionaries
+        #   with keys "params" and "props"
         if isinstance(init_params[dict_key], dict):
-            # If the init_params[dict_key] has a "params" as a scalar, we need to broadcast it
+            # If the init_params[dict_key] has a "params" as a scalar
+            # we need to broadcast it
             if isinstance(init_params[dict_key]["params"], (float, int)):
                 params[dict_key]["params"] = jnp.broadcast_to(
                     init_params[dict_key]["params"],
                     (M,1)
                 )
-            # If the init_params[dict_key] has a "params" as an array, we can broadcast it
+            # If the init_params[dict_key] has a "params" as an array
+            # we can broadcast it
             elif isinstance(
                 init_params[dict_key]["params"],
                 (jnp.ndarray, Array)
@@ -353,7 +388,8 @@ def sample_cdnlgssm_params(
 
                 # Only proceed if the object has a get_params() method
                 if hasattr(init_params[dict_key]["params"], "get_params"):
-                    # Recover initial parameters, and broadcast their values according to the number of samples M
+                    # Recover initial parameters
+                    # and broadcast their values according to the number of samples M
                     params_dict = {}
                     for param in init_params[dict_key]["params"].get_params():
                         params_dict[param['param_name']] = jnp.broadcast_to(
@@ -375,36 +411,46 @@ def sample_cdnlgssm_params(
     )
     # And replace the provided params with the sampled ones
     for dict_name in sampled_params.keys():
-        if dict_name not in ['initial_mean', 'initial_cov', 'dynamics_drift', 'dynamics_diffusion_coefficient', 'dynamics_diffusion_cov', 'dynamics_approx_order', 'emission_function', 'emission_cov']:
+        if dict_name not in [
+                'initial_mean',
+                'initial_cov',
+                'dynamics_drift',
+                'dynamics_diffusion_coefficient',
+                'dynamics_diffusion_cov',
+                'dynamics_approx_order',
+                'emission_function',
+                'emission_cov'
+            ]:
             raise ValueError(f"Unknown parameter dictionary name: {dict_name}")
         
-        # Replace. Note that for CD-NLGSSM we have learnable functions
+        # Replace the provided params with the sampled ones
         params[dict_name]["params"] = sampled_params[dict_name]
 
     # Create and return CD-NLGSSM parameter and properties objects
     return create_cdnlgssm_params_and_props(params)
 
-
+# Utility function to update parameters of a CD-NLGSSM
 def update_params(params, updates: dict):
-    """
-    Returns a copy of `params` with all updates applied.
+    r"""Update parameters of a CD-NLGSSM.
+        Returns a copy of `params` with all updates applied.
     
-    updates: dict with keys like "initial.mean.params" or "dynamics.drift.sigma"
+        updates: dict with keys like "initial.mean.params" or "dynamics.drift.sigma"
     
-    Example usage:
-        updates = {
-            "initial.mean.params": jnp.ones(3),  # Vector of ones
-            "dynamics.drift.sigma": 11.3  # Scalar value
-        }
-        new_params = update_params(params, updates)
+        Example usage:
+            updates = {
+                "initial.mean.params": jnp.ones(3),  # Vector of ones
+                "dynamics.drift.sigma": 11.3  # Scalar value
+            }
+            new_params = update_params(params, updates)
     """
 
+    # Recursive function to set nested attributes
     def set_nested_attr(obj, attr_path: str, value):
-        """
-        Recursively returns a copy of `obj` with the nested attribute replaced by `value`.
-        Works for NamedTuples and Eqx Modules too.
-        
-        attr_path: e.g., "dynamics.drift.sigma"
+        r"""
+            Recursively returns a copy of `obj` with the nested attribute replaced by `value`.
+            Works for NamedTuples and Eqx Modules too.
+            
+            attr_path: e.g., "dynamics.drift.sigma"
         """
         attrs = attr_path.split(".")
         if len(attrs) == 1:
@@ -416,8 +462,11 @@ def update_params(params, updates: dict):
             updated_nested = set_nested_attr(nested_obj, rest, value)
             return obj._replace(**{first: updated_nested})
 
+    # Copy params
     updated = params
+    # Apply each update
     for path, val in updates.items():
         updated = set_nested_attr(updated, path, val)
+    # Return updated parameters
     return updated
 

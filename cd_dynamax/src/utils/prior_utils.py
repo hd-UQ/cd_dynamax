@@ -1,7 +1,10 @@
-from typing import NamedTuple, Tuple, Optional, Union
-from jaxtyping import Array, Float, PyTree
+# JAX imports
 import jax.numpy as jnp
 
+# Typing imports
+from jaxtyping import PyTree
+
+# CD-Dynamax imports
 from cd_dynamax import Prior, ParamsCDLGSSM, ParamsCDNLGSSM
 
 # Import actual distributions to use by priors

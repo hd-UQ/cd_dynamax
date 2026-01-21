@@ -1,13 +1,18 @@
+# JAX imports
 import jax
-import numpy as np
 import jax.numpy as jnp
-import jax.nn as jnn
 import jax.random as jr
 
+# Other imports
+import itertools
+
+# CD-Dynamax imports
 from cd_dynamax import (
     EnKFHyperParams, EKFHyperParams, UKFHyperParams
 )
 
+# Plotting imports
+import numpy as np
 import matplotlib.pyplot as plt
 import matplotlib.colors as mcolors
 import seaborn as sns
@@ -16,11 +21,10 @@ from scipy.stats import gaussian_kde
 import itertools
 import numpyro
 
-
 # -----------------------
 # Data-generation helpers
 # -----------------------
-def sample_t_emissions(start=0.0, stop=10.0, dt=0.1, regular=True, key=None, verbose=True):
+def sample_t_emissions(start=0.0, stop=10.0, dt=0.1, regular=True, key=None, check=True, verbose=True):
     """
     Generate emission times between [start, stop) using different sampling styles.
 
@@ -45,20 +49,21 @@ def sample_t_emissions(start=0.0, stop=10.0, dt=0.1, regular=True, key=None, ver
         t_emissions = t_emissions.reshape(-1, 1)
 
     # ---- Post-checks ----
-    if t_emissions.size > 1:
-        diffs = jnp.diff(t_emissions.squeeze())
-        min_step = float(diffs.min())
-        is_sorted = jnp.all(diffs >= 0.0)
-        has_dupes = jnp.any(diffs == 0.0)
+    if check:
+        if t_emissions.size > 1:
+            diffs = jnp.diff(t_emissions.squeeze())
+            min_step = diffs.min().astype(float)
+            is_sorted = jnp.all(diffs >= 0.0)
+            has_dupes = jnp.any(diffs == 0.0)
 
-        assert is_sorted, "t_emissions is not sorted."
-        assert not has_dupes, "t_emissions contains duplicate points."
+            assert is_sorted, "t_emissions is not sorted."
+            assert not has_dupes, "t_emissions contains duplicate points."
 
-        if verbose:
-            print(f"[make_t_emissions] Generated {t_emissions.shape[0]} points from {start} to {stop} with avg step ~{dt:.4f}")
-        print(f"[make_t_emissions] Smallest time step = {min_step:.6f}")
-    else:
-        print("[make_t_emissions] Only one or zero points generated.")
+            if verbose:
+                print(f"[make_t_emissions] Generated {t_emissions.shape[0]} points from {start} to {stop} with avg step ~{dt:.4f}")
+            print(f"[make_t_emissions] Smallest time step = {min_step:.6f}")
+        else:
+            print("[make_t_emissions] Only one or zero points generated.")
 
     return t_emissions
 

@@ -52,14 +52,14 @@ def plot_fitted_model_to_data(
     )
 
     # Create and initialize the CD-NLGSSM model from the model config file
-    learnable_model, learnable_params, learnable_props = create_cdnlgssm_model_from_config(
+    learnable_model, learnable_params, learnable_props = create_cddynamax_model_from_config(
         config_path=config_path,
         true_model_config_file=model_config_file,
         overrides=overrides,
     )
 
     # Figure-out the filtering/smoothing settings from config
-    filter_hyperparams, filter_info = create_cdnlgssm_filter_from_config(
+    filter_hyperparams, filter_info = create_cddynamax_filter_from_config(
         config_path=config_path,
         filter_config_file=filter_config_file,
         overrides=overrides
@@ -119,19 +119,18 @@ def plot_fitted_model_to_data(
                     f'mll_learning_curve_fitkey{key}'
                 )
             )
-
-            # Extract interesting parameters in dataframe format for later plotting
-            true_params_df = learnable_params_to_df(
+            # Extract interesting parameters into 1D dataframe format for later plotting
+            true_params_df = learnable_params_to_1d_df(
                 data['dgmodel_info']['params'], learnable_props
             )
-            init_params_df = learnable_params_to_df(
+            init_params_df = learnable_params_to_1d_df(
                 learnable_params, learnable_props
             )
-            fitted_params_df = learnable_params_to_df(
+            fitted_params_df = learnable_params_to_1d_df(
                 sgd_results['params_fitted'], learnable_props
             )
-            fitted_params_history_df = learnable_params_to_df(
-                sgd_results['params_history'], learnable_props
+            fitted_params_history_df = learnable_params_to_1d_df(
+                sgd_results['params_history'], learnable_props, has_batch_dim=True
             )
             
             # Plot parameter trajectories over SGD iterations
@@ -193,14 +192,14 @@ def plot_fitted_model_to_data(
             )
    
             # Extract interesting parameters in dataframe format for later plotting
-            true_params_df = learnable_params_to_df(
+            true_params_df = learnable_params_to_1d_df(
                 data['dgmodel_info']['params'], learnable_props
             )
-            init_params_df = learnable_params_to_df(
+            init_params_df = learnable_params_to_1d_df(
                 learnable_params, learnable_props
             )
-            mcmc_samples_df = learnable_params_to_df(
-                mcmc_results['mcmc_param_samples'], learnable_props
+            mcmc_samples_df = learnable_params_to_1d_df(
+                mcmc_results['mcmc_param_samples'], learnable_props, has_batch_dim=True
             )
             
             # Plot parameter trajectories over MCMC iterations

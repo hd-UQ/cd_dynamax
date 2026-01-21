@@ -1,15 +1,19 @@
 # System imports
 import os
 from configparser import ConfigParser
+
 # Jax imports
 import jax.numpy as jnp
 import jax.random as jr
+
+# Typing imports
 # Import floating types, to avoid float64' is not defined error
-from numpy import float64, float32, array
+from numpy import array
 from typing import Tuple, NamedTuple, Union
 
-# CD-Nonlinear Gaussian models
-from cd_dynamax import ContDiscreteNonlinearGaussianSSM
+# CD-dynamax imports
+from cd_dynamax import ContDiscreteLinearGaussianSSM, ContDiscreteNonlinearGaussianSSM
+from cd_dynamax.src.continuous_discrete_linear_gaussian_ssm.models import *
 from cd_dynamax.src.continuous_discrete_nonlinear_gaussian_ssm.models import *
 from cd_dynamax.dynamax.parameters import ParameterProperties
 
@@ -18,7 +22,7 @@ from .simulation_utils import *
 from .physics_based_models import *
 from .data_driven_models import *
 
-
+# Generate time emissions
 def generate_t_emissions(
         t0: float,
         t1: float,
@@ -26,13 +30,15 @@ def generate_t_emissions(
         irregular_samples: bool = True,
         key=jr.PRNGKey(0),
     ) -> Tuple[int, Array]:
-    """    Generate time points for emissions, either uniformly or irregularly sampled.
+    r""" Generate time points for emissions, either uniformly or irregularly sampled.
+    
     Args:
         t0 (float): Start time.
         t1 (float): End time.
         num_samples (int): Number of samples to generate.
         irregular_samples (bool): Whether to generate irregular samples.
         key (jr.PRNGKey): JAX random key.
+    
     Returns:
         Tuple[int, Array]: Number of time steps and the time emissions array.
     """
@@ -57,7 +63,6 @@ def generate_t_emissions(
 
 
 ### Python script utilities
-# Useful auxiliary functions for the python scripts
 # Build results directory based on config file names
 def build_results_dir(
         output_dir,
@@ -66,11 +71,21 @@ def build_results_dir(
         filter_config_file,
         overrides=None
     ):
-    '''
+    r"""
         Builds the results directory path based on configuration file names.
         
         Joins the names of the config files, omitting their directory and extensions.
-    '''
+
+    Args:
+        output_dir (str): Base output directory.
+        data_config_file (str): Data configuration file path.
+        model_config_file (str): Model configuration file path.
+        filter_config_file (str): Filter configuration file path.
+        overrides (dict, optional): Dictionary of overrides to apply to the configuration files.
+    
+    Returns:
+        str: The path to the results directory.
+    """
     os.makedirs(output_dir, exist_ok=True)
 
     # Default subdirectory names
@@ -104,6 +119,14 @@ def override_config(
         cfg: ConfigParser,
         overrides: dict | None
     ) -> ConfigParser:
+    r"""Override configuration options in a ConfigParser object.
+    Args:
+        cfg (ConfigParser): The original configuration object.
+        overrides (dict | None): A dictionary of overrides where keys are in the format 'section.option'.
+    Returns:
+        ConfigParser: The updated configuration object with overrides applied.
+    """
+
     if overrides is not None and isinstance(overrides, dict):    
         for k, v in overrides.items():
             if "." in k:
@@ -119,7 +142,7 @@ def override_config(
 
 # Convert MCMC configuration from config file to dictionary
 def mcmc_config_to_dict(mcmc_config):
-    """
+    r"""
     Convert MCMC configuration from a config file to a dictionary.
 
     Args:
@@ -139,19 +162,22 @@ def mcmc_config_to_dict(mcmc_config):
 
     return mcmc_config_dict
 
-# Create CD-NLGSSM model from configuration files
-def create_cdnlgssm_model_from_config(
+# Create a cd-dynamax model from configuration files, which can be CD-LGSSM or CD-NLGSSM
+def create_cddynamax_model_from_config(
         config_path: str = '../configs/',
         true_model_config_file: str = None,
         overrides = None,
-    ) -> Tuple[ContDiscreteNonlinearGaussianSSM, ParamsCDNLGSSM, ParameterProperties]:
-    r"""Create CD-NLGSSM model from configuration files
+    ) -> Tuple[Union[ContDiscreteLinearGaussianSSM, ContDiscreteNonlinearGaussianSSM], Union[ParamsCDLGSSM, ParamsCDNLGSSM], ParameterProperties]: # Either CD-LGSSM or CD-NLGSSM 
+    r"""Create a cd-dynamax model from configuration files
+        The model can be either CD-LGSSM or CD-NLGSSM, depending on the class_name specified in the config file.
 
     Args:
+        :param config_path: path to the configuration directory
         :param true_model_config_file: path to the model configuration file
         :param overrides: dictionary of overrides to apply to the configuration file
+    
     Returns:
-        :return: Tuple of CD-NLGSSM model, parameters and properties
+        :return: Tuple of CD-LGSSM or CD-NLGSSM model, its parameters and properties
     """
 
     # Full path to the config file
@@ -166,15 +192,9 @@ def create_cdnlgssm_model_from_config(
     config.read(true_model_config_filepath)
 
     # The model section contains
-    '''
-    [model]
-    class_name: "CDNLGSSM"
-    state_dim: 3
-    emission_dim: 3
-    solver_config_file: "lorenz63_solver.py"
-    '''
-    if config.get('model', 'class_name') != "CDNLGSSM":
-        raise ValueError(f"Unknown model class name: {config.get('model', 'class_name')}")
+    cddynamax_model_class_name = config.get('model', 'class_name')
+    if cddynamax_model_class_name not in ["CDLGSSM", "CDNLGSSM"]:
+        raise ValueError(f"Unknown model class name: {cddynamax_model_class_name}")
     
     # Apply overrides if provided
     if overrides is not None:
@@ -183,10 +203,20 @@ def create_cdnlgssm_model_from_config(
             overrides=overrides
         )
     
-    # Create the model
+    # Choose the model class
+    if cddynamax_model_class_name == "CDLGSSM":
+        # CDLGSSM
+        cddynamax_model_class = ContDiscreteLinearGaussianSSM
+    elif cddynamax_model_class_name == "CDNLGSSM":
+        # CDNLGSSM
+        cddynamax_model_class = ContDiscreteNonlinearGaussianSSM
+    else:
+        raise ValueError(f"Unknown model class name: {cddynamax_model_class_name}")
+    # Dimensions
     state_dim = config.getint('model', 'state_dim')
     emission_dim = config.getint('model', 'emission_dim')
-    true_model = ContDiscreteNonlinearGaussianSSM(
+    # Create the model
+    true_model = cddynamax_model_class(
         state_dim=state_dim,
         emission_dim=emission_dim,
         diffeqsolve_settings=solver_settings_from_config(
@@ -213,15 +243,6 @@ def create_cdnlgssm_model_from_config(
     if prior_config_file is not None:
         # Prior name is given as a file path, we need to import it as a module
         # First recover everything after last / and then, remove .py extension
-        '''
-        prior_module_name = prior_config_file.replace('/','.').rstrip('.py')
-        from importlib import import_module
-        module = import_module(
-            prior_module_name
-            package=config_path
-            )
-        '''
-
         absolute_prior_path = os.path.abspath(os.path.join(config_path, prior_config_file))
         print(f"Attempting to load prior from: {absolute_prior_path}")
         import importlib, sys
@@ -229,7 +250,7 @@ def create_cdnlgssm_model_from_config(
         spec = importlib.util.spec_from_file_location(prior_module_name, absolute_prior_path)
 
         if spec and spec.loader:
-            # 3. Create the module from the spec
+            # Create the module from the spec
             module = importlib.util.module_from_spec(spec)
             sys.modules[prior_module_name] = module
             spec.loader.exec_module(module)
@@ -248,15 +269,16 @@ def create_cdnlgssm_model_from_config(
         prior_init_key = jr.PRNGKey(0)
     
     # Initialize the model with the provided parameters
-    true_model_params, true_model_props = init_cdnlgssm_params(
-        default_params=true_model._default_cdnlgssm_params(),
+    true_model_params, true_model_props = eval(f"init_{cddynamax_model_class_name.lower()}_params")(
+        default_params=eval(f"true_model._default_{cddynamax_model_class_name.lower()}_params()"),
         init_params = initial_params,
         init_prior = prior,
         key = prior_init_key,
     )
-
+    
     return true_model, true_model_params, true_model_props
 
+# Load solver settings from configuration file
 def solver_settings_from_config(
         config_path: str = '../configs/',
         config_file: str = None,
@@ -265,6 +287,7 @@ def solver_settings_from_config(
     r"""Load solver settings from a configuration file
 
     Args:
+        :param config_path: path to the configuration directory
         :param config_file: path to the configuration file
         :param overrides: dictionary of overrides to apply to the configuration file
 
@@ -309,16 +332,19 @@ def solver_settings_from_config(
 
     return diffeqsolve_settings
 
-# Create CD-NLGSSM filter from configuration file
-def create_cdnlgssm_filter_from_config(
+# Create cd-dynamax filter from configuration file
+def create_cddynamax_filter_from_config(
         config_path: str = '../configs/',
         filter_config_file: str = None,
         overrides = None,
     ) -> NamedTuple:
-    r"""Create CD-NLGSSM filter from configuration file
+    r"""Create CD-Dynamax filter from configuration file
+    
     Args:
+        :param config_path: path to the configuration directory
         :param filter_config_file: path to the filter configuration file
         :param overrides: dictionary of overrides to apply to the configuration file
+    
     Returns:
         :return: NamedTuple of filter settings
     """
@@ -346,13 +372,15 @@ def create_cdnlgssm_filter_from_config(
     section = filter_config.sections()[0] if filter_config.sections() else None
     
     # Get the section name and check if it is a valid filter type
-    if section not in ['EKF', 'UKF', 'EnKF']:
+    if section not in ['KF', 'EKF', 'UKF', 'EnKF']:
         raise ValueError(f"Unknown filter type: {section}")
 
+    # Build the filter class string
     filter_class_str='{}HyperParams'.format(section)
+
+    # Extract basic filter hyperparameters from the section
     hyperparam_dict = dict(filter_config.items(section))
     hyperparam_dict['dt_final'] = float(hyperparam_dict.get('dt_final', 1e-4))
-    hyperparam_dict['cov_rescaling'] = float(hyperparam_dict.get('cov_rescaling', 1.0))
     hyperparam_dict['diffeqsolve_settings'] = solver_settings_from_config(
         config_path=config_path,
         config_file=hyperparam_dict['diffeqsolve_settings_file'],
@@ -360,16 +388,22 @@ def create_cdnlgssm_filter_from_config(
         )
     # drop the diffeqsolve_settings_file key
     hyperparam_dict.pop('diffeqsolve_settings_file', None)
-    if section == 'EKF':
-        pass
-    elif section == 'UKF':
-        hyperparam_dict['alpha'] = float(eval(hyperparam_dict.get('alpha', 'jnp.sqrt(3.0)')))
-        hyperparam_dict['beta'] = float(eval(hyperparam_dict.get('beta', '2')))
-        hyperparam_dict['kappa'] = float(eval(hyperparam_dict.get('kappa', '0')))
-    elif section == 'EnKF':
-        hyperparam_dict['N_particles'] = int(hyperparam_dict.get('N_particles', 30))
-        hyperparam_dict['perturb_measurements'] = eval(hyperparam_dict.get('perturb_measurements', 'True'))
+    
+    # Process specific hyperparameters based on cd-dynamax filter type
+    # Actually, these only apply to nonlinear filters
+    if section in ['EKF', 'UKF', 'EnKF']:
+        hyperparam_dict['cov_rescaling'] = float(hyperparam_dict.get('cov_rescaling', 1.0))
+        if section == 'EKF':
+            pass
+        elif section == 'UKF':
+            hyperparam_dict['alpha'] = float(eval(hyperparam_dict.get('alpha', 'jnp.sqrt(3.0)')))
+            hyperparam_dict['beta'] = float(eval(hyperparam_dict.get('beta', '2')))
+            hyperparam_dict['kappa'] = float(eval(hyperparam_dict.get('kappa', '0')))
+        elif section == 'EnKF':
+            hyperparam_dict['N_particles'] = int(hyperparam_dict.get('N_particles', 30))
+            hyperparam_dict['perturb_measurements'] = eval(hyperparam_dict.get('perturb_measurements', 'True'))
 
+    # Create the filter hyperparameters NamedTuple
     filter_hyperparams = eval(filter_class_str)(**hyperparam_dict)
 
     # Also process filter_info section if present

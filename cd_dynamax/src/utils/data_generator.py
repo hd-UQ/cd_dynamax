@@ -3,17 +3,18 @@ import os
 from configparser import ConfigParser
 import pickle
 
+# CD-Dynamax imports
 from cd_dynamax.src.utils.experiment_utils import *
 from cd_dynamax.src.utils.simulation_utils import *
 
+# Function to generate data from a configuration file
 def generate_data_from_config(
         config_path: str = '../configs/',
         data_config_file=None,
         data_save_file=None,
         overrides=None,
         ):
-    """
-    Load data from a configuration file.
+    r"""Load data from a configuration file.
     
     Args:
         data_config_file (str): Path to the configuration file.
@@ -73,8 +74,8 @@ def generate_data_from_config(
             # Model and solver configuration files
             true_model_config_file = data_gen_config.get('true_model_config_file', None)
             
-            # Create and initialize the CD-NLGSSM model
-            true_model, true_params, true_props = create_cdnlgssm_model_from_config(
+            # Create and initialize the CD-Dynamax model
+            true_model, true_params, true_props = create_cddynamax_model_from_config(
                 config_path=config_path,
                 true_model_config_file=true_model_config_file,
                 overrides=overrides

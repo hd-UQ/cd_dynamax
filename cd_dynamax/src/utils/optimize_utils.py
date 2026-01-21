@@ -1,7 +1,10 @@
+# JAX imports
 import jax.numpy as jnp
 import jax.random as jr
-import optax
 from jax import lax, value_and_grad
+
+# Optax for optimization
+import optax
 
 # From dynamax
 from cd_dynamax.dynamax.utils.utils import pytree_len
@@ -9,7 +12,7 @@ from cd_dynamax.dynamax.utils.utils import pytree_len
 from cd_dynamax.dynamax.utils.optimize import run_sgd as dynamax_run_sgd
 from cd_dynamax.dynamax.utils.optimize import sample_minibatches
 
-
+# Create an optimizer with optional learning rate scheduler and gradient clipping
 def make_optimizer(
     initial_learning_rate=1e-1,
     decay_factor=0.5,
@@ -43,7 +46,7 @@ def make_optimizer(
     return my_optimizer
 
 
-# cd-dynamax wrapper,
+# cd-dynamax wrapper of dynamax's run_sgd
 # to be able to return the history of parameters and gradients
 def run_sgd(loss_fn,
             params,

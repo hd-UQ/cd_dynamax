@@ -3,9 +3,11 @@ import jax.numpy as jnp
 import jax.random as jr
 from jax import lax
 from jax import vmap
+from jax.tree_util import tree_map
+
+# Typing annotations
 from jaxtyping import Array, Float
 from typing import NamedTuple, Optional, List
-from jax.tree_util import tree_map
 
 # Distributions, compatible with JAX, from TensorFlow Probability
 import tensorflow_probability.substrates.jax as tfp
@@ -17,12 +19,14 @@ tfb = tfp.bijectors
 # Dynamax shared code
 from cd_dynamax.dynamax.types import PRNGKey
 from cd_dynamax.dynamax.utils.utils import psd_solve
+# To avoid unnecessary redefinitions of code,
+# We import those posterior filtering and smoothing equivalent classes that can be reused from dynamax
 from cd_dynamax.dynamax.linear_gaussian_ssm.inference import PosteriorGSSMFiltered, PosteriorGSSMSmoothed
 
 # Our codebase
-# CDLGSSM forecasting definition
+# CDLGSSM forecasting definition is reused
 from ..continuous_discrete_linear_gaussian_ssm.cdlgssm_utils import GSSMForecast
-# CDNLGSSM param and function definition
+# CDNLGSSM specific param and function definitions
 from ..continuous_discrete_nonlinear_gaussian_ssm.cdnlgssm_utils import *
 # Diffrax based diff-eq solver
 from ..utils.diffrax_utils import diffeqsolve
@@ -30,8 +34,15 @@ from ..utils.diffrax_utils import diffeqsolve
 from ..utils.debug_utils import *
 DEBUG = False
 
-# Currently employing method from https://arxiv.org/abs/2205.02730 Neilsen et al. 2022
+#### Helper functions
+# Helper functions --- from dynamax 
+_outer = vmap(lambda x, y: jnp.atleast_2d(x).T @ jnp.atleast_2d(y), 0, 0)
+_process_fn = lambda f, u: (lambda x, y: f(x)) if u is None else f
+_process_input = lambda x, y: jnp.zeros((y,)) if x is None else x
 
+#### CD-NLGSSM filtering: Ensemble Kalman Filter (EnKF)
+
+# Default EnKF filtering hyperparameters, as class
 class EnKFHyperParams(NamedTuple):
     """Lightweight container for EnKF hyperparameters.
 
@@ -45,17 +56,14 @@ class EnKFHyperParams(NamedTuple):
     state_order: str = 'first'
     dt_average: float = 0.1 # Average timestep for discrete state order, if applicable
 
+## CD-NLGSSM filtering key functions: predict and condition_on
+# Currently employing method from https://arxiv.org/abs/2205.02730 Neilsen et al. 2022
 
-# Helper functions --- from dynamax 
-_outer = vmap(lambda x, y: jnp.atleast_2d(x).T @ jnp.atleast_2d(y), 0, 0)
-_process_fn = lambda f, u: (lambda x, y: f(x)) if u is None else f
-_process_input = lambda x, y: jnp.zeros((y,)) if x is None else x
-# Using sum of _outers to compute covariance to avoid degenerate dimensionality cases
-
+# Predict next mean and covariance, under EnKF approximations
 def _predict(
     key,
     x, # particles
-    params: ParamsCDNLGSSM,  # All necessary CD dynamic params
+    params: ParamsCDNLGSSM, 
     t0: Float,
     t1: Float,
     u,
@@ -66,37 +74,63 @@ def _predict(
     Args:
         key: random key.
         x (N_particles, D_hid): particles at time t0.
-        params: parameters of CD nonlinear dynamics, containing dynamics RHS function, coeff matrix and Brownian covariance matrix.
+        params: CD-NLGSSM parameters, containing
+            - dynamics RHS drift function
+            - diffusion coefficient matrix L
+            - Brownian covariance matrix Q
         t0: initial time-instant
         t1: final time-instant
         u (D_in,): inputs.
+        filter_hyperparams: EnKF hyper-parameters
 
     Returns:
         x_pred (N_particles, D_hid): predicted particles
 
     """
 
+    # Dynamics drift function
     def drift(t, y, args):
         return params.dynamics.drift.f(y, u, t)
 
+    # Dynamics diffusion function
     if filter_hyperparams.state_order=='zeroth':
+        # No diffusion in zeroth order EnKF
         diffusion = None
     else:
+        # First order EnKF diffusion
         def diffusion(t, y, args):
+            # Get parameters at time t and input u
             Qc_t = params.dynamics.diffusion_cov.f(None, u, t)
             L_t = params.dynamics.diffusion_coefficient.f(None, u, t) * filter_hyperparams.cov_rescaling
             Q_sqrt = jnp.linalg.cholesky(Qc_t)
+
+            # Compute combined diffusion matrix
             combined_diffusion = L_t @ Q_sqrt
 
             return combined_diffusion
 
-    my_solve = lambda y0, key0: diffeqsolve(
-        key=key0, drift=drift, diffusion=diffusion, t0=t0, t1=t1, y0=y0, **filter_hyperparams.diffeqsolve_settings
+    # Solve the SDE for each particle
+    # Define a function to solve the SDE for a single particle
+    particle_solve = lambda y0, key0: diffeqsolve(
+        key=key0,
+        drift=drift,
+        diffusion=diffusion,
+        t0=t0,
+        t1=t1,
+        y0=y0,
+        **filter_hyperparams.diffeqsolve_settings
     )
+    # Split keys for each particle
     key_array = jr.split(key, x.shape[0])
-    sol = vmap(my_solve, in_axes=0)(x, key_array) # N_particles x 1 time x D_hid
+    # vmap over particles
+    sol = vmap(
+        particle_solve,
+        in_axes=0
+    )(x, key_array) # N_particles x 1 time x D_hid
+    # Extract final state for each particle
     x_pred = sol[:, 0, :] # N_particles x D_hid
 
+    # Add state noise according to state order
     if filter_hyperparams.state_order in ['zeroth', 'discrete']:
         # Predicted covariance
         if filter_hyperparams.state_order == 'zeroth':
@@ -108,19 +142,36 @@ def _predict(
             # but the same amount of noise is added after each measurement.
             dt = filter_hyperparams.dt_average
 
+        # Get diffusion parameters at time t0 and input u
         Qc_t = params.dynamics.diffusion_cov.f(None, u, t0)
         L_t = params.dynamics.diffusion_coefficient.f(None, u, t0) * filter_hyperparams.cov_rescaling
+        
+        # Compute state noise covariance
         state_noise_cov = dt * L_t @ Qc_t @ L_t.T # D_hid x D_hid
 
-        # add noise MVN(0, state_noise_cov) to the particles (N x D_hid)
+        # Noise realizations from MVN(0, state_noise_cov), for each particle particles (N x D_hid)
+        # Split keys for each particle
         key_array = jr.split(key, x.shape[0])
-        noise = vmap(lambda key: jr.multivariate_normal(key=key, mean=jnp.zeros(x.shape[1]), cov=state_noise_cov), in_axes=0)(key_array)
+        # vmap over particles
+        noise = vmap(
+            lambda key: jr.multivariate_normal(
+                key=key,
+                mean=jnp.zeros(x.shape[1]),
+                cov=state_noise_cov
+            ),
+            in_axes=0
+        )(key_array)
+
+        # Add noise to predicted particles
         x_pred += noise
+
+    # Return predicted particles
     return x_pred
 
-
+# Condition on a new observation, under EnKF approximations
 def _condition_on(key, x, h, R, u, y, t, perturb_measurements=True, inflation_delta=0.0, warn: bool = True):
     """Condition a Gaussian potential on a new observation
+        using Ensemble Kalman Filter approximations.
 
     Args:
         key: random key.
@@ -139,9 +190,11 @@ def _condition_on(key, x, h, R, u, y, t, perturb_measurements=True, inflation_de
         x_cond (N_particles, D_hid): filtered particles
 
     """
+
+    # Number of particles and state dimension
     n_particles, state_dim = x.shape
 
-    # duplicate inputs for each particle
+    # Replicate inputs for each particle
     u_s = jnp.array([u] * n_particles)
 
     # Propagate ensemble through emission function
@@ -153,13 +206,17 @@ def _condition_on(key, x, h, R, u, y, t, perturb_measurements=True, inflation_de
     y_pred_mean = jnp.mean(y_ensemble, axis=0)
 
     # compute predicted covariance of measurements as outer product of differences from mean
+    # Using sum of _outers to compute covariance to avoid degenerate dimensionality cases
     # represents "HPH^T" in Kalman gain computation
     y_pred_cov = psd(
-        jnp.sum(_outer(y_ensemble - y_pred_mean, y_ensemble - y_pred_mean), axis=0) / (n_particles - 1),
+        jnp.sum(
+            _outer(y_ensemble - y_pred_mean, y_ensemble - y_pred_mean), axis=0
+            ) / (n_particles - 1),
         warn=warn
     )
 
-    # Compute log-likelihood of observation
+    # Compute log-likelihood of observation based on Gaussian distribution,
+    # using predicted mean and covariance
     ll_step = MVN(y_pred_mean, y_pred_cov+R).log_prob(y)
 
     # === Inflate ensemble for assimilation if requested ===
@@ -169,29 +226,45 @@ def _condition_on(key, x, h, R, u, y, t, perturb_measurements=True, inflation_de
         # re-propagate inflated ensemble through emission fn for assimilation
         y_ensemble_infl = vmap(h, in_axes=(0, None, None))(x_inflated, u_s, t)
         y_pred_mean_infl = jnp.mean(y_ensemble_infl, axis=0)
-        y_pred_cov_infl = psd(jnp.sum(_outer(y_ensemble_infl - y_pred_mean_infl,
-                                              y_ensemble_infl - y_pred_mean_infl), axis=0) / (n_particles - 1),
-                              warn=warn)
+        y_pred_cov_infl = psd(
+            jnp.sum(
+                _outer(
+                    y_ensemble_infl - y_pred_mean_infl,
+                    y_ensemble_infl - y_pred_mean_infl
+                ), axis=0
+            ) / (n_particles - 1),
+            warn=warn
+        )
     else:
+        # No inflation, just use original ensemble
         x_inflated = x
         y_ensemble_infl = y_ensemble
-        y_pred_mean_infl = y_pred_mean                                     # NEW
+        y_pred_mean_infl = y_pred_mean
         y_pred_cov_infl = y_pred_cov
-
 
     # compute cross_cov between x and y_data_perturbed
     # represents "PH^T" in Kalmna gain computation
     # cross-covariance using inflated ensemble
-    cross_cov = jnp.sum(_outer(x_inflated - jnp.mean(x_inflated, axis=0),
-                               y_ensemble_infl - y_pred_mean_infl), axis=0) / (n_particles - 1)
+    cross_cov = jnp.sum(
+        _outer(
+            x_inflated - jnp.mean(x_inflated, axis=0),
+            y_ensemble_infl - y_pred_mean_infl
+        ), axis=0
+    ) / (n_particles - 1)
 
+    # Kalman gain
     S = y_pred_cov_infl + R
     K = psd_solve(S, cross_cov.T).T
 
     # make perturbed ensemble
     if perturb_measurements:
         # Add noise to the ensemble
-        y_data_perturbed = jr.multivariate_normal(key=key, mean=y, cov=R, shape=(n_particles,))
+        y_data_perturbed = jr.multivariate_normal(
+            key=key,
+            mean=y,
+            cov=R,
+            shape=(n_particles,)
+        )
     else:
         y_data_perturbed = y
 
@@ -217,8 +290,7 @@ def _condition_on(key, x, h, R, u, y, t, perturb_measurements=True, inflation_de
         "cond_S": cond_S,
     }
 
-
-
+# EnKF filtering main function
 def ensemble_kalman_filter(
     params: ParamsCDNLGSSM,
     emissions: Float[Array, "ntime emission_dim"],
@@ -236,24 +308,27 @@ def ensemble_kalman_filter(
     key: PRNGKey=jr.PRNGKey(0),
     warn: bool = True,
 ) -> PosteriorGSSMFiltered:
-    """Run a ensemble Kalman filter to produce the marginal likelihood and
-    filtered state estimates.
+    r"""Run a ensemble Kalman filter
+        to produce the marginal likelihood and filtered state estimates.
 
     Args:
-        key: random key.
-        params: model parameters.
+        params: CD-NLGSSM parameters, containing
+            - dynamics RHS drift function
+            - diffusion coefficient matrix L
+            - Brownian covariance matrix Q
         emissions: array of observations.
         t_emissions: continuous-time specific time instants of observations: if not None, it is an array
         filter_hyperparams: hyper-parameters.
         inputs: optional array of inputs.
         output_fields: list of fields to include in the output.
-        key: random key.
+        key: random generator key.
         warn: whether to warn about PSD issues.
 
     Returns:
         filtered_posterior: posterior object.
 
     """
+    
     # Figure out timestamps, as vectors to scan over
     # t_emissions is of shape num_timesteps \times 1
     # t0 and t1 are num_timesteps \times 0
@@ -271,14 +346,18 @@ def ensemble_kalman_filter(
         t0 = jnp.arange(num_timesteps)
         t1 = jnp.arange(1, num_timesteps + 1)
 
+    # Set-up indexing 
     t0_idx = jnp.arange(num_timesteps)
     
-    # Only emission function
-    h = params.emissions.emission_function.f
-    # h = _process_fn(h, inputs)
+    # Process inputs
     inputs = _process_input(inputs, num_timesteps)
 
+    # Only emission function
+    h = params.emissions.emission_function.f
+    
+    # Define one step of EnKF filtering
     def _step(carry, args):
+        # Unpack the inputs
         ll_cum, pred_x_ens = carry
         key, t0, t1, t0_idx = args
 
@@ -297,34 +376,48 @@ def ensemble_kalman_filter(
             filter_hyperparams.inflation_delta,
             warn=warn
         )
+        # Filtered ensemble
         filtered_x_ens = cond_dict['x_cond']
 
         # Update the log likelihood
         ll_cum += cond_dict['loglik_step']
 
-        # compute Gaussian statistics
+        # Compute filtered Gaussian statistics form ensemble
         filtered_mean = jnp.mean(filtered_x_ens, axis=0)
         filtered_cov = psd(
-            jnp.sum(_outer(filtered_x_ens - filtered_mean, filtered_x_ens - filtered_mean), axis=0) / (
-                filter_hyperparams.N_particles - 1
-            ),
+            jnp.sum(
+                _outer(
+                    filtered_x_ens - filtered_mean,
+                    filtered_x_ens - filtered_mean),
+                axis=0) / (filter_hyperparams.N_particles - 1),
             warn=warn
         )
 
         # Predict the next state, based on Ensemble prediction
-        pred_x_ens = _predict(key_predict, filtered_x_ens, params, t0, t1, u, filter_hyperparams)
+        pred_x_ens = _predict(
+            key_predict,
+            filtered_x_ens,
+            params,
+            t0,
+            t1,
+            u,
+            filter_hyperparams
+        )
 
-        # compute Gaussian statistics
+        # Compute predicted Gaussian statistics from predicted ensemble
         pred_mean = jnp.mean(pred_x_ens, axis=0)
         pred_cov = psd(
-            jnp.sum(_outer(pred_x_ens - pred_mean, pred_x_ens - pred_mean), axis=0) / (
-                filter_hyperparams.N_particles - 1
-            ),
+            jnp.sum(
+                _outer(
+                    pred_x_ens - pred_mean,
+                    pred_x_ens - pred_mean),
+                axis=0) / (filter_hyperparams.N_particles - 1),
             warn=warn
         )
 
         # Build carry and output states
         carry = (ll_cum, pred_x_ens)
+        
         # EnKF extras
         posterior_extras = {
             # Filtered/predicted particles here.
@@ -340,6 +433,7 @@ def ensemble_kalman_filter(
             "cond_S": cond_dict["cond_S"],
             "cond_K": jnp.linalg.cond(cond_dict["K"]),
         }
+        
         # Posterior output
         outputs = {
             # Default outputs
@@ -351,28 +445,38 @@ def ensemble_kalman_filter(
             "posterior_extras": posterior_extras
         }
         outputs = {key: val for key, val in outputs.items() if key in output_fields}
+        
+        # Return carry and outputs
         return carry, outputs
 
-    # Build keys to be used to: (1) draw initial particles, (2) run each step of the filter
+    # Split keys to be used to:
+    # (1) draw initial particles,
+    # (2) run each step of the filter
     keys = jr.split(key, num_timesteps + 1)
     key_init, key_times = keys[0], keys[1:]
 
-    # Run the Ensemble Kalman Filter
-    # draw initial particles from the prior
+    # Initialize carry, by drawing particles from the initial distribution
     x_ens_init = jr.multivariate_normal(
-        key=key_init, mean=params.initial.mean.f(), cov=params.initial.cov.f(), shape=(filter_hyperparams.N_particles,)
+        key=key_init,
+        mean=params.initial.mean.f(),
+        cov=params.initial.cov.f(),
+        shape=(filter_hyperparams.N_particles,)
     )
     carry = (0.0, x_ens_init)
-
-    # compute ll and outputs using a for loop instead of lax.scan to debug
-    (ll_total, *_), outputs = lax.scan(_step, carry, (key_times, t0, t1, t0_idx))
-
+    # Run the Ensemble Kalman Filter, via lax.scan
+    (ll_total, *_), outputs = lax.scan(
+        _step,
+        carry,
+        (key_times, t0, t1, t0_idx)
+    )
+    # Build and return posterior object
     outputs = {"marginal_loglik": ll_total, **outputs}
     posterior_filtered = PosteriorGSSMFiltered(
         **outputs,
     )
     return posterior_filtered
 
+# CD-NLGSSM forecast function: Ensemble Kalman Filter Forecast
 def forecast_ensemble_kalman_filter(
     params: ParamsCDNLGSSM,
     init_forecast: tfd.Distribution,
@@ -390,20 +494,24 @@ def forecast_ensemble_kalman_filter(
     r"""Run an Ensemble Kalman filter to forecast states
 
     Args:
-        params: model parameters.
+        params: CD-NLGSSM parameters, containing
+            - dynamics RHS drift function
+            - diffusion coefficient matrix L
+            - Brownian covariance matrix Q
         init_forecast: initial distribution to forecast with.
         t_init: time-instant of the initial condition of forecast
         t_forecast: continuous-time specific time instants to forecast
-        filter_hyperparams: hyper-parameters of the EKF, related to the approximation order
+        filter_hyperparams: hyper-parameters of the EnKF, related to the approximation order
         inputs: optional array of inputs.
         output_fields: list of fields to return 
         key: random key.
         warn: whether to warn about PSD issues.
 
     Returns:
-        post: forecast object.
+        forecast: forecast object.
 
     """
+
     # Figure out timestamps, as vectors to scan over
     # t_forecast is of shape num_timesteps \times 1
     # t0 and t1 are num_timesteps \times 0
@@ -423,11 +531,13 @@ def forecast_ensemble_kalman_filter(
     t0_idx = jnp.arange(num_timesteps)
     inputs = _process_input(inputs, num_timesteps)
 
+    # Define one step of EnKF forecasting
     def _step(carry, args):
+        # Unpack the inputs
         current_x_ens = carry
         key, t0, t1, t0_idx = args
 
-        # split key for (1) diffeqsolve, (2) perturbed measurements
+        # split key for prediction
         key_predict, _ = jr.split(key, 2)
 
         # Predict the next state, based on Ensemble prediction
@@ -440,13 +550,14 @@ def forecast_ensemble_kalman_filter(
             filter_hyperparams
         )
 
-        # compute Gaussian statistics
+        # Compute Gaussian statistics from predicted ensemble
         pred_state_mean = jnp.mean(pred_x_ens, axis=0)
         pred_state_cov = psd(
             jnp.sum(
-                _outer(pred_x_ens - pred_state_mean, pred_x_ens - pred_state_mean),
-                axis=0
-            ) / (filter_hyperparams.N_particles - 1),
+                _outer(
+                    pred_x_ens - pred_state_mean,
+                    pred_x_ens - pred_state_mean),
+                axis=0) / (filter_hyperparams.N_particles - 1),
             warn=warn
         )    
 
@@ -460,17 +571,20 @@ def forecast_ensemble_kalman_filter(
 
         return carry, outputs
 
-    # Build keys to be used to: (1) draw initial particles, (2) run each step of the filter
+    # Build keys to be used to:
+    # (1) draw initial particles,
+    # (2) run each step of the filter
     keys = jr.split(key, num_timesteps+1)
     key_init, key_times = keys[0], keys[1:]
 
-    # draw initial particles from the provided initial distribution
+    # Initialize the state,
+    # by drawing particles from the provided initial distribution
     carry = init_forecast.sample(
         seed=key_init,
         sample_shape=filter_hyperparams.N_particles
     )
 
-    # Run the Ensemble Kalman Filter
+    # Run the Ensemble Kalman Filter, via lax.scan
     _, outputs = lax_scan(
         _step,
         carry,
@@ -484,6 +598,7 @@ def forecast_ensemble_kalman_filter(
     )
     return forecast
 
+# CD-NLGSSM emission function: Emissions from EnKF approximation
 def emissions_ensemble_kalman_filter(
     params: ParamsCDNLGSSM,
     t_states: Float[Array, "num_timesteps 1"],
@@ -499,7 +614,10 @@ def emissions_ensemble_kalman_filter(
     r"""Compute the emissions corresponding to the EnKF linearization of the model.
     
     Args:
-        params: model parameters.
+        params: CD-NLGSSM parameters, containing
+            - dynamics RHS drift function
+            - diffusion coefficient matrix L
+            - Brownian covariance matrix Q
         t_states: continuous-time specific time instants of states
         state_means: state means at time instants t_states, always required
         state_covs: state covariances at time instants t_states, optional
@@ -513,6 +631,7 @@ def emissions_ensemble_kalman_filter(
     Returns:
         emissions_mean: mean of emissions
         emissions_covariance: covariance of emissions, if available
+    
     """
     
     # Figure out timestamps, as vectors to scan over
@@ -531,7 +650,9 @@ def emissions_ensemble_kalman_filter(
     # Emission function
     h = params.emissions.emission_function.f
     
+    # Define one step of EnKF emission computation
     def _step(carry, args):
+        # Unpack the inputs
         key, state_mean, state_cov, t0, t0_idx = args
         
         # Draw ensemble from the state mean and covariance
@@ -551,14 +672,15 @@ def emissions_ensemble_kalman_filter(
         )
 
         # Propagate ensemble through emission function
-        # duplicate inputs for each particle
+        # Replicate inputs for each particle
         u_s = jnp.array(
             [inputs[t0_idx]] * filter_hyperparams.N_particles
         )
-        # The shape of y_ensemble is n_particles x Observation Dimensions
+        # Propagate ensemble via emission function, using vmap
         y_ensemble = vmap(
             h, in_axes=(0, None, None)
         )(state_ens, u_s, t0)
+        # The shape of y_ensemble is n_particles x Observation Dimensions
 
         ## These 2 computations should use deterministic observation ensemble, not perturbed
         # compute predicted mean of measurements
@@ -567,23 +689,26 @@ def emissions_ensemble_kalman_filter(
         # compute predicted covariance of measurements as outer product of differences from mean
         # represents "HPH^T" in Kalman gain computation
         emission_cov = psd(
-            jnp.sum(
-                _outer(y_ensemble - emission_mean, y_ensemble - emission_mean),
-                axis=0
-            ) / (filter_hyperparams.N_particles - 1) + R,
+            R + jnp.sum(
+                _outer(
+                    y_ensemble - emission_mean,
+                    y_ensemble - emission_mean),
+                axis=0) / (filter_hyperparams.N_particles - 1),
             warn=warn
         )
 
         # Return carry and output states
         return (state_mean, state_cov), (emission_mean, emission_cov)
 
-    # Build keys to be used to draw particles at each step of the filter
+    # Build keys to be used
+    # to draw particles at each step of the filter
     keys = jr.split(key, num_timesteps)
-    # Initialize the state, based on provided initial distribution's mean and covariance
+    # Initialize the state,
+    # based on provided initial distribution's mean and covariance
     carry = (
         state_means[0], state_covs[0]
     )
-    # Run the extended Kalman filter
+    # Run the Ensemble Kalman filter, via lax.scan
     _, (emissions_mean, emissions_covariance) = lax_scan(
         _step,
         carry,
@@ -591,4 +716,5 @@ def emissions_ensemble_kalman_filter(
         debug=DEBUG
     ) # type: ignore
 
+    # Return emissions mean and covariance
     return emissions_mean, emissions_covariance

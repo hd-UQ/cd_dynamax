@@ -1,0 +1,40 @@
+name: JOSS 2025 Draft PDF
+on:
+  push:
+    paths:
+      - doc/2025_joss_submission/paper.md
+      - doc/2025_joss_submission/paper.bib
+      - .github/workflows/joss25_pdf.yml
+      
+# Add this block to grant write access to this specific workflow
+permissions:
+  contents: write
+  
+jobs:
+  paper:
+    runs-on: ubuntu-latest
+    name: Paper Draft
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Build JOSS draft PDF
+        uses: openjournals/openjournals-draft-action@master
+        with:
+          journal: joss
+          # This should be the path to the paper within your repo.
+          paper-path: doc/2025_joss_submission/paper.md
+      - name: Upload
+        uses: actions/upload-artifact@v4
+        with:
+          name: paper
+          # This is the output path where Pandoc will write the compiled
+          # PDF. Note, this should be the same directory as the input
+          # paper.md
+          path: doc/2025_joss_submission/paper.pdf
+      - name: Commit PDF to repository
+        uses: EndBug/add-and-commit@v9
+        with:
+          message: '(auto) JOSS Paper PDF Draft'
+          # This should be the path to the paper within your repo.
+          # Add --force at the end to override .gitignore
+          add: 'doc/2025_joss_submission/paper.pdf --force'

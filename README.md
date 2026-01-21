@@ -154,7 +154,8 @@ pip install -e .[dev]
 
 #### GPU support
 If you want GPU acceleration with JAX, you must install a CUDA-enabled `jaxlib` wheel.  
-Check the [JAX installation docs](https://jax.readthedocs.io/en/latest/installation.html#installation) for the exact commands for your system.  
+
+Check the [JAX installation docs](https://jax.readthedocs.io/en/latest/installation.html#installation) for the exact commands for your system.
 
 ---
 
