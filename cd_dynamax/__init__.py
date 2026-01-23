@@ -13,6 +13,13 @@ from .src.continuous_discrete_nonlinear_gaussian_ssm import (
     EnKFHyperParams,
 )
 
+from .src.continuous_discrete_nonlinear_ssm import (
+    ContDiscreteNonlinearSSM,
+    ParamsCDNLSSM,
+    DPFHyperParams,
+    cdnlssm_filter,
+)
+
 # Linear SSM
 from .src.continuous_discrete_linear_gaussian_ssm import (
     ContDiscreteLinearGaussianSSM,
@@ -40,19 +47,23 @@ from .src.utils.simulation_utils import make_key_sequence
 __all__ = [
     # Models
     "ContDiscreteNonlinearGaussianSSM",
+    "ContDiscreteNonlinearSSM",
     "ContDiscreteLinearGaussianSSM",
     "LinearGaussianSSM",
     # Params
     "ParamsCDNLGSSM",
+    "ParamsCDNLSSM",
     "ParamsCDLGSSM",
     # Nonlinear algos
     "cdnlgssm_filter",
     "cdnlgssm_smoother",
     "cdnlgssm_forecast",
     "cdnlgssm_emissions",
+    "cdnlssm_filter",
     "EKFHyperParams",
     "UKFHyperParams",
     "EnKFHyperParams",
+    "DPFHyperParams",
     # Linear algos
     "cdlgssm_filter",
     "cdlgssm_smoother",

@@ -6,6 +6,8 @@
 
 - [Filtering-based likelihood tutorial (using new `.build_params` API)](./lorenz63_filter_based_likelihood_tutorial_newAPI.ipynb) on computing filtering-based likelihoods for continuous-discrete SDEs.
 
+- [DPF with Poisson emissions tutorial (using new `.build_params` API)](./dpf_examples.ipynb) on using DPFs with non-Gaussian emissions in two examples: one with Poisson emissions, and the other a tracking example with circular emissions.
+
 - [SGD-based model fitting tutorial](./lorenz63_sgd_fit_to_data_tutorial.ipynb) on SGD-based fitting a continuous-discrete SDE model to data.
 
 - [MCMC-based model fitting tutorial](./lorenz63_mcmc_fit_to_data_tutorial.ipynb) on MCMC-based fitting a continuous-discrete SDE model to data.
