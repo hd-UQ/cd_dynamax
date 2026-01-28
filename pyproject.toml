@@ -51,6 +51,8 @@ include = ["cd_dynamax*"]
 [project.optional-dependencies]
 dev = [
     "pytest>=8.0",
+    "ruff",
+    "pytest",
 ]
 
 [tool.ruff.lint]
