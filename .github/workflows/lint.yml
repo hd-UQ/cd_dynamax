@@ -29,4 +29,4 @@ jobs:
           python -m pip install .[dev]
 
       - name: Ruff check
-        run: ruff check .
+        run: make lint
