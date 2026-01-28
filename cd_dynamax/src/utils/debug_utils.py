@@ -3,12 +3,13 @@ import jax
 import jax.numpy as jnp
 import jax.scipy.linalg
 from jax import lax
-import jax.debug as jdb
+
 
 # PSD checks
 def is_psd_eig(matrix, tol=1e-8):
     eigvals = jnp.linalg.eigvalsh(matrix)
     return jnp.all(eigvals >= -tol)
+
 
 def is_psd_cholesky(matrix):
     # Cholesky only works for positive definite, not semi-definite
@@ -19,7 +20,15 @@ def is_psd_cholesky(matrix):
     except Exception:
         return False
 
-def psd(matrix, check_psd=True, psd_check_cholesky=False, tol=1e-8, warn=True, raise_error=False):
+
+def psd(
+    matrix,
+    check_psd=True,
+    psd_check_cholesky=False,
+    tol=1e-8,
+    warn=True,
+    raise_error=False,
+):
     """
     Try to return a psd matrix
         - first, by symmetrizing
@@ -35,12 +44,13 @@ def psd(matrix, check_psd=True, psd_check_cholesky=False, tol=1e-8, warn=True, r
     Returns:
         matrix: array-like, hopefully PSD matrix
     """
+
     def check_cholesky(mat):
         return is_psd_cholesky(mat)
-        
+
     def check_eig(mat):
         return is_psd_eig(mat, tol)
-    
+
     def symmetrize(mat):
         """Symmetrize one or more matrices."""
         return 0.5 * (mat + jnp.swapaxes(mat, -1, -2))
@@ -52,30 +62,21 @@ def psd(matrix, check_psd=True, psd_check_cholesky=False, tol=1e-8, warn=True, r
             # TODO: raise jax error
             raise ValueError("Matrix is not positive definite")
         return None
-    
+
     # Symmetrize the input matrix
     sym_matrix = symmetrize(matrix)
 
     # Check PSD
     if check_psd:
-        is_psd =jax.lax.cond(
-            psd_check_cholesky,
-            check_cholesky,
-            check_eig,
-            sym_matrix
-        )
+        is_psd = jax.lax.cond(psd_check_cholesky, check_cholesky, check_eig, sym_matrix)
 
         # TODO: better to move this logic out? namely, return is_psd, then check, so we can indicate where non_psd occurred?
         # Handle non_psd
-        jax.lax.cond(
-            ~is_psd,
-            handle_not_psd,
-            lambda _: None,
-            operand=None
-        )
+        jax.lax.cond(~is_psd, handle_not_psd, lambda _: None, operand=None)
 
     # For now, just return the symmetrized matrix, regardless of PSD status
     return sym_matrix
+
 
 # Wrapper over jax.lax.scan
 def lax_scan(f, init, xs, length=None, reverse=False, debug=False):
@@ -103,7 +104,9 @@ def lax_scan(f, init, xs, length=None, reverse=False, debug=False):
 
     # Ensure xs is a tuple for consistency, handle None by creating an appropriate placeholder
     xs = xs if isinstance(xs, tuple) else (xs,)
-    sequence_length = length if length is not None else len([x for x in xs if x is not None][0])
+    sequence_length = (
+        length if length is not None else len([x for x in xs if x is not None][0])
+    )
 
     indices = range(sequence_length - 1, -1, -1) if reverse else range(sequence_length)
 

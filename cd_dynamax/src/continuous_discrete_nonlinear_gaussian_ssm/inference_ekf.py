@@ -2,73 +2,86 @@
 import jax.numpy as jnp
 import jax.random as jr
 from jax import lax
-from jax import jacfwd,jacrev
+from jax import jacfwd, jacrev
 from jax.tree_util import tree_map
 
 # Type annotations
 from jaxtyping import Array, Float
-from typing import NamedTuple, List, Optional
+from typing import NamedTuple, List, Optional, Tuple
 
 # Distributions, compatible with JAX, from TensorFlow Probability
 import tensorflow_probability.substrates.jax as tfp
 import tensorflow_probability.substrates.jax.distributions as tfd
-from tensorflow_probability.substrates.jax.distributions import MultivariateNormalFullCovariance as MVN
-tfd = tfp.distributions
-tfb = tfp.bijectors
+from tensorflow_probability.substrates.jax.distributions import (
+    MultivariateNormalFullCovariance as MVN,
+)
 
 # Dynamax shared code
 from cd_dynamax.dynamax.types import PRNGKey
 from cd_dynamax.dynamax.utils.utils import psd_solve
+
 # To avoid unnecessary redefinitions of code,
 # We import those posterior filtering and smoothing equivalent classes that can be reused from dynamax
-from cd_dynamax.dynamax.linear_gaussian_ssm.inference import PosteriorGSSMFiltered, PosteriorGSSMSmoothed
+from cd_dynamax.dynamax.linear_gaussian_ssm.inference import (
+    PosteriorGSSMFiltered,
+    PosteriorGSSMSmoothed,
+)
 
 # Our codebase
 # CDLGSSM forecasting definition is reused
 from ..continuous_discrete_linear_gaussian_ssm.cdlgssm_utils import GSSMForecast
+
 # CDNLGSSM specific param and function definitions
-from .cdnlgssm_utils import *
+from .cdnlgssm_utils import ParamsCDNLGSSM
+
 # Diffrax based diff-eq solver
 from ..utils.diffrax_utils import diffeqsolve
+
 # Debugging utilities
-from ..utils.debug_utils import *
+from ..utils.debug_utils import psd, lax_scan
+
+tfb = tfp.bijectors
+
 DEBUG = False
 
 #### Helper functions
-# Helper functions --- from dynamax 
+# Helper functions --- from dynamax
 _process_fn = lambda f, u: (lambda x, y: f(x)) if u is None else f
-_process_input = lambda x, y: jnp.zeros((y,1)) if x is None else x
+_process_input = lambda x, y: jnp.zeros((y, 1)) if x is None else x
 
 #### CD-NLGSSM filtering: Extended Kalman Filter (EKF)
 
+
 # Default EKF filtering hyperparameters, as class
 class EKFHyperParams(NamedTuple):
-    """Lightweight container for EKF hyperparameters.
+    """Lightweight container for EKF hyperparameters."""
 
-    """
-
-    dt_final: float = 1e-4 # Small dt_final for predicted mean and covariance at the end of sequence 
-    state_order: str = 'first'
-    emission_order: str = 'first'
-    smooth_order: str = 'first'
+    dt_final: float = (
+        1e-4  # Small dt_final for predicted mean and covariance at the end of sequence
+    )
+    state_order: str = "first"
+    emission_order: str = "first"
+    smooth_order: str = "first"
     cov_rescaling: float = 1.0
     diffeqsolve_settings: dict = {}
-    dt_average: float = 0.1 # Average timestep for discrete state order, if applicable
+    dt_average: float = 0.1  # Average timestep for discrete state order, if applicable
+
 
 ## CD-NLGSSM filtering key functions: predict and condition_on
 # Predict next mean and covariance, under EKF approximations
 def _predict(
-    m, P, # Current mean and covariance
+    m,
+    P,  # Current mean and covariance
     params: ParamsCDNLGSSM,
     t0: Float,
     t1: Float,
     u,
     filter_hyperparams,
     warn: bool = True,
-    ):
+):
     r"""Predict next mean and covariance using EKF equations
         p(z_{t+1}) = N(z_{t+1} | m_{t+1}, P_{t+1})
-        
+
         where the evolution of m and P are computed based on
             First order approximation to model SDE as in Equation 3.158
             Second order approximation to model SDE as in Equation 3.159
@@ -89,7 +102,7 @@ def _predict(
     Returns:
         mu_pred (D_hid,): predicted mean.
         Sigma_pred (D_hid,D_hid): predicted covariance.
-    
+
     """
 
     # Predicted mean and covariance evolution
@@ -97,69 +110,72 @@ def _predict(
     # following Sarkka thesis eq. 3.158
     def rhs_all(t, y, args):
         # Unpack state in y
-        if filter_hyperparams.state_order in ['zeroth', 'discrete']:
-            m, = y
+        if filter_hyperparams.state_order in ["zeroth", "discrete"]:
+            (m,) = y
         else:
             m, P = y
 
         # TODO: possibly time- and parameter-dependent functions
-        f=params.dynamics.drift.f
+        f = params.dynamics.drift.f
 
         # Get time-varying parameters
-        Qc_t = params.dynamics.diffusion_cov.f(None,u,t)
-        L_t = params.dynamics.diffusion_coefficient.f(None,u,t) * filter_hyperparams.cov_rescaling
+        Qc_t = params.dynamics.diffusion_cov.f(None, u, t)
+        L_t = (
+            params.dynamics.diffusion_coefficient.f(None, u, t)
+            * filter_hyperparams.cov_rescaling
+        )
 
         # Evaluate the jacobian of the dynamics function
         # at current mean, inputs and time
-        F_t = jacfwd(f)(m,u,t)
+        F_t = jacfwd(f)(m, u, t)
 
         # Different orders of EKF prediction
-        if filter_hyperparams.state_order in ['zeroth', 'discrete']:
+        if filter_hyperparams.state_order in ["zeroth", "discrete"]:
             # Mean evolution
             dmdt = f(m, u, t)
-        elif filter_hyperparams.state_order=='first':
+        elif filter_hyperparams.state_order == "first":
             # Mean evolution
-            dmdt = f(m, u,t)
+            dmdt = f(m, u, t)
             # Covariance evolution
             dPdt = F_t @ P + P @ F_t.T + L_t @ Qc_t @ L_t.T
-        elif filter_hyperparams.state_order=='second':
+        elif filter_hyperparams.state_order == "second":
             # Evaluate the Hessian of the dynamics function
             # at current mean, inputs and time
             # Based on these recommendations https://jax.readthedocs.io/en/latest/notebooks/autodiff_cookbook.html#jacobians-and-hessians-using-jacfwd-and-jacrev
-            H_t=jacfwd(jacrev(f))(m,u,t)
+            H_t = jacfwd(jacrev(f))(m, u, t)
 
             # Mean evolution
-            dmdt = f(m,u,t) + 0.5*jnp.trace(H_t @ P)
+            dmdt = f(m, u, t) + 0.5 * jnp.trace(H_t @ P)
             # Covariance evolution
             dPdt = F_t @ P + P @ F_t.T + L_t @ Qc_t @ L_t.T
         else:
-            raise ValueError('EKF filter_hyperparams.state_order = {} not implemented yet'.format(filter_hyperparams.state_order))
+            raise ValueError(
+                "EKF filter_hyperparams.state_order = {} not implemented yet".format(
+                    filter_hyperparams.state_order
+                )
+            )
 
         # Return appropriate derivatives
-        if filter_hyperparams.state_order in ['zeroth', 'discrete']:
+        if filter_hyperparams.state_order in ["zeroth", "discrete"]:
             # Only mean evolution
-            return (dmdt, )
+            return (dmdt,)
         else:
             # Mean and covariance evolution
             return (dmdt, dPdt)
 
     # Zero-th approach, only mean is pushed via RHS ODE
-    if filter_hyperparams.state_order in ['zeroth', 'discrete']:
+    if filter_hyperparams.state_order in ["zeroth", "discrete"]:
         # Initialize with mean only
         y0 = (m,)
 
         # Compute predicted mean, according to RHS ODE
         sol = diffeqsolve(
-            rhs_all,
-            t0=t0,
-            t1=t1,
-            y0=y0,
-            **filter_hyperparams.diffeqsolve_settings
+            rhs_all, t0=t0, t1=t1, y0=y0, **filter_hyperparams.diffeqsolve_settings
         )
         m_final = sol[0][-1]
 
         # Predicted covariance
-        if filter_hyperparams.state_order == 'zeroth':
+        if filter_hyperparams.state_order == "zeroth":
             # For zeroth order, we use the timestep at each step
             dt = t1 - t0
         else:
@@ -169,23 +185,22 @@ def _predict(
             dt = filter_hyperparams.dt_average
 
         # Covariance parameters at time t0
-        Qc_t = params.dynamics.diffusion_cov.f(None,u,t0)
-        L_t = params.dynamics.diffusion_coefficient.f(None, u, t0) * filter_hyperparams.cov_rescaling
+        Qc_t = params.dynamics.diffusion_cov.f(None, u, t0)
+        L_t = (
+            params.dynamics.diffusion_coefficient.f(None, u, t0)
+            * filter_hyperparams.cov_rescaling
+        )
         # Covariance update
         P_final = P + jnp.sqrt(dt) * L_t @ Qc_t @ L_t.T
-    
+
     # Otherwise, both mean and covariance pushed via RHS ODE
     else:
         # Initialize both mean and covariance
         y0 = (m, P)
-        
+
         # Compute predicted mean and covariance, via RHS SDE
         sol = diffeqsolve(
-            rhs_all,
-            t0=t0,
-            t1=t1,
-            y0=y0,
-            **filter_hyperparams.diffeqsolve_settings
+            rhs_all, t0=t0, t1=t1, y0=y0, **filter_hyperparams.diffeqsolve_settings
         )
         # Extract final mean and covariance
         m_final = sol[0][-1]
@@ -194,13 +209,16 @@ def _predict(
     # Return predicted mean and covariance
     return m_final, psd(P_final, warn=warn)
 
+
 # Condition on a new observation, under EKF approximations
-def _condition_on(m, P, h, H, R, u, y, t, num_iter, filter_hyperparams, warn: bool = True):
+def _condition_on(
+    m, P, h, H, R, u, y, t, num_iter, filter_hyperparams, warn: bool = True
+):
     r"""Condition a Gaussian potential on a new observation.
         where the update of m and P are computed based on
             First order approximation, as in Equation 3.59
                 TODO: implement second order EKF, as in Equation 3.63
-       
+
        $$p(z_t | y_t, u_t, y_{1:t-1}, u_{1:t-1})
             \propto p(z_t | y_{1:t-1}, u_{1:t-1}) p(y_t | z_t, u_t)
             = N(z_t | m, S) N(y_t | h_t(z_t, u_t), R_t)
@@ -211,7 +229,7 @@ def _condition_on(m, P, h, H, R, u, y, t, num_iter, filter_hyperparams, warn: bo
             S = R + H(m,u) * P * H(m,u)'
             K = P * H(m, u)' * S^{-1}
             SS = P - K * S * K' = Sigma_cond
-     
+
     **Note! This can be done more efficiently when R is diagonal.**
 
     Args:
@@ -245,36 +263,37 @@ def _condition_on(m, P, h, H, R, u, y, t, num_iter, filter_hyperparams, warn: bo
         # Compute posterior mean and covariance
         posterior_cov = psd(prior_cov - K @ S @ K.T, warn=warn)
         posterior_mean = prior_mean + K @ (y - h(prior_mean, u, t))
-        # Return 
+        # Return
         return (posterior_mean, posterior_cov), None
 
     # Initialize with current mean and covariance
     carry = (m, P)
     # Iterate EKF-linearization over posterior mean and covariance, via lax.scan
-    (mu_cond, Sigma_cond), _ = lax_scan(
-        _step,
-        carry,
-        jnp.arange(num_iter),
-        debug=DEBUG
-    )
+    (mu_cond, Sigma_cond), _ = lax_scan(_step, carry, jnp.arange(num_iter), debug=DEBUG)
 
     # Return computed sufficient statistics
     return mu_cond, psd(Sigma_cond, warn=warn)
+
 
 # EKF filtering main function
 def extended_kalman_filter(
     params: ParamsCDNLGSSM,
     emissions: Float[Array, "ntime emission_dim"],
-    t_emissions: Optional[Float[Array, "num_timesteps 1"]]=None,
+    t_emissions: Optional[Float[Array, "num_timesteps 1"]] = None,
     filter_hyperparams: EKFHyperParams = EKFHyperParams(),
     inputs: Optional[Float[Array, "ntime input_dim"]] = None,
     num_iter: int = 1,
-    output_fields: Optional[List[str]]=["filtered_means", "filtered_covariances", "predicted_means", "predicted_covariances"],
+    output_fields: Optional[List[str]] = [
+        "filtered_means",
+        "filtered_covariances",
+        "predicted_means",
+        "predicted_covariances",
+    ],
     warn: bool = True,
 ) -> PosteriorGSSMFiltered:
     r"""Run an (iterated) extended Kalman filter
         to produce the marginal likelihood and filtered state estimates.
-        
+
         Two implementations are available,
             based on first- and second-order approximations
                 i.e. Algorithms 3.21 and 3.22 in Sarkka's thesis
@@ -304,27 +323,29 @@ def extended_kalman_filter(
     # t0 and t1 are num_timesteps \times 0
     if t_emissions is not None:
         num_timesteps = t_emissions.shape[0]
-        t0 = tree_map(lambda x: x[:,0], t_emissions)
+        t0 = tree_map(lambda x: x[:, 0], t_emissions)
         t1 = tree_map(
-                lambda x: jnp.concatenate(
-                    (
-                        t_emissions[1:,0],
-                        jnp.array([t_emissions[-1,0]+filter_hyperparams.dt_final]) # NB: t_{N+1} is simply t_{N}+dt_final
-                    )
-                ),
-                t_emissions
-            )
+            lambda x: jnp.concatenate(
+                (
+                    t_emissions[1:, 0],
+                    jnp.array(
+                        [t_emissions[-1, 0] + filter_hyperparams.dt_final]
+                    ),  # NB: t_{N+1} is simply t_{N}+dt_final
+                )
+            ),
+            t_emissions,
+        )
     else:
         num_timesteps = len(emissions)
         t0 = jnp.arange(num_timesteps)
-        t1 = jnp.arange(1,num_timesteps+1)
-    
+        t1 = jnp.arange(1, num_timesteps + 1)
+
     # Set-up indexing
     t0_idx = jnp.arange(num_timesteps)
 
     # Process inputs
     inputs = _process_input(inputs, num_timesteps)
-    
+
     # First order EKF update implemented for now
     # Collect emission function
     h = params.emissions.emission_function.f
@@ -340,18 +361,16 @@ def extended_kalman_filter(
         # Get parameters and inputs for time t0
         u = inputs[t0_idx]
         y = emissions[t0_idx]
-        Q = params.dynamics.diffusion_cov.f(None,u,t0)
-        R = params.emissions.emission_cov.f(None,u,t0)
+        R = params.emissions.emission_cov.f(None, u, t0)
 
         # Update the log likelihood
         # According to first order EKF update,
         # using Jacobian at predicted mean, inputs and time
         H_x = H(pred_mean, u, t0)
         # Log likelihood increment, given by Gaussian at observed emission
-        ll += MVN(
-            h(pred_mean, u, t0),
-            H_x @ pred_cov @ H_x.T + R
-        ).log_prob(jnp.atleast_1d(y))
+        ll += MVN(h(pred_mean, u, t0), H_x @ pred_cov @ H_x.T + R).log_prob(
+            jnp.atleast_1d(y)
+        )
 
         # Condition on this emission
         filtered_mean, filtered_cov = _condition_on(
@@ -365,7 +384,7 @@ def extended_kalman_filter(
             t0,
             num_iter,
             filter_hyperparams,
-            warn=warn
+            warn=warn,
         )
 
         # Predict the next state based on EKF approximations
@@ -377,7 +396,7 @@ def extended_kalman_filter(
             t1,
             u,
             filter_hyperparams,
-            warn=warn
+            warn=warn,
         )
 
         # Build carry and output states
@@ -397,12 +416,7 @@ def extended_kalman_filter(
     # Initialize carry with initial distribution
     carry = (0.0, params.initial.mean.f(), params.initial.cov.f())
     # Run the extended Kalman filter, via lax.scan
-    (ll, *_), outputs = lax_scan(
-        _step,
-        carry,
-        (t0, t1, t0_idx),
-        debug=DEBUG
-    )
+    (ll, *_), outputs = lax_scan(_step, carry, (t0, t1, t0_idx), debug=DEBUG)
     # Build and return posterior object
     outputs = {"marginal_loglik": ll, **outputs}
     posterior_filtered = PosteriorGSSMFiltered(
@@ -410,15 +424,21 @@ def extended_kalman_filter(
     )
     return posterior_filtered
 
+
 # Iterated-EKF filtering: multiple linearizations around posterior
 def iterated_extended_kalman_filter(
     params: ParamsCDNLGSSM,
-    emissions:  Float[Array, "ntime emission_dim"],
-    t_emissions: Optional[Float[Array, "num_timesteps 1"]]=None,
+    emissions: Float[Array, "ntime emission_dim"],
+    t_emissions: Optional[Float[Array, "num_timesteps 1"]] = None,
     filter_hyperparams: EKFHyperParams = EKFHyperParams(),
     inputs: Optional[Float[Array, "ntime input_dim"]] = None,
     num_iter: int = 2,
-    output_fields: Optional[List[str]]=["filtered_means", "filtered_covariances", "predicted_means", "predicted_covariances"],
+    output_fields: Optional[List[str]] = [
+        "filtered_means",
+        "filtered_covariances",
+        "predicted_means",
+        "predicted_covariances",
+    ],
     warn: bool = True,
 ) -> PosteriorGSSMFiltered:
     r"""Run an iterated extended Kalman filter
@@ -433,7 +453,7 @@ def iterated_extended_kalman_filter(
             - diffusion coefficient matrix L
             - Brownian covariance matrix Q
         emissions: observation sequence.
-        t_emissions: continuous-time specific time instants of observations: if not None, it is an array 
+        t_emissions: continuous-time specific time instants of observations: if not None, it is an array
         filter_hyperparams: hyper-parameters of the EKF, related to the approximation order
         inputs: optional array of inputs.
         num_iter: number of linearizations around posterior for update step (default 2).
@@ -457,17 +477,20 @@ def iterated_extended_kalman_filter(
     )
     return filtered_posterior
 
+
 # EKF smoothing equations, in continuous-discrete setting
 def _smooth(
-    m_filter, P_filter, # Filtered mean and covariance
-    m_smooth, P_smooth, # Smoothed mean and covariance
-    params: ParamsCDNLGSSM,  
+    m_filter,
+    P_filter,  # Filtered mean and covariance
+    m_smooth,
+    P_smooth,  # Smoothed mean and covariance
+    params: ParamsCDNLGSSM,
     t0: Float,
     t1: Float,
-    u: Float[Array, "D_in"],
+    u: Float[Array, " D_in"],
     filter_hyperparams: EKFHyperParams = EKFHyperParams(),
     warn: bool = True,
-    ):
+):
     r"""Smooth the next mean and covariance using EKF smoothing equations
         where the evolution of m and P are computed based on
             First order smoothing approximation
@@ -493,29 +516,32 @@ def _smooth(
         mu_smooth (D_hid,): smoothed mean at t0.
         Sigma_smooth (D_hid,D_hid): smoothed covariance at t0.
     """
-    
+
     # Initialize
     y0 = (m_smooth, P_smooth)
-    
+
     # Smoothed mean and covariance evolution
     # by using the EKF state order approximations
     def rhs_all(t, y, args):
         # Unpack state in y and args
         m_smooth, P_smooth = y
         m_filter, P_filter = args
-        
+
         # TODO: possibly time- and parameter-dependent functions
-        f=params.dynamics.drift.f
+        f = params.dynamics.drift.f
         # Get time-varying parameters
-        Qc_t = params.dynamics.diffusion_cov.f(None,u,t)
-        L_t = params.dynamics.diffusion_coefficient.f(None,u,t) * filter_hyperparams.cov_rescaling
+        Qc_t = params.dynamics.diffusion_cov.f(None, u, t)
+        L_t = (
+            params.dynamics.diffusion_coefficient.f(None, u, t)
+            * filter_hyperparams.cov_rescaling
+        )
 
         # following Sarkka thesis eq. 3.163
-        if filter_hyperparams.smooth_order=='first':
+        if filter_hyperparams.smooth_order == "first":
             # Evaluate the jacobian of the dynamics function at m and inputs
-            F_t=jacfwd(f)(m_filter,u,t)
-            
-            '''
+            F_t = jacfwd(f)(m_filter, u, t)
+
+            """
             # Direct implementation of Equations 3.163
             # Auxiliary matrix, used in both mean and covariance
             # Inverse product computed via psd_solve
@@ -525,21 +551,29 @@ def _smooth(
             dmsmoothdt = f(m_filter,u,t) + aux_matrix.T @ (m_smooth-m_filter)
             # Covariance evolution
             dPsmoothdt = aux_matrix.T @ P_smooth + P_smooth @ aux_matrix - L_t @ Qc_t @ L_t.T
-            '''            
+            """
             # Revised implementation,
             # where we avoid numerical P @ P^{-1} computations
-            
+
             # Auxiliary matrix, used in both mean and covariance
             # Inverse product computed via psd_solve
-            aux_matrix=psd_solve(P_filter, L_t @ Qc_t @ L_t.T).T
+            aux_matrix = psd_solve(P_filter, L_t @ Qc_t @ L_t.T).T
 
             # Mean evolution
-            dmsmoothdt = f(m_filter,u,t) + (F_t + aux_matrix) @ (m_smooth-m_filter)
+            dmsmoothdt = f(m_filter, u, t) + (F_t + aux_matrix) @ (m_smooth - m_filter)
             # Covariance evolution
-            dPsmoothdt = (F_t + aux_matrix) @ P_smooth + P_smooth @ (F_t + aux_matrix).T - L_t @ Qc_t @ L_t.T
-            
+            dPsmoothdt = (
+                (F_t + aux_matrix) @ P_smooth
+                + P_smooth @ (F_t + aux_matrix).T
+                - L_t @ Qc_t @ L_t.T
+            )
+
         else:
-            raise ValueError('EKF filter_hyperparams.smooth_order = {} not implemented yet'.format(filter_hyperparams.smooth_order))
+            raise ValueError(
+                "EKF filter_hyperparams.smooth_order = {} not implemented yet".format(
+                    filter_hyperparams.smooth_order
+                )
+            )
 
         return (dmsmoothdt, dPsmoothdt)
 
@@ -552,18 +586,19 @@ def _smooth(
         y0=y0,
         reverse=True,
         args=(m_filter, P_filter),
-        **filter_hyperparams.diffeqsolve_settings
+        **filter_hyperparams.diffeqsolve_settings,
     )
     # Extract and return smoothed mean and covariance, ensure PSD covariance
     m_smooth, P_smooth = sol[0][-1], psd(sol[1][-1], warn=warn)
     return m_smooth, P_smooth
 
+
 # CD-NLGSSM smoother: Extended Kalman Smoother
 def extended_kalman_smoother(
     params: ParamsCDNLGSSM,
-    emissions:  Float[Array, "ntime emission_dim"],
+    emissions: Float[Array, "ntime emission_dim"],
     filter_hyperparams: EKFHyperParams = EKFHyperParams(),
-    t_emissions: Optional[Float[Array, "num_timesteps 1"]]=None,
+    t_emissions: Optional[Float[Array, "num_timesteps 1"]] = None,
     filtered_posterior: Optional[PosteriorGSSMFiltered] = None,
     inputs: Optional[Float[Array, "ntime input_dim"]] = None,
     warn: bool = True,
@@ -579,7 +614,7 @@ def extended_kalman_smoother(
             - Brownian covariance matrix Q
         emissions: observation sequence.
         filter_hyperparams: hyper-parameters of the EKF, related to the approximation order
-        t_emissions: continuous-time specific time instants of observations: if not None, it is an array 
+        t_emissions: continuous-time specific time instants of observations: if not None, it is an array
         filtered_posterior: optional output from filtering step.
         inputs: optional array of inputs.
         warn: whether to issue warnings during smoothing (e.g., PSD issues).
@@ -594,15 +629,15 @@ def extended_kalman_smoother(
     # t0 and t1 are num_timesteps-1 \times 0
     if t_emissions is not None:
         num_timesteps = t_emissions.shape[0]
-        t0 = tree_map(lambda x: x[0:-1,0], t_emissions)
-        t1 = tree_map(lambda x: x[1:,0], t_emissions)
+        t0 = tree_map(lambda x: x[0:-1, 0], t_emissions)
+        t1 = tree_map(lambda x: x[1:, 0], t_emissions)
     else:
         num_timesteps = len(emissions)
-        t0 = jnp.arange(num_timesteps-1)
-        t1 = jnp.arange(1,num_timesteps)
-    
+        t0 = jnp.arange(num_timesteps - 1)
+        t1 = jnp.arange(1, num_timesteps)
+
     # Indices for inputs and emissions
-    t0_idx = jnp.arange(num_timesteps-1)
+    t0_idx = jnp.arange(num_timesteps - 1)
 
     # Get filtered EKF posterior
     if filtered_posterior is None:
@@ -631,12 +666,15 @@ def extended_kalman_smoother(
 
         # Smooth mean and covariance based on continuous-time solution
         smoothed_mean, smoothed_cov = _smooth(
-            m_filter=filtered_mean, P_filter=filtered_cov, # Filtered 
-            m_smooth=smoothed_mean_next, P_smooth=smoothed_cov_next, # Smoothed 
+            m_filter=filtered_mean,
+            P_filter=filtered_cov,  # Filtered
+            m_smooth=smoothed_mean_next,
+            P_smooth=smoothed_cov_next,  # Smoothed
             params=params,
-            t0=t0,t1=t1,
-            u = inputs[t0_idx],
-            filter_hyperparams = filter_hyperparams,
+            t0=t0,
+            t1=t1,
+            u=inputs[t0_idx],
+            filter_hyperparams=filter_hyperparams,
             warn=warn,
         )
 
@@ -650,7 +688,7 @@ def extended_kalman_smoother(
         (t0, t1, t0_idx, filtered_means[:-1], filtered_covs[:-1]),
         reverse=True,
     )
-    
+
     # Concatenate the arrays
     smoothed_means = jnp.vstack((smoothed_means, filtered_means[-1][None, ...]))
     smoothed_covs = jnp.vstack((smoothed_covs, filtered_covs[-1][None, ...]))
@@ -664,12 +702,13 @@ def extended_kalman_smoother(
         smoothed_covariances=smoothed_covs,
     )
 
+
 # Iterated-EKF smoothing: multiple linearizations around posterior
 def iterated_extended_kalman_smoother(
     params: ParamsCDNLGSSM,
-    emissions:  Float[Array, "ntime emission_dim"],
+    emissions: Float[Array, "ntime emission_dim"],
     filter_hyperparams: EKFHyperParams = EKFHyperParams(),
-    t_emissions: Optional[Float[Array, "num_timesteps 1"]]=None,
+    t_emissions: Optional[Float[Array, "num_timesteps 1"]] = None,
     num_iter: int = 2,
     inputs: Optional[Float[Array, "ntime input_dim"]] = None,
     warn: bool = True,
@@ -682,8 +721,8 @@ def iterated_extended_kalman_smoother(
             - diffusion coefficient matrix L
             - Brownian covariance matrix Q
         emissions: observation sequence.
-        filter_hyperparams: EKFHyperParams = EKFHyperParams(),    
-        t_emissions: continuous-time specific time instants of observations: if not None, it is an array 
+        filter_hyperparams: EKFHyperParams = EKFHyperParams(),
+        t_emissions: continuous-time specific time instants of observations: if not None, it is an array
         num_iter: number of linearizations around posterior for update step (default 2).
         inputs: optional array of inputs.
         warn: whether to issue warnings during smoothing (e.g., PSD issues).
@@ -703,30 +742,28 @@ def iterated_extended_kalman_smoother(
             t_emissions,
             smoothed_prior,
             inputs,
-            warn=warn
+            warn=warn,
         )
         return smoothed_posterior, None
 
     # TODO: replace single call with _step
-    print("WARNING: We are not running iterated_EKF, until we figure out how to scan over _steps with different input-output carry variables")
+    print(
+        "WARNING: We are not running iterated_EKF, until we figure out how to scan over _steps with different input-output carry variables"
+    )
     smoothed_posterior = extended_kalman_smoother(
-            params,
-            emissions,
-            filter_hyperparams,
-            t_emissions,
-            None,
-            inputs,
-            warn=warn
-        )
-    
+        params, emissions, filter_hyperparams, t_emissions, None, inputs, warn=warn
+    )
+
     return smoothed_posterior
+
 
 # CD-NLGSSM Posterior Sampling function: Extended Kalman Posterior Sample
 def extended_kalman_posterior_sample(
     key: PRNGKey,
     params: ParamsCDNLGSSM,
-    emissions:  Float[Array, "ntime emission_dim"],
-    t_emissions: Optional[Float[Array, "num_timesteps 1"]]=None,
+    emissions: Float[Array, "ntime emission_dim"],
+    filter_hyperparams: EKFHyperParams = EKFHyperParams(),
+    t_emissions: Optional[Float[Array, "num_timesteps 1"]] = None,
     inputs: Optional[Float[Array, "ntime input_dim"]] = None,
     warn: bool = True,
 ) -> Float[Array, "ntime state_dim"]:
@@ -739,7 +776,7 @@ def extended_kalman_posterior_sample(
             - diffusion coefficient matrix L
             - Brownian covariance matrix Q
         emissions: observation sequence.
-        t_emissions: continuous-time specific time instants of observations: if not None, it is an array 
+        t_emissions: continuous-time specific time instants of observations: if not None, it is an array
         inputs: optional array of inputs
         warn: whether to issue warnings during filtering (e.g., PSD issues).
 
@@ -752,31 +789,29 @@ def extended_kalman_posterior_sample(
     # t0 and t1 are num_timesteps \times 0
     if t_emissions is not None:
         num_timesteps = t_emissions.shape[0]
-        t0 = tree_map(lambda x: x[:,0], t_emissions)
+        t0 = tree_map(lambda x: x[:, 0], t_emissions)
         t1 = tree_map(
             lambda x: jnp.concatenate(
-                (t_emissions[1:, 0], jnp.array([t_emissions[-1, 0] + filter_hyperparams.dt_final]))  # NB: t_{N+1} is simply t_{N}+dt_final
+                (
+                    t_emissions[1:, 0],
+                    jnp.array([t_emissions[-1, 0] + filter_hyperparams.dt_final]),
+                )  # NB: t_{N+1} is simply t_{N}+dt_final
             ),
             t_emissions,
         )
     else:
         num_timesteps = len(emissions)
         t0 = jnp.arange(num_timesteps)
-        t1 = jnp.arange(1,num_timesteps+1)
+        t1 = jnp.arange(1, num_timesteps + 1)
 
     # Indices for inputs and emissions
     t0_idx = jnp.arange(num_timesteps)
 
     # Get filtered posterior
     filtered_posterior = extended_kalman_filter(
-        params,
-        emissions,
-        t_emissions,
-        inputs=inputs,
-        warn=warn
+        params, emissions, t_emissions, inputs=inputs, warn=warn
     )
     # Extract filtered sufficient statistics
-    ll = filtered_posterior.marginal_loglik
     filtered_means = filtered_posterior.filtered_means
     filtered_covs = filtered_posterior.filtered_covariances
 
@@ -796,26 +831,14 @@ def extended_kalman_posterior_sample(
 
         # Get parameters and inputs for time t0
         u = inputs[t0_idx]
-        Q = params.dynamics.diffusion_cov.f(None,u,t0)
+        Q = params.dynamics.diffusion_cov.f(None, u, t0)
 
         # Condition on next state
         smoothed_mean, smoothed_cov = _condition_on(
-            filtered_mean,
-            filtered_cov,
-            f,
-            F,
-            Q,
-            u,
-            next_state,
-            t0,
-            1,
-            warn=warn
+            filtered_mean, filtered_cov, f, F, Q, u, next_state, t0, 1, warn=warn
         )
         # Sample state at time t0
-        state = MVN(
-            smoothed_mean,
-            smoothed_cov
-        ).sample(seed=key)
+        state = MVN(smoothed_mean, smoothed_cov).sample(seed=key)
 
         # Return carry and outputs
         return state, state
@@ -824,10 +847,7 @@ def extended_kalman_posterior_sample(
     key, this_key = jr.split(key, 2)
 
     # Sample last state from filtered distribution
-    last_state = MVN(
-        filtered_means[-1],
-        filtered_covs[-1]
-    ).sample(seed=this_key)
+    last_state = MVN(filtered_means[-1], filtered_covs[-1]).sample(seed=this_key)
 
     # Run the extended Kalman smoother, in reverse mode
     _, states = lax.scan(
@@ -835,14 +855,18 @@ def extended_kalman_posterior_sample(
         last_state,
         (
             jr.split(key, num_timesteps - 1),
-            t0, t1, t0_idx,
-            filtered_means[:-1], filtered_covs[:-1],
+            t0,
+            t1,
+            t0_idx,
+            filtered_means[:-1],
+            filtered_covs[:-1],
         ),
         reverse=True,
     )
 
     # Concatenate the sampled states and return
     return jnp.vstack([states, last_state])
+
 
 # CD-NLGSSM forecast function: Extended Kalman Filter Forecast
 def forecast_extended_kalman_filter(
@@ -852,7 +876,7 @@ def forecast_extended_kalman_filter(
     t_forecast: Float[Array, "num_timesteps 1"],
     filter_hyperparams: EKFHyperParams = EKFHyperParams(),
     inputs: Optional[Float[Array, "ntime input_dim"]] = None,
-    output_fields: Optional[List[str]]=[
+    output_fields: Optional[List[str]] = [
         "forecasted_state_means",
         "forecasted_state_covariances",
     ],
@@ -873,7 +897,7 @@ def forecast_extended_kalman_filter(
         t_forecast: continuous-time specific time instants to forecast
         filter_hyperparams: hyper-parameters of the EKF, related to the approximation order
         inputs: optional array of inputs.
-        output_fields: list of fields to return 
+        output_fields: list of fields to return
         warn: whether to issue warnings (e.g., about PSD issues)
 
     Returns:
@@ -887,12 +911,10 @@ def forecast_extended_kalman_filter(
     if t_forecast is not None:
         num_timesteps = t_forecast.shape[0]
         t0 = tree_map(
-            lambda x: jnp.concatenate(
-                (t_init, t_forecast[:-1, 0])
-            ),
+            lambda x: jnp.concatenate((t_init, t_forecast[:-1, 0])),
             t_forecast,
         )
-        t1 = tree_map(lambda x: x[:,0], t_forecast)
+        t1 = tree_map(lambda x: x[:, 0], t_forecast)
     else:
         raise ValueError("t_forecast must be provided for forecasting")
 
@@ -905,14 +927,15 @@ def forecast_extended_kalman_filter(
         # Unpack the inputs
         current_state_mean, current_state_cov = carry
         t0, t1, t0_idx = args
-        
+
         # Predict the next state based on EKF
         pred_state_mean, pred_state_cov = _predict(
             current_state_mean,
             current_state_cov,
             params,
-            t0, t1,
-            inputs[t0_idx], # Inputs impact state at t0
+            t0,
+            t1,
+            inputs[t0_idx],  # Inputs impact state at t0
             filter_hyperparams,
             warn=warn,
         )
@@ -931,12 +954,7 @@ def forecast_extended_kalman_filter(
     # based on provided initial distribution's mean and covariance
     carry = (init_forecast.mean(), init_forecast.covariance())
     # Run the extended Kalman filter, via lax.scan
-    _, outputs = lax_scan(
-        _step,
-        carry,
-        (t0, t1, t0_idx),
-        debug=DEBUG
-    )
+    _, outputs = lax_scan(_step, carry, (t0, t1, t0_idx), debug=DEBUG)
 
     # Build the forecast object
     forecast = GSSMForecast(
@@ -944,21 +962,23 @@ def forecast_extended_kalman_filter(
     )
     return forecast
 
+
 # CD-NLGSSM emission function: Emissions from EKF linearization
 def emissions_extended_kalman_filter(
     params: ParamsCDNLGSSM,
     t_states: Float[Array, "num_timesteps 1"],
     state_means: Float[Array, "num_timesteps state_dim"],
-    state_covs: Optional[Float[Array, "num_timesteps state_dim state_dim"]]=None,
+    state_covs: Optional[Float[Array, "num_timesteps state_dim state_dim"]] = None,
     inputs: Optional[Float[Array, "num_timesteps input_dim"]] = None,
     filter_hyperparams: EKFHyperParams = EKFHyperParams(),
     warn: bool = True,
 ) -> Tuple[
-        Float[Array, "num_timesteps emission_dim"], Optional[Float[Array, "num_timesteps emission_dim emission_dim"]]
-    ]:
+    Float[Array, "num_timesteps emission_dim"],
+    Optional[Float[Array, "num_timesteps emission_dim emission_dim"]],
+]:
     r"""Compute the emissions corresponding to
         the EKF linearization of the CD-NLGSSM model.
-    
+
     Args:
         params: CD-NLGSSM parameters, containing
             - dynamics RHS drift function
@@ -976,15 +996,15 @@ def emissions_extended_kalman_filter(
     Returns:
         emissions_mean: mean of emissions
         emissions_covariance: covariance of emissions, if available
-    
+
     """
-    
+
     # Figure out timestamps, as vectors to scan over
     # t_states is of shape num_timesteps \times 1
     # t0 and t1 are num_timesteps \times 0
     if t_states is not None:
         num_timesteps = t_states.shape[0]
-        t0 = tree_map(lambda x: x[:,0], t_states)
+        t0 = tree_map(lambda x: x[:, 0], t_states)
     else:
         raise ValueError("t_states must be provided for forecasting")
 
@@ -997,53 +1017,36 @@ def emissions_extended_kalman_filter(
     h = params.emissions.emission_function.f
     # Its Jacobian
     H = jacfwd(h)
-    
+
     # Define one step of EKF emissions
     def _step(carry, args):
         # Unpack the inputs
         state_mean, state_cov, t0, t0_idx = args
-        
+
         # Emission covariance
-        R = params.emissions.emission_cov.f(
-            None,
-            inputs[t0_idx],
-            t0
-        )
+        R = params.emissions.emission_cov.f(None, inputs[t0_idx], t0)
         # Push the state through the emission function
-        emission_mean = h(
-            state_mean,
-            inputs[t0_idx],
-            t0
-        )
+        emission_mean = h(state_mean, inputs[t0_idx], t0)
 
         # Emission covariance, according to first order EKF update
         # Evaluate Jacobian at state mean, inputs and time
-        H_x = H(
-            state_mean,
-            inputs[t0_idx],
-            t0
-        )
+        H_x = H(state_mean, inputs[t0_idx], t0)
         # Compute emission covariance
         if state_cov is None:
             emission_cov = R
         else:
             emission_cov = psd(H_x @ state_cov @ H_x.T + R, warn=warn)
-        
+
         # Return carry and output states
         return (state_mean, state_cov), (emission_mean, emission_cov)
 
     # Initialize the state,
     # based on provided initial distribution's mean and covariance
-    carry = (
-        state_means[0], state_covs[0]
-    )
+    carry = (state_means[0], state_covs[0])
     # Run the Extended Kalman filter, via lax.scan
     _, (emissions_mean, emissions_covariance) = lax_scan(
-        _step,
-        carry,
-        (state_means, state_covs, t0, t0_idx),
-        debug=DEBUG
-    ) # type: ignore
+        _step, carry, (state_means, state_covs, t0, t0_idx), debug=DEBUG
+    )  # type: ignore
 
     # Return emissions mean and covariance
     return emissions_mean, emissions_covariance

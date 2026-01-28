@@ -20,6 +20,7 @@ from .diffrax_utils import adjust_rhs
 
 ### Learnable data-driven models: neural networks, KL features, polynomial models, dictionary models
 
+
 # Two-layer neural network with GeLU activations
 class LearnableNN_TwoLayerGeLU(NamedTuple):
     r"""
@@ -35,10 +36,10 @@ class LearnableNN_TwoLayerGeLU(NamedTuple):
 
     # Neural network parameters
     weights1: Union[Float[Array, "hidden_dim input_dim"], ParameterProperties]
-    bias1: Union[Float[Array, "hidden_dim"], ParameterProperties]
+    bias1: Union[Float[Array, " hidden_dim"], ParameterProperties]
     weights2: Union[Float[Array, "output_dim hidden_dim"], ParameterProperties]
-    bias2: Union[Float[Array, "output_dim"], ParameterProperties]
-    
+    bias2: Union[Float[Array, " output_dim"], ParameterProperties]
+
     # Neural network function
     def f(self, x, u=None, t=None):
         """
@@ -54,16 +55,22 @@ class LearnableNN_TwoLayerGeLU(NamedTuple):
         # compute derivative given by NN
         foo = self.weights2 @ nn.gelu(self.weights1 @ x + self.bias1) + self.bias2
 
-        rhs = adjust_rhs(x, foo, lower_bound=-100, upper_bound=100,
-               lower_bound_derivative=-1000, upper_bound_derivative=1000)
+        rhs = adjust_rhs(
+            x,
+            foo,
+            lower_bound=-100,
+            upper_bound=100,
+            lower_bound_derivative=-1000,
+            upper_bound_derivative=1000,
+        )
 
         return rhs
-    
+
 
 # Learnable model based on Karhunen-Loeve features
 class LearnableKLFeatures(NamedTuple):
     r"""Model based on truncated Karhunen-Loeve expansion of Gaussian Process with RBF kernel.
-        
+
     Represents a function f: R^d_in -> R^d_out with learnable parameters.
         At a high level, the model is:
             $f(x) = output_stdev * weights @ sqrt(eigenvalues) @ eigenvectors(x)$
@@ -101,31 +108,40 @@ class LearnableKLFeatures(NamedTuple):
             NOTES:
                 - Technically, the eigenvalues contain output_stdev, but we separate them so these stdevs easily be learned.
     """
+
     # Learnable parameters
     weights: Union[Float[Array, "output_dim num_basis"], ParameterProperties]
-    output_stdevs: Union[Float[Array, "output_dim"], ParameterProperties]
-    eigenvalues: Union[Float[Array, "num_basis"], ParameterProperties]  # Number of eigenfunctions per dimension
+    output_stdevs: Union[Float[Array, " output_dim"], ParameterProperties]
+    eigenvalues: Union[
+        Float[Array, " num_basis"], ParameterProperties
+    ]  # Number of eigenfunctions per dimension
     A: Union[Float[Array, "num_basis input_dim"], ParameterProperties]
     B: Union[Float[Array, "num_basis input_dim"], ParameterProperties]
     normalization_factor: Union[Float, ParameterProperties]
 
     # Function to compute f(x)
     def f(self, x, u=None, t=None):
-
         # Compute basis functions efficiently using precomputed A and B
         phi = jnp.prod(jnp.cos(self.A * x + self.B), axis=1) * self.normalization_factor
 
         # Compute f(x) using eigenvalues and standard deviations
-        f_x = jnp.dot(phi * jnp.sqrt(self.eigenvalues), self.weights)  # Shape (d_output,)
+        f_x = jnp.dot(
+            phi * jnp.sqrt(self.eigenvalues), self.weights
+        )  # Shape (d_output,)
         f_x *= self.output_stdevs  # Apply standard deviations
 
         # Adjust the output to prevent numerical instability
         adj_rhs = adjust_rhs(
-            x, f_x, lower_bound=-100, upper_bound=100, lower_bound_derivative=-1000, upper_bound_derivative=1000
+            x,
+            f_x,
+            lower_bound=-100,
+            upper_bound=100,
+            lower_bound_derivative=-1000,
+            upper_bound_derivative=1000,
         )
 
         return adj_rhs
-    
+
     # Additional method to compute variance, given covariance matrix of weights
     def variance(self, x, cov_matrix):
         r"""
@@ -140,7 +156,7 @@ class LearnableKLFeatures(NamedTuple):
 
         WARNING: we are NOT using the cross-covariance between output dimensions, which may underestimate the variance???
         """
-        
+
         # Compute basis functions efficiently using precomputed A and B
         phi = jnp.prod(jnp.cos(self.A * x + self.B), axis=1) * self.normalization_factor
 
@@ -149,9 +165,12 @@ class LearnableKLFeatures(NamedTuple):
 
         # Compute the variance using the covariance matrix of the weights, then rescale by the output standard deviations
         # WARNING: we are NOT using the cross-covariance between output dimensions, which may underestimate the variance???
-        variance = self.output_stdevs**2 * jnp.stack([phi @ cov_matrix[:, i, :, i] @ phi for i in range(self.A.shape[1])])
+        variance = self.output_stdevs**2 * jnp.stack(
+            [phi @ cov_matrix[:, i, :, i] @ phi for i in range(self.A.shape[1])]
+        )
 
         return variance
+
 
 # Auxiliary function to precompute eigenvalues and basis function parameters for KL expansion
 def precompute_eigenvalues_and_basis(truncation, length_scales, domain):
@@ -166,7 +185,9 @@ def precompute_eigenvalues_and_basis(truncation, length_scales, domain):
         tuple: eigenvalues (array), A (matrix), B (vector), normalization_factor (scalar)
     """
     d_input = len(length_scales)  # Number of input dimensions
-    indices = list(product(range(truncation), repeat=d_input))  # All tensorized index combinations
+    indices = list(
+        product(range(truncation), repeat=d_input)
+    )  # All tensorized index combinations
     num_basis = len(indices)  # Total number of basis functions
 
     # Compute domain scaling factor
@@ -178,39 +199,58 @@ def precompute_eigenvalues_and_basis(truncation, length_scales, domain):
     # Precompute eigenvalues
     lambda_n = jnp.zeros(num_basis)
     for idx, index_set in enumerate(indices):
-        lambda_n = lambda_n.at[idx].set(jnp.prod(jnp.array([
-            length_scales[dim] * jnp.sqrt(2 * a[dim]) * \
-            jnp.exp(-1 / jnp.sqrt(2) * (index_set[dim] * length_scales[dim] * jnp.pi / a[dim])**2)
-            for dim in range(d_input)
-        ]))) # Shape (num_basis,)
+        lambda_n = lambda_n.at[idx].set(
+            jnp.prod(
+                jnp.array(
+                    [
+                        length_scales[dim]
+                        * jnp.sqrt(2 * a[dim])
+                        * jnp.exp(
+                            -1
+                            / jnp.sqrt(2)
+                            * (index_set[dim] * length_scales[dim] * jnp.pi / a[dim])
+                            ** 2
+                        )
+                        for dim in range(d_input)
+                    ]
+                )
+            )
+        )  # Shape (num_basis,)
 
     # Precompute A and B for basis function
-    A = jnp.array([
-        [index_set[dim] * jnp.pi / a[dim] for dim in range(d_input)]
-        for index_set in indices
-    ])  # Shape (num_basis, d_input)
+    A = jnp.array(
+        [
+            [index_set[dim] * jnp.pi / a[dim] for dim in range(d_input)]
+            for index_set in indices
+        ]
+    )  # Shape (num_basis, d_input)
 
-    B = jnp.array([
-        [0 if index_set[dim] % 2 == 0 else -jnp.pi / 2 for dim in range(d_input)]
-        for index_set in indices
-    ])  # Shape (num_basis, d_input)
-
+    B = jnp.array(
+        [
+            [0 if index_set[dim] % 2 == 0 else -jnp.pi / 2 for dim in range(d_input)]
+            for index_set in indices
+        ]
+    )  # Shape (num_basis, d_input)
 
     return lambda_n, A, B, normalization_factor
+
 
 # Learnable model based on arbitrary dictionary of functions
 class LearnableDictionaryModel(NamedTuple):
     r"""Function with learnable parameters applied to a dictionary of arbitrary transformations.
-        $f(x) = weights @ dictionary_terms(x)$
-    
-        where
-            weights: weights for the linear combination of dictionary terms
-        dictionary_functions: list of transformations applied to input x to generate terms
-    
+    $f(x) = weights @ dictionary_terms(x)$
+
+    where
+        weights: weights for the linear combination of dictionary terms
+    dictionary_functions: list of transformations applied to input x to generate terms
+
     """
+
     # Learnable parameters
     weights: Union[Float[Array, "output_dim num_terms"], Array]
-    dictionary_functions: List[Callable[[Array], Array]]  # Arbitrary transformations, including constants
+    dictionary_functions: List[
+        Callable[[Array], Array]
+    ]  # Arbitrary transformations, including constants
 
     # Function to compute f(x)
     def f(self, x, u=None, t=None):
@@ -224,13 +264,21 @@ class LearnableDictionaryModel(NamedTuple):
             Linear combination of transformed terms.
         """
         # Apply each transformation to x and stack results into the dictionary terms
-        dictionary_terms = jnp.stack([func(x) for func in self.dictionary_functions], axis=0)
+        dictionary_terms = jnp.stack(
+            [func(x) for func in self.dictionary_functions], axis=0
+        )
 
         # Compute the linear combination using weights
         foo = self.weights @ dictionary_terms
-    
-        adj_rhs = adjust_rhs(x, foo, lower_bound=-100, upper_bound=100, 
-            lower_bound_derivative=-1000, upper_bound_derivative=1000)
+
+        adj_rhs = adjust_rhs(
+            x,
+            foo,
+            lower_bound=-100,
+            upper_bound=100,
+            lower_bound_derivative=-1000,
+            upper_bound_derivative=1000,
+        )
 
         return adj_rhs
 
@@ -238,13 +286,14 @@ class LearnableDictionaryModel(NamedTuple):
 # Learnable polynomial model using monomial dictionary
 class LearnablePolynomialModel(NamedTuple):
     r"""Model with learnable parameters applied to an efficient monomial dictionary.
-        $ f(x) = weights @ monomial_terms(x)$
-    
-        where 
-            weights: weights for the linear combination of dictionary terms
-        exponents: matrix of exponents for each monomial term
+    $ f(x) = weights @ monomial_terms(x)$
+
+    where
+        weights: weights for the linear combination of dictionary terms
+    exponents: matrix of exponents for each monomial term
 
     """
+
     # Learnable parameters
     weights: Union[Float[Array, "output_dim num_terms"], ParameterProperties]
     exponents: Union[Float[Array, "num_terms input_dim"], ParameterProperties]
@@ -267,16 +316,23 @@ class LearnablePolynomialModel(NamedTuple):
         # Compute the linear combination using weights
         foo = self.weights @ monomial_terms
 
-        adj_rhs = adjust_rhs(x, foo, lower_bound=-100, upper_bound=100,
-               lower_bound_derivative=-1000, upper_bound_derivative=1000)
+        adj_rhs = adjust_rhs(
+            x,
+            foo,
+            lower_bound=-100,
+            upper_bound=100,
+            lower_bound_derivative=-1000,
+            upper_bound_derivative=1000,
+        )
 
         return adj_rhs
 
+
 # Auxiliary function to generate monomial exponents
 def generate_monomial_exponents(N: int, D: int) -> Array:
-    r""" Generate an array of exponents representing
+    r"""Generate an array of exponents representing
         all N-input to 1-output monomials up to degree D.
-        
+
     Each row of the output array represents the exponents for a monomial term.
 
     Parameters:
@@ -288,7 +344,7 @@ def generate_monomial_exponents(N: int, D: int) -> Array:
 
         NB: It is best to return integers, as this has implications for how gradients are computed.
     """
-    
+
     #  List to store all exponent combinations
     exponents = []
 
@@ -302,18 +358,19 @@ def generate_monomial_exponents(N: int, D: int) -> Array:
                 term_exponents = term_exponents.at[idx].add(1.0)
             exponents.append(term_exponents)
 
-    exponents = jnp.stack(exponents, axis=0) 
+    exponents = jnp.stack(exponents, axis=0)
 
     # convert to integers
     exponents = exponents.astype(jnp.int32)
 
     return exponents
 
+
 # Auxiliary function to generate monomial transformations
 def generate_monomial_transformations(N: int, D: int) -> List[Callable[[Array], Array]]:
     r"""Generate a list of transformations representing
         all N-input to 1-output monomials up to degree D.
-        
+
     Each transformation is a function that takes
         an input vector x and
         returns a monomial term of x.

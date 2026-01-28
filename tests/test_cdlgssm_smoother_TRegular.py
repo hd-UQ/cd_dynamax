@@ -1,24 +1,28 @@
 # Imports
+import jax
 import jax.numpy as jnp
 import jax.random as jr
 
 from cd_dynamax import ContDiscreteLinearGaussianSSM, LinearGaussianSSM
 from cd_dynamax.src.utils.test_utils import compare, compare_structs
+from cd_dynamax.dynamax.linear_gaussian_ssm.inference import lgssm_smoother
+from cd_dynamax.src.continuous_discrete_linear_gaussian_ssm.models import (
+    cdlgssm_smoother,
+)
+from cd_dynamax.dynamax.parameters import ParameterProperties
+from cd_dynamax.dynamax.utils.bijectors import RealToPSDBijector
+from cd_dynamax.src.continuous_discrete_linear_gaussian_ssm.inference import (
+    KFHyperParams,
+)
 
 # Whether to plot test results or not
 PLOT_TEST_RESULTS = False
 
 # JAX device check
 print("************* Checking JAX device *************")
-import jax
-print('Running on jax device:{}'.format(
-        jax.devices()
-    )
-)
-print('Running on jax device platform:{}'.format(
-        jax.devices()[0].platform
-    )
-)
+
+print("Running on jax device:{}".format(jax.devices()))
+print("Running on jax device platform:{}".format(jax.devices()[0].platform))
 print("***********************************************")
 
 # The idea of this test is as following (uses regular time intervals ONLY):
@@ -55,14 +59,10 @@ d_params, d_param_props = d_model.initialize(
 # Simulate from discrete model
 print("Simulating in discrete time")
 d_states, d_emissions = d_model.sample(
-    d_params,
-    key_sample,
-    num_timesteps=NUM_TIMESTEPS,
-    inputs=inputs
+    d_params, key_sample, num_timesteps=NUM_TIMESTEPS, inputs=inputs
 )
 
-from cd_dynamax.dynamax.linear_gaussian_ssm.inference import lgssm_smoother
-print('Discrete time smoothing')
+print("Discrete time smoothing")
 d_smoother_posterior = lgssm_smoother(d_params, d_emissions, inputs)
 
 print("************* Continuous-Discrete LGSSM *************")
@@ -77,58 +77,55 @@ cd_model = ContDiscreteLinearGaussianSSM(
 )
 
 # Initialize, controlling what is learned
-from cd_dynamax.src.continuous_discrete_linear_gaussian_ssm.models import *
+
 cd_params, cd_param_props = cd_model.initialize(
     key_init,
     ## Initial
-    initial_mean = {
-            "params": jnp.zeros(cd_model.state_dim),
-            "props": ParameterProperties()
+    initial_mean={
+        "params": jnp.zeros(cd_model.state_dim),
+        "props": ParameterProperties(),
     },
-    initial_cov = {
+    initial_cov={
         "params": jnp.eye(cd_model.state_dim),
-        "props": ParameterProperties(constrainer=RealToPSDBijector())
+        "props": ParameterProperties(constrainer=RealToPSDBijector()),
     },
     ## Dynamics
-    dynamics_weights = {
+    dynamics_weights={
         "params": -0.1 * jnp.eye(cd_model.state_dim),
-        "props": ParameterProperties()
+        "props": ParameterProperties(),
     },
-    dynamics_bias = {
+    dynamics_bias={
         "params": jnp.zeros((cd_model.state_dim,)),
-        "props": ParameterProperties()
+        "props": ParameterProperties(),
     },
-    dynamics_diffusion_coefficient = {
+    dynamics_diffusion_coefficient={
         "params": 0.5 * jnp.eye(cd_model.state_dim),
-        "props": ParameterProperties()
+        "props": ParameterProperties(),
     },
-    dynamics_diffusion_cov = {
+    dynamics_diffusion_cov={
         "params": 0.5 * jnp.eye(cd_model.state_dim),
-        "props": ParameterProperties(constrainer=RealToPSDBijector())
+        "props": ParameterProperties(constrainer=RealToPSDBijector()),
     },
     ## Emission
-    emission_weights = {
+    emission_weights={
         "params": jr.normal(key_init, (cd_model.emission_dim, cd_model.state_dim)),
-        "props": ParameterProperties()
+        "props": ParameterProperties(),
     },
-    emission_bias = {
+    emission_bias={
         "params": jnp.zeros((cd_model.emission_dim,)),
-        "props": ParameterProperties()
+        "props": ParameterProperties(),
     },
-    emission_cov = {
+    emission_cov={
         "params": 0.1 * jnp.eye(cd_model.emission_dim),
-        "props": ParameterProperties(constrainer=RealToPSDBijector())
-    }
+        "props": ParameterProperties(constrainer=RealToPSDBijector()),
+    },
 )
 
 
 # Simulate from continuous model
 print("Simulating in continuous-discrete time")
 cd_num_timesteps_states, cd_num_timesteps_emissions = cd_model.sample(
-    cd_params,
-    key_sample,
-    num_timesteps=NUM_TIMESTEPS,
-    inputs=inputs
+    cd_params, key_sample, num_timesteps=NUM_TIMESTEPS, inputs=inputs
 )
 
 cd_states, cd_emissions = cd_model.sample(
@@ -136,7 +133,7 @@ cd_states, cd_emissions = cd_model.sample(
     key_sample,
     num_timesteps=NUM_TIMESTEPS,
     t_emissions=t_emissions,
-    inputs=inputs
+    inputs=inputs,
 )
 
 print("\tChecking states...")
@@ -151,36 +148,41 @@ compare(d_states, cd_states)
 print("\tChecking emissions...")
 compare(d_emissions, cd_emissions)
 
-from cd_dynamax.src.continuous_discrete_linear_gaussian_ssm.inference import cdlgssm_smoother, KFHyperParams
+
 # We set dt_final=1 so that predicted mean and covariance at the end of sequence match those of discrete filtering
-kf_hyperparams=KFHyperParams(dt_final = 1.)
+kf_hyperparams = KFHyperParams(dt_final=1.0)
 
 for smoother_type in ["cd_smoother_1", "cd_smoother_2"]:
-    print(f'Continuous-Discrete time KF smoothing {smoother_type}')
+    print(f"Continuous-Discrete time KF smoothing {smoother_type}")
     cd_smoother_posterior = cdlgssm_smoother(
         cd_params,
         cd_emissions,
         t_emissions,
         filter_hyperparams=kf_hyperparams,
         inputs=inputs,
-        smoother_type=smoother_type
+        smoother_type=smoother_type,
     )
 
     print(f"Comparing {smoother_type} smoothed posteriors...")
     compare_structs(d_smoother_posterior, cd_smoother_posterior, accept_failure=True)
 
-    print(f"All Discrete to Continous-Discrete {smoother_type} smoothed posterior tests passed!")
+    print(
+        f"All Discrete to Continous-Discrete {smoother_type} smoothed posterior tests passed!"
+    )
 
 if PLOT_TEST_RESULTS:
-    print("WARNING: plotting filtering results for understanding impact of smoothing algorithm differences.")
+    print(
+        "WARNING: plotting filtering results for understanding impact of smoothing algorithm differences."
+    )
     import matplotlib.pyplot as plt
+
     for n_state in jnp.arange(STATE_DIM):
         plt.figure()
         plt.plot(
             t_emissions,
             d_states[:, n_state],
             label="true discrete position",
-            color="black"
+            color="black",
         )
         plt.plot(
             t_emissions,
@@ -207,14 +209,14 @@ if PLOT_TEST_RESULTS:
             cd_smoother_posterior.filtered_means[:, n_state],
             label="Post-SGD fit Continuous-Discrete filtered state",
             color="blue",
-            marker="x"
+            marker="x",
         )
         plt.plot(
             t_emissions,
             cd_smoother_posterior.smoothed_means[:, n_state],
             label="Post-SGD fit Continuous-Discrete smoothed state",
             color="green",
-            marker="x"
+            marker="x",
         )
         plt.xlabel("time")
         plt.ylabel("x_{}".format(n_state))

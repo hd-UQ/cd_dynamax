@@ -1,4 +1,5 @@
 # Imports
+import jax
 import jax.numpy as jnp
 import jax.random as jr
 
@@ -6,28 +7,32 @@ import jax.random as jr
 from cd_dynamax import (
     ContDiscreteLinearGaussianSSM,
     ContDiscreteNonlinearGaussianSSM,
-    cdlgssm_smoother,
-    cdnlgssm_smoother,
     KFHyperParams,
     EKFHyperParams,
 )
-    
 from cd_dynamax.src.utils.test_utils import compare, compare_structs
+from cd_dynamax.src.continuous_discrete_linear_gaussian_ssm.models import (
+    cdlgssm_smoother,
+)
+from cd_dynamax.dynamax.parameters import ParameterProperties
+from cd_dynamax.dynamax.utils.bijectors import RealToPSDBijector
+from cd_dynamax.src.continuous_discrete_nonlinear_gaussian_ssm.models import (
+    cdnlgssm_smoother,
+)
+from cd_dynamax.src.continuous_discrete_nonlinear_gaussian_ssm.cdnlgssm_utils import (
+    LearnableVector,
+    LearnableMatrix,
+    LearnableLinear,
+)
 
 # Whether to plot test results or not
 PLOT_TEST_RESULTS = False
 
 # JAX device check
 print("************* Checking JAX device *************")
-import jax
-print('Running on jax device:{}'.format(
-        jax.devices()
-    )
-)
-print('Running on jax device platform:{}'.format(
-        jax.devices()[0].platform
-    )
-)
+
+print("Running on jax device:{}".format(jax.devices()))
+print("Running on jax device platform:{}".format(jax.devices()[0].platform))
 print("***********************************************")
 
 # The idea of this test is as following (uses regular time intervals ONLY):
@@ -53,69 +58,62 @@ inputs = None  # Not interested in inputs for now
 cd_model = ContDiscreteLinearGaussianSSM(
     state_dim=STATE_DIM,
     emission_dim=EMISSION_DIM,
-    # Test with no biases 
+    # Test with no biases
     # has_dynamics_bias = False,
     # has_emissions_bias = False,
 )
 # Initialize, controlling what is learned
-from cd_dynamax.src.continuous_discrete_linear_gaussian_ssm.models import *
+
 cd_params, cd_param_props = cd_model.initialize(
     key1,
     ## Initial
-    initial_mean = {
-            "params": jnp.zeros(cd_model.state_dim),
-            "props": ParameterProperties()
+    initial_mean={
+        "params": jnp.zeros(cd_model.state_dim),
+        "props": ParameterProperties(),
     },
-    initial_cov = {
+    initial_cov={
         "params": jnp.eye(cd_model.state_dim),
-        "props": ParameterProperties(constrainer=RealToPSDBijector())
+        "props": ParameterProperties(constrainer=RealToPSDBijector()),
     },
     ## Dynamics
-    dynamics_weights = {
+    dynamics_weights={
         "params": -0.1 * jnp.eye(cd_model.state_dim),
-        "props": ParameterProperties()
+        "props": ParameterProperties(),
     },
-    dynamics_bias = {
+    dynamics_bias={
         "params": jnp.zeros((cd_model.state_dim,)),
-        "props": ParameterProperties(trainable=False) # We do not learn bias term!
+        "props": ParameterProperties(trainable=False),  # We do not learn bias term!
     },
-    dynamics_diffusion_coefficient = {
+    dynamics_diffusion_coefficient={
         "params": 0.1 * jnp.eye(cd_model.state_dim),
-        "props": ParameterProperties()
+        "props": ParameterProperties(),
     },
-    dynamics_diffusion_cov = {
+    dynamics_diffusion_cov={
         "params": 0.1 * jnp.eye(cd_model.state_dim),
-        "props": ParameterProperties(constrainer=RealToPSDBijector())
+        "props": ParameterProperties(constrainer=RealToPSDBijector()),
     },
     ## Emission
-    emission_weights = {
+    emission_weights={
         "params": jr.normal(key1, (cd_model.emission_dim, cd_model.state_dim)),
-        "props": ParameterProperties()
+        "props": ParameterProperties(),
     },
-    emission_bias = {
+    emission_bias={
         "params": jnp.zeros((cd_model.emission_dim,)),
-        "props": ParameterProperties(trainable=False) # We do not learn bias term!
+        "props": ParameterProperties(trainable=False),  # We do not learn bias term!
     },
-    emission_cov = {
+    emission_cov={
         "params": 0.1 * jnp.eye(cd_model.emission_dim),
-        "props": ParameterProperties(constrainer=RealToPSDBijector())
-    }
+        "props": ParameterProperties(constrainer=RealToPSDBijector()),
+    },
 )
 # Simulate from continuous model
 print("Simulating in continuous-discrete time")
 cd_num_timesteps_states, cd_num_timesteps_emissions = cd_model.sample(
-    cd_params,
-    key2,
-    num_timesteps=NUM_TIMESTEPS,
-    inputs=inputs
+    cd_params, key2, num_timesteps=NUM_TIMESTEPS, inputs=inputs
 )
 
 cd_states, cd_emissions = cd_model.sample(
-    cd_params,
-    key2,
-    num_timesteps=NUM_TIMESTEPS,
-    t_emissions=t_emissions,
-    inputs=inputs
+    cd_params, key2, num_timesteps=NUM_TIMESTEPS, t_emissions=t_emissions, inputs=inputs
 )
 
 print("\tChecking states...")
@@ -126,33 +124,35 @@ compare(cd_num_timesteps_emissions, cd_emissions)
 
 ########### Now make non-linear models, assuming linearity ########
 print("************* Continuous-Discrete Non-linear GSSM *************")
-from cd_dynamax.src.continuous_discrete_nonlinear_gaussian_ssm.models import *
 
 # Model def
 inputs = None  # Not interested in inputs for now
-cdnl_model = ContDiscreteNonlinearGaussianSSM(state_dim=STATE_DIM, emission_dim=EMISSION_DIM)
+cdnl_model = ContDiscreteNonlinearGaussianSSM(
+    state_dim=STATE_DIM, emission_dim=EMISSION_DIM
+)
 
 # Test models with first and second order SDE approximation (both should be correct for linear models)
-for dynamics_approx_order in [1., 2.]:
+for dynamics_approx_order in [1.0, 2.0]:
     # Initialize models with linear learnable functions
     cdnl_params, cdnl_param_props = cdnl_model.initialize(
         key1,
-        initial_mean = {
+        initial_mean={
             "params": LearnableVector(params=jnp.zeros(cdnl_model.state_dim)),
-            "props": LearnableVector(params=ParameterProperties())
+            "props": LearnableVector(params=ParameterProperties()),
         },
-        initial_cov = {
+        initial_cov={
             "params": LearnableMatrix(params=jnp.eye(cdnl_model.state_dim)),
-            "props": LearnableMatrix(params=ParameterProperties(constrainer=RealToPSDBijector()))
+            "props": LearnableMatrix(
+                params=ParameterProperties(constrainer=RealToPSDBijector())
+            ),
         },
         dynamics_drift={
             "params": LearnableLinear(
-                weights=cd_params.dynamics.weights,
-                bias=cd_params.dynamics.bias
+                weights=cd_params.dynamics.weights, bias=cd_params.dynamics.bias
             ),
             "props": LearnableLinear(
                 weights=ParameterProperties(),
-                bias=ParameterProperties(trainable=False) # We do not learn bias term!
+                bias=ParameterProperties(trainable=False),  # We do not learn bias term!
             ),
         },
         dynamics_diffusion_coefficient={
@@ -161,30 +161,39 @@ for dynamics_approx_order in [1., 2.]:
         },
         dynamics_diffusion_cov={
             "params": LearnableMatrix(params=cd_params.dynamics.diffusion_cov),
-            "props": LearnableMatrix(params=ParameterProperties(constrainer=RealToPSDBijector())),
+            "props": LearnableMatrix(
+                params=ParameterProperties(constrainer=RealToPSDBijector())
+            ),
         },
         dynamics_approx_order=dynamics_approx_order,
         emission_function={
             "params": LearnableLinear(
-                weights=cd_params.emissions.weights,
-                bias=cd_params.emissions.bias
+                weights=cd_params.emissions.weights, bias=cd_params.emissions.bias
             ),
             "props": LearnableLinear(
                 weights=ParameterProperties(),
-                bias=ParameterProperties(trainable=False) # We do not learn bias term!
+                bias=ParameterProperties(trainable=False),  # We do not learn bias term!
             ),
         },
-        emission_cov = {
-            "params": LearnableMatrix(params=0.1*jnp.eye(cdnl_model.emission_dim)),
-            "props": LearnableMatrix(params=ParameterProperties(constrainer=RealToPSDBijector()))
-        }
+        emission_cov={
+            "params": LearnableMatrix(params=0.1 * jnp.eye(cdnl_model.emission_dim)),
+            "props": LearnableMatrix(
+                params=ParameterProperties(constrainer=RealToPSDBijector())
+            ),
+        },
     )
 
     # Simulate from continuous-discrete nl model
-    print(f"Simulating {dynamics_approx_order} order CDNLGSSM in continuous-discrete time")
+    print(
+        f"Simulating {dynamics_approx_order} order CDNLGSSM in continuous-discrete time"
+    )
     cdnl_states, cdnl_emissions = cdnl_model.sample(
-            cdnl_params, key2, t_emissions=t_emissions, num_timesteps=NUM_TIMESTEPS, inputs=inputs
-        )
+        cdnl_params,
+        key2,
+        t_emissions=t_emissions,
+        num_timesteps=NUM_TIMESTEPS,
+        inputs=inputs,
+    )
 
     # check that these are similar to samples from the cd-linear model
     print("\tChecking states...")
@@ -193,39 +202,48 @@ for dynamics_approx_order in [1., 2.]:
     print("\tChecking emissions...")
     compare(cdnl_emissions, cd_emissions)
 
-    print(f"**********************************")
+    print("**********************************")
     print("Continuous-Discrete time linear smoothing comparisons")
     for smoother_type in ["cd_smoother_1", "cd_smoother_2"]:
         # We set dt_final=1 so that predicted mean and covariance at the end of sequence match those of discrete filtering
-        kf_hyperparams=KFHyperParams(dt_final = 1.)
-        print(f'Continuous-Discrete time KF smoothing {smoother_type}')
+        kf_hyperparams = KFHyperParams(dt_final=1.0)
+        print(f"Continuous-Discrete time KF smoothing {smoother_type}")
         cd_smoother_posterior = cdlgssm_smoother(
             cd_params,
             cd_emissions,
             t_emissions,
             filter_hyperparams=kf_hyperparams,
             inputs=inputs,
-            smoother_type=smoother_type
+            smoother_type=smoother_type,
         )
 
         ######## Continuous-discrete EKF
         # first and second order state SDE approximation (both should be correct for linear models)
         for state_order in ["first", "second"]:
             # Run ekf with the non-linear model and data from the CDNLGSSM model
-            print(f"Running {state_order}-order EKF with non-linear model class and data from {dynamics_approx_order}-order CDNLGSSM model")
+            print(
+                f"Running {state_order}-order EKF with non-linear model class and data from {dynamics_approx_order}-order CDNLGSSM model"
+            )
             cd_ekf_smoother_posterior = cdnlgssm_smoother(
-                    cdnl_params,
-                    cdnl_emissions,
-                    filter_hyperparams=EKFHyperParams(dt_final = 1., state_order=state_order, emission_order="first"),
-                    t_emissions=t_emissions,
-                    inputs=inputs,
-                )
+                cdnl_params,
+                cdnl_emissions,
+                filter_hyperparams=EKFHyperParams(
+                    dt_final=1.0, state_order=state_order, emission_order="first"
+                ),
+                t_emissions=t_emissions,
+                inputs=inputs,
+            )
 
             # check that results in cd_ekf_post are similar to results from applying cd_kf (cd_filtered_posterior)
-            print(f"Comparing {smoother_type} KF smoothed posteriors with {state_order}-order EKF smoother...")
-            compare_structs(cd_smoother_posterior, cd_ekf_smoother_posterior, accept_failure=True)
+            print(
+                f"Comparing {smoother_type} KF smoothed posteriors with {state_order}-order EKF smoother..."
+            )
+            compare_structs(
+                cd_smoother_posterior, cd_ekf_smoother_posterior, accept_failure=True
+            )
 
-        print(f"Discrete to Continous-Discrete {smoother_type} smoothed posterior tests passed!")   
+        print(
+            f"Discrete to Continous-Discrete {smoother_type} smoothed posterior tests passed!"
+        )
 
 print("All EKS and CDNLGSSM model tests passed!")
-

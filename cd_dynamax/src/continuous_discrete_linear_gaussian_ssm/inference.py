@@ -12,32 +12,50 @@ import inspect
 
 # Distributions, compatible with JAX, from TensorFlow Probability
 import tensorflow_probability.substrates.jax as tfp
-from tensorflow_probability.substrates.jax.distributions import MultivariateNormalFullCovariance as MVN
+from tensorflow_probability.substrates.jax.distributions import (
+    MultivariateNormalFullCovariance as MVN,
+)
 import tensorflow_probability.substrates.jax.distributions as tfd
-tfd = tfp.distributions
-tfb = tfp.bijectors
 
 # Dynamax shared code
 from cd_dynamax.dynamax.types import PRNGKey, Scalar
 from cd_dynamax.dynamax.utils.utils import psd_solve
+
 # To avoid unnecessary redefinitions of code,
 # We import those classes that can be reused from LGSSM first, and define the rest later
 # Filtering and smoothing classes are equivalent
-from cd_dynamax.dynamax.linear_gaussian_ssm.inference import PosteriorGSSMFiltered, PosteriorGSSMSmoothed
+from cd_dynamax.dynamax.linear_gaussian_ssm.inference import (
+    PosteriorGSSMFiltered,
+    PosteriorGSSMSmoothed,
+)
+
 # Initial and emission parameter classes are equivalent
-from cd_dynamax.dynamax.linear_gaussian_ssm.inference import ParamsLGSSMInitial, ParamsLGSSMEmissions
+from cd_dynamax.dynamax.linear_gaussian_ssm.inference import (
+    ParamsLGSSMInitial,
+    ParamsLGSSMEmissions,
+)
 
 # Our codebase
 # CDLGSSM param and function definition
-from ..continuous_discrete_linear_gaussian_ssm.cdlgssm_utils import ParamsCDLGSSM, ParamsCDLGSSMDynamics, GSSMForecast
+from ..continuous_discrete_linear_gaussian_ssm.cdlgssm_utils import (
+    ParamsCDLGSSM,
+    ParamsCDLGSSMDynamics,
+    GSSMForecast,
+)
+
 # Diffrax based diff-eq solver
 from ..utils.diffrax_utils import diffeqsolve
+
 # Debug utilities
-from ..utils.debug_utils import *
+from ..utils.debug_utils import psd
+
+tfb = tfp.bijectors
+
 DEBUG = False
 
+
 #### Helper functions
-# Helper functions --- modified from dynamax 
+# Helper functions --- modified from dynamax
 def _get_params(x, dim, t):
     if callable(x):
         return x(t)
@@ -49,8 +67,10 @@ def _get_params(x, dim, t):
     else:
         return x
 
+
 _zeros_if_none = lambda x, shape: x if x is not None else jnp.zeros(shape)
-_process_input = lambda x, y: jnp.zeros((y,1)) if x is None else x
+_process_input = lambda x, y: jnp.zeros((y, 1)) if x is None else x
+
 
 # CD-LGSSM preprocess parameters and inputs
 def preprocess_params_and_inputs(params, num_timesteps, inputs):
@@ -73,28 +93,33 @@ def preprocess_params_and_inputs(params, num_timesteps, inputs):
     input_dim = inputs.shape[-1]
 
     # Default other parameters to zero
-    dynamics_input_weights = _zeros_if_none(params.dynamics.input_weights, (state_dim, input_dim))
+    dynamics_input_weights = _zeros_if_none(
+        params.dynamics.input_weights, (state_dim, input_dim)
+    )
     dynamics_bias = _zeros_if_none(params.dynamics.bias, (state_dim,))
-    emissions_input_weights = _zeros_if_none(params.emissions.input_weights, (emission_dim, input_dim))
+    emissions_input_weights = _zeros_if_none(
+        params.emissions.input_weights, (emission_dim, input_dim)
+    )
     emissions_bias = _zeros_if_none(params.emissions.bias, (emission_dim,))
 
     full_params = ParamsCDLGSSM(
-        initial=ParamsLGSSMInitial(
-            mean=params.initial.mean,
-            cov=params.initial.cov),
+        initial=ParamsLGSSMInitial(mean=params.initial.mean, cov=params.initial.cov),
         dynamics=ParamsCDLGSSMDynamics(
             weights=params.dynamics.weights,
             bias=dynamics_bias,
             input_weights=dynamics_input_weights,
             diffusion_coefficient=params.dynamics.diffusion_coefficient,
-            diffusion_cov=params.dynamics.diffusion_cov),
+            diffusion_cov=params.dynamics.diffusion_cov,
+        ),
         emissions=ParamsLGSSMEmissions(
             weights=params.emissions.weights,
             bias=emissions_bias,
             input_weights=emissions_input_weights,
-            cov=params.emissions.cov)
-        )
+            cov=params.emissions.cov,
+        ),
+    )
     return full_params, inputs
+
 
 # CD-LGSSM preprocess_args decorator
 def preprocess_args(f):
@@ -106,17 +131,27 @@ def preprocess_args(f):
         # Extract the arguments by name
         bound_args = sig.bind(*args, **kwargs)
         bound_args.apply_defaults()
-        params = bound_args.arguments['params']
-        emissions = bound_args.arguments['emissions']
-        t_emissions = bound_args.arguments['t_emissions']
-        filter_hyperparams = bound_args.arguments['filter_hyperparams']
-        inputs = bound_args.arguments['inputs']
+        params = bound_args.arguments["params"]
+        emissions = bound_args.arguments["emissions"]
+        t_emissions = bound_args.arguments["t_emissions"]
+        filter_hyperparams = bound_args.arguments["filter_hyperparams"]
+        inputs = bound_args.arguments["inputs"]
 
         num_timesteps = len(emissions)
-        full_params, inputs = preprocess_params_and_inputs(params, num_timesteps, inputs)
+        full_params, inputs = preprocess_params_and_inputs(
+            params, num_timesteps, inputs
+        )
 
-        return f(full_params, emissions, t_emissions, filter_hyperparams=filter_hyperparams, inputs=inputs)
+        return f(
+            full_params,
+            emissions,
+            t_emissions,
+            filter_hyperparams=filter_hyperparams,
+            inputs=inputs,
+        )
+
     return wrapper
+
 
 #### CD-LGSSM push-forward function
 # CD-LGSSM push-forward is computed
@@ -168,7 +203,7 @@ def compute_pushforward(
 
         # Return the RHS
         return (dAdt, dQdt)
-    
+
     # Solve the SDE as specified by rhs_all
     sol = diffeqsolve(rhs_all, t0=t0, t1=t1, y0=y0, **diffeqsolve_settings)
     # Extract final A and Q, ensure PSD covariance
@@ -176,13 +211,17 @@ def compute_pushforward(
     # Return SDE's mean (A) and covariance (Q)
     return A, Q
 
+
 #### CD-LGSSM filtering
 # Default filtering hyperparameters, as class
 class KFHyperParams(NamedTuple):
-    """Lightweight container for filtering hyperparameters.
-    """
-    dt_final: float = 1e-10 # Small dt_final for predicted mean and covariance at the end of sequence 
-    diffeqsolve_settings: dict={}
+    """Lightweight container for filtering hyperparameters."""
+
+    dt_final: float = (
+        1e-10  # Small dt_final for predicted mean and covariance at the end of sequence
+    )
+    diffeqsolve_settings: dict = {}
+
 
 # Predict next mean and covariance under a linear Gaussian model
 def _predict(m, S, F, B, b, Q, u, warn: bool = True):
@@ -208,9 +247,10 @@ def _predict(m, S, F, B, b, Q, u, warn: bool = True):
     # Compute the predicted mean and covariance
     mu_pred = F @ m + B @ u + b
     Sigma_pred = psd(F @ S @ F.T + Q, warn=warn)
-    
+
     # Return them
     return mu_pred, Sigma_pred
+
 
 # Condition on a new linear Gaussian observation
 def _condition_on(m, P, H, D, d, R, u, y, warn: bool = True):
@@ -246,12 +286,12 @@ def _condition_on(m, P, H, D, d, R, u, y, warn: bool = True):
         S = R + H @ P @ H.T
         K = psd_solve(S, H @ P).T
     else:
-        # Optimization using Woodbury identity with A=R, U=H@chol(P), V=U.T, C=I
+        # Optimization using Woodbury identity with A=R, U=H@chol(P), V=U.T, C=identity_matrix
         # (see https://en.wikipedia.org/wiki/Woodbury_matrix_identity)
-        I = jnp.eye(P.shape[0])
+        identity_matrix = jnp.eye(P.shape[0])
         U = H @ jnp.linalg.cholesky(P)
         X = U / R[:, None]
-        S_inv = jnp.diag(1.0 / R) - X @ psd_solve(I + U.T @ X, X.T)
+        S_inv = jnp.diag(1.0 / R) - X @ psd_solve(identity_matrix + U.T @ X, X.T)
         """
         # Could alternatively use U=H and C=P
         R_inv = jnp.diag(1.0 / R)
@@ -267,14 +307,15 @@ def _condition_on(m, P, H, D, d, R, u, y, warn: bool = True):
     # Return them
     return mu_cond, Sigma_cond
 
+
 # CD-LGSSM filtering implementation: Kalman filter
 @preprocess_args
 def cdlgssm_filter(
     params: ParamsCDLGSSM,
-    emissions:  Float[Array, "num_timesteps emission_dim"],
-    t_emissions: Optional[Float[Array, "num_timesteps 1"]]=None,
-    filter_hyperparams: Optional[KFHyperParams]=KFHyperParams(),
-    inputs: Optional[Float[Array, "num_timesteps input_dim"]]=None,
+    emissions: Float[Array, "num_timesteps emission_dim"],
+    t_emissions: Optional[Float[Array, "num_timesteps 1"]] = None,
+    filter_hyperparams: Optional[KFHyperParams] = KFHyperParams(),
+    inputs: Optional[Float[Array, "num_timesteps input_dim"]] = None,
     warn: bool = True,
 ) -> PosteriorGSSMFiltered:
     r"""Run a Continuous Discrete Kalman filter
@@ -294,26 +335,28 @@ def cdlgssm_filter(
     # Double-check filter_hyperparams is not None
     if filter_hyperparams is None:
         filter_hyperparams = KFHyperParams()
-    
+
     # Figure out timestamps, as vectors to scan over
     # t_emissions is of shape num_timesteps \times 1
     # t0 and t1 are num_timesteps \times 0
     if t_emissions is not None:
         num_timesteps = t_emissions.shape[0]
-        t0 = tree_map(lambda x: x[:,0], t_emissions)
+        t0 = tree_map(lambda x: x[:, 0], t_emissions)
         t1 = tree_map(
-                lambda x: jnp.concatenate(
-                    (
-                        t_emissions[1:,0],
-                        jnp.array([t_emissions[-1,0]+filter_hyperparams.dt_final]) # NB: t_{N+1} is simply t_{N}+dt_final
-                    )
-                ),
-                t_emissions
-            )
+            lambda x: jnp.concatenate(
+                (
+                    t_emissions[1:, 0],
+                    jnp.array(
+                        [t_emissions[-1, 0] + filter_hyperparams.dt_final]
+                    ),  # NB: t_{N+1} is simply t_{N}+dt_final
+                )
+            ),
+            t_emissions,
+        )
     else:
         num_timesteps = len(emissions)
         t0 = jnp.arange(num_timesteps)
-        t1 = jnp.arange(1,num_timesteps+1)
+        t1 = jnp.arange(1, num_timesteps + 1)
     # Indices for emissions
     t0_idx = jnp.arange(num_timesteps)
     # Default inputs to zero if None
@@ -340,46 +383,63 @@ def cdlgssm_filter(
         ll += MVN(H @ pred_mean + D @ u + d, H @ pred_cov @ H.T + R).log_prob(y)
 
         # Condition on this emission
-        filtered_mean, filtered_cov = _condition_on(pred_mean, pred_cov, H, D, d, R, u, y, warn=warn)
+        filtered_mean, filtered_cov = _condition_on(
+            pred_mean, pred_cov, H, D, d, R, u, y, warn=warn
+        )
 
         # Predict to the next time instant
         # Get the matrices for the push-forward from t0 to t1
-        F, Q = compute_pushforward(params, t0, t1, diffeqsolve_settings=filter_hyperparams.diffeqsolve_settings, warn=warn)
+        F, Q = compute_pushforward(
+            params,
+            t0,
+            t1,
+            diffeqsolve_settings=filter_hyperparams.diffeqsolve_settings,
+            warn=warn,
+        )
         # Predict the next state
-        pred_mean, pred_cov = _predict(filtered_mean, filtered_cov, F, B, b, Q, u, warn=warn)
+        pred_mean, pred_cov = _predict(
+            filtered_mean, filtered_cov, F, B, b, Q, u, warn=warn
+        )
 
         # Return the carry and outputs
-        return (ll, pred_mean, pred_cov), (filtered_mean, filtered_cov, pred_mean, pred_cov)
+        return (ll, pred_mean, pred_cov), (
+            filtered_mean,
+            filtered_cov,
+            pred_mean,
+            pred_cov,
+        )
 
     # The Kalman filter
     # Initial carry
     carry = (0.0, params.initial.mean, params.initial.cov)
     # Scan over all time steps
     (ll, _, _), (filtered_means, filtered_covs, pred_means, pred_covs) = lax.scan(
-        _step,
-        carry,
-        (t0, t1, t0_idx)
+        _step, carry, (t0, t1, t0_idx)
     )
 
     # Return the posterior object
-    return PosteriorGSSMFiltered(marginal_loglik=ll,
+    return PosteriorGSSMFiltered(
+        marginal_loglik=ll,
         filtered_means=filtered_means,
         filtered_covariances=filtered_covs,
         predicted_means=pred_means,
-        predicted_covariances=pred_covs
+        predicted_covariances=pred_covs,
     )
+
 
 # Kalmam Smoothing equations, in continuous-time
 def _smooth(
-    m_filter, P_filter, # Filtered mean and covariance
-    m_smooth, P_smooth, # Smoothed mean and covariance
+    m_filter,
+    P_filter,  # Filtered mean and covariance
+    m_smooth,
+    P_smooth,  # Smoothed mean and covariance
     params: ParamsCDLGSSM,  # All necessary CD dynamic params
     t0: Float,
     t1: Float,
-    u: Float[Array, "D_in"],
-    filter_hyperparams: Optional[KFHyperParams]=KFHyperParams(),
+    u: Float[Array, " input_dim"],
+    filter_hyperparams: Optional[KFHyperParams] = KFHyperParams(),
     warn: bool = True,
-    ):
+):
     r"""Smooth the next mean and covariance using EKF smoothing equations
         where the evolution of m and P are computed based on
             Equations 3.149 in Sarkka's Thesis
@@ -400,32 +460,36 @@ def _smooth(
         mu_smooth (D_hid,): smoothed mean at t0.
         Sigma_smooth (D_hid,D_hid): smoothed covariance at t0.
     """
-    
+
     # Initialize
     y0 = (m_smooth, P_smooth)
-    
+
     # Smoothed mean and covariance evolution
     def rhs_all(t, y, args):
         # Unpack
         m_smooth, P_smooth = y
         m_filter, P_filter = args
-        
+
         # possibly time-dependent weights
         F_t = _get_params(params.dynamics.weights, 2, t)
         Qc_t = _get_params(params.dynamics.diffusion_cov, 2, t)
         L_t = _get_params(params.dynamics.diffusion_coefficient, 2, t)
-  
+
         # Auxiliary matrix, used in both mean and covariance computations
         # Inverse product computed via psd_solve
-        aux_matrix=psd_solve(P_filter, L_t @ Qc_t @ L_t.T).T
+        aux_matrix = psd_solve(P_filter, L_t @ Qc_t @ L_t.T).T
 
         # Mean evolution
-        dmsmoothdt = F_t @ m_smooth + aux_matrix @ (m_smooth-m_filter)
+        dmsmoothdt = F_t @ m_smooth + aux_matrix @ (m_smooth - m_filter)
         # Covariance evolution
-        dPsmoothdt = (F_t + aux_matrix) @ P_smooth + P_smooth @ (F_t + aux_matrix).T - L_t @ Qc_t @ L_t.T
+        dPsmoothdt = (
+            (F_t + aux_matrix) @ P_smooth
+            + P_smooth @ (F_t + aux_matrix).T
+            - L_t @ Qc_t @ L_t.T
+        )
 
         return (dmsmoothdt, dPsmoothdt)
-    
+
     # We solve the rhs in reverse:
     # from t1 to t0, BUT y0 contains initial conditions at t1
     sol = diffeqsolve(
@@ -435,33 +499,34 @@ def _smooth(
         y0=y0,
         reverse=True,
         args=(m_filter, P_filter),
-        **filter_hyperparams.diffeqsolve_settings
+        **filter_hyperparams.diffeqsolve_settings,
     )
     # Extract and return smoothed mean and covariance, ensure PSD covariance
     m_smooth, P_smooth = sol[0][-1], psd(sol[1][-1], warn=warn)
     return m_smooth, P_smooth
+
 
 # CD-LGSSM smoother implementation: Kalman smoother
 # @preprocess_args: fix to accommodate smoother_type
 def cdlgssm_smoother(
     params: ParamsCDLGSSM,
     emissions: Float[Array, "num_timesteps emission_dim"],
-    t_emissions: Optional[Float[Array, "num_timesteps 1"]]=None,
-    filter_hyperparams: Optional[KFHyperParams]=KFHyperParams(),
-    inputs: Optional[Float[Array, "num_timesteps input_dim"]]=None,
-    smoother_type: Optional[str]='cd_smoother_1',
+    t_emissions: Optional[Float[Array, "num_timesteps 1"]] = None,
+    filter_hyperparams: Optional[KFHyperParams] = KFHyperParams(),
+    inputs: Optional[Float[Array, "num_timesteps input_dim"]] = None,
+    smoother_type: Optional[str] = "cd_smoother_1",
     warn: bool = True,
 ) -> PosteriorGSSMSmoothed:
-    r""" Run forward-filtering, backward-smoother to compute expectations
-        under the posterior distribution on latent states. 
+    r"""Run forward-filtering, backward-smoother to compute expectations
+        under the posterior distribution on latent states.
         Technically, this smoother implements two different types of smoothers
-        
+
     Args:
         params: CD-LGSSM parameters
         emissions: array of observations.
-        t_emissions: continuous-time specific time instants of observations: if not None, it is an array 
+        t_emissions: continuous-time specific time instants of observations: if not None, it is an array
         inputs: array of inputs.
-        smoother_type: 
+        smoother_type:
             cd_smoother_1: Sarkka's Algorithm 3.17
             cd_smoother_2: Sarkka's Algorithm 3.18
         warn: whether to issue warnings during smoothing (e.g., PSD issues).
@@ -469,50 +534,47 @@ def cdlgssm_smoother(
     Returns:
         PosteriorGSSMSmoothed: smoothed posterior object.
     """
-    
+
     # Figure out timestamps, as vectors to scan over
     # t_emissions is of shape num_timesteps \times 1
     # t0 and t1 are num_timesteps-1 \times 0
     if t_emissions is not None:
         num_timesteps = t_emissions.shape[0]
-        t0 = tree_map(lambda x: x[0:-1,0], t_emissions)
-        t1 = tree_map(lambda x: x[1:,0], t_emissions)
+        t0 = tree_map(lambda x: x[0:-1, 0], t_emissions)
+        t1 = tree_map(lambda x: x[1:, 0], t_emissions)
     else:
         num_timesteps = len(emissions)
-        t0 = jnp.arange(num_timesteps-1)
-        t1 = jnp.arange(1,num_timesteps)
+        t0 = jnp.arange(num_timesteps - 1)
+        t1 = jnp.arange(1, num_timesteps)
 
     # Indices for emissions
-    t0_idx = jnp.arange(num_timesteps-1)
+    t0_idx = jnp.arange(num_timesteps - 1)
     # Default inputs to zero if None
     inputs = jnp.zeros((num_timesteps, 0)) if inputs is None else inputs
 
     # Run the Kalman filter
     filtered_posterior = cdlgssm_filter(
-        params,
-        emissions,
-        t_emissions,
-        filter_hyperparams,
-        inputs,
-        warn=warn
+        params, emissions, t_emissions, filter_hyperparams, inputs, warn=warn
     )
     # Unpack the filtered posterior
     ll, filtered_means, filtered_covs, *_ = filtered_posterior
 
-    print('Running KF smoother type = {}'.format(smoother_type))
-    # Smoothing step, according to smoother type 1 (Sarkka's Algorithm 3.17) 
+    print("Running KF smoother type = {}".format(smoother_type))
+
+    # Smoothing step, according to smoother type 1 (Sarkka's Algorithm 3.17)
     def _step_1(carry, args):
         # Unpack the inputs
         smoothed_mean_next, smoothed_cov_next = carry
         t0, t1, t0_idx, filtered_mean, filtered_cov = args
 
-        print('Running KF smoother type 1')
+        print("Running KF smoother type 1")
         # Get the discretization matrices
         F, Q = compute_pushforward(
             params,
             t0,
             t1,
-            diffeqsolve_settings=filter_hyperparams.diffeqsolve_settings, warn=warn
+            diffeqsolve_settings=filter_hyperparams.diffeqsolve_settings,
+            warn=warn,
         )
         # Possibly time-dependent weights
         B = _get_params(params.dynamics.input_weights, 2, t0)
@@ -525,21 +587,31 @@ def cdlgssm_smoother(
 
         # Compute the smoothed mean and covariance as in Equation 3.148
         if b is None:
-            smoothed_mean = filtered_mean + C @ (smoothed_mean_next - F @ filtered_mean - B @ u )
+            smoothed_mean = filtered_mean + C @ (
+                smoothed_mean_next - F @ filtered_mean - B @ u
+            )
         else:
-            smoothed_mean = filtered_mean + C @ (smoothed_mean_next - F @ filtered_mean - B @ u - b)
-        
+            smoothed_mean = filtered_mean + C @ (
+                smoothed_mean_next - F @ filtered_mean - B @ u - b
+            )
+
         # Compute the smoothed covariance
         smoothed_cov = psd(
             filtered_cov + C @ (smoothed_cov_next - F @ filtered_cov @ F.T - Q) @ C.T,
-            warn=warn
+            warn=warn,
         )
 
         # Compute the smoothed expectation of z_t z_{t+1}^T
-        smoothed_cross = C @ smoothed_cov_next + jnp.outer(smoothed_mean, smoothed_mean_next)
+        smoothed_cross = C @ smoothed_cov_next + jnp.outer(
+            smoothed_mean, smoothed_mean_next
+        )
 
         # Return the carry and outputs
-        return (smoothed_mean, smoothed_cov), (smoothed_mean, smoothed_cov, smoothed_cross)
+        return (smoothed_mean, smoothed_cov), (
+            smoothed_mean,
+            smoothed_cov,
+            smoothed_cross,
+        )
 
     # Smoothing step, according to smoother type 2 (Sarkka's Algorithm 3.18)
     def _step_2(carry, args):
@@ -547,39 +619,46 @@ def cdlgssm_smoother(
         smoothed_mean_next, smoothed_cov_next = carry
         t0, t1, t0_idx, filtered_mean, filtered_cov = args
 
-        print('Running KF smoother type 2')
+        print("Running KF smoother type 2")
         # Compute the smoothed mean and covariance by solving Equation 3.149
         smoothed_mean, smoothed_cov = _smooth(
-            m_filter=filtered_mean, P_filter=filtered_cov, # Filtered 
-            m_smooth=smoothed_mean_next, P_smooth=smoothed_cov_next, # Smoothed 
+            m_filter=filtered_mean,
+            P_filter=filtered_cov,  # Filtered
+            m_smooth=smoothed_mean_next,
+            P_smooth=smoothed_cov_next,  # Smoothed
             params=params,
-            t0=t0,t1=t1,
-            u = inputs[t0_idx],
+            t0=t0,
+            t1=t1,
+            u=inputs[t0_idx],
             filter_hyperparams=filter_hyperparams,
-            warn=warn
+            warn=warn,
         )
 
         # Smoothed cross-covariance is not computed in this smoother type
-        smoothed_cross = jnp.nan*jnp.ones(filtered_cov.shape)
+        smoothed_cross = jnp.nan * jnp.ones(filtered_cov.shape)
 
         # Return the carry and outputs
-        return (smoothed_mean, smoothed_cov), (smoothed_mean, smoothed_cov, smoothed_cross)
+        return (smoothed_mean, smoothed_cov), (
+            smoothed_mean,
+            smoothed_cov,
+            smoothed_cross,
+        )
 
     # Select the smoothing step function, using jax.switch
     def _step(carry, args):
         return lax.switch(
-            0 if smoother_type == 'cd_smoother_1' else 1,
+            0 if smoother_type == "cd_smoother_1" else 1,
             [_step_1, _step_2],
             carry,
-            args
+            args,
         )
 
     # Run smoother steps via lax scan, using reverse mode
     _, (smoothed_means, smoothed_covs, smoothed_cross) = lax.scan(
         _step,
         (filtered_means[-1], filtered_covs[-1]),
-        (t0, t1,t0_idx, filtered_means[:-1], filtered_covs[:-1]),
-        reverse=True
+        (t0, t1, t0_idx, filtered_means[:-1], filtered_covs[:-1]),
+        reverse=True,
     )
 
     # Concatenate the arrays
@@ -596,25 +675,27 @@ def cdlgssm_smoother(
         smoothed_cross_covariances=smoothed_cross,
     )
 
+
 #### CD-LGSSM interface functions, outside the class definition, for convenience
-# CD-LGSSM sampling function, based on the model distributions 
+# CD-LGSSM sampling function, based on the model distributions
 def cdlgssm_joint_sample(
     params: ParamsCDLGSSM,
     key: PRNGKey,
     num_timesteps: int,
-    t_emissions: Optional[Float[Array, "num_timesteps 1"]]=None,
-    inputs: Optional[Float[Array, "num_timesteps input_dim"]]=None,
+    t_emissions: Optional[Float[Array, "num_timesteps 1"]] = None,
+    inputs: Optional[Float[Array, "num_timesteps input_dim"]] = None,
     diffeqsolve_settings={},
     warn: bool = True,
-)-> Tuple[Float[Array, "num_timesteps state_dim"],
-          Float[Array, "num_timesteps emission_dim"]]:
+) -> Tuple[
+    Float[Array, "num_timesteps state_dim"], Float[Array, "num_timesteps emission_dim"]
+]:
     r"""Sample from the joint distribution to produce state and emission trajectories.
-    
+
     Args:
         params: CD-LGSSM parameters
         key: random key
         num_timesteps: number of time steps to sample
-        t_emissions: continuous-time specific time instants of observations: if not None, it is an array 
+        t_emissions: continuous-time specific time instants of observations: if not None, it is an array
         inputs: optional array of inputs.
         diffeqsolve_settings: settings for the diff-eq solver
         warn: whether to issue warnings during sampling (e.g., PSD issues).
@@ -638,20 +719,17 @@ def cdlgssm_joint_sample(
         # Compute the mean of the emission distribution
         mean = H @ x + D @ u + d
         # Compute the covariance of the emission distribution
-        R = jnp.diag(R) if R.ndim==1 else R
+        R = jnp.diag(R) if R.ndim == 1 else R
         # Return a sample from the emission distribution
         return MVN(mean, R).sample(seed=key)
-    
+
     # Function to sample initial state and emission
     def _sample_initial(key, params, inputs):
         # Split key for initial state and emission sampling
         key1, key2 = jr.split(key)
 
         # Sample initial state
-        initial_state = MVN(
-            params.initial.mean,
-            params.initial.cov
-        ).sample(seed=key1)
+        initial_state = MVN(params.initial.mean, params.initial.cov).sample(seed=key1)
 
         # Get initial emission parameters
         H0 = _get_params(params.emissions.weights, 2, 0)
@@ -662,18 +740,10 @@ def cdlgssm_joint_sample(
         u0 = tree_map(lambda x: x[0], inputs)
 
         # Sample initial emission
-        initial_emission = _sample_emission(
-            key2,
-            H0,
-            D0,
-            d0,
-            R0,
-            initial_state,
-            u0
-        )
+        initial_emission = _sample_emission(key2, H0, D0, d0, R0, initial_state, u0)
 
         # Return initial state and emission
-        return initial_state, initial_emission  
+        return initial_state, initial_emission
 
     # Function to sample next state and emission given previous state
     def _step(prev_state, args):
@@ -700,32 +770,30 @@ def cdlgssm_joint_sample(
 
     # Sample the initial state
     key1, key2 = jr.split(key)
-    
+
     # Sample initial state and emission
     initial_state, initial_emission = _sample_initial(key1, params, inputs)
 
     # Set keys for the remaining time steps
     next_keys = jr.split(key2, num_timesteps - 1)
-    
+
     # Figure out timestamps, as vectors to scan over
     # t_emissions is of shape num_timesteps \times 1
     # t0 and t1 are num_timesteps \times 0
     if t_emissions is not None:
         num_timesteps = t_emissions.shape[0]
-        t0 = tree_map(lambda x: x[0:-1,0], t_emissions)
-        t1 = tree_map(lambda x: x[1:,0], t_emissions)
+        t0 = tree_map(lambda x: x[0:-1, 0], t_emissions)
+        t1 = tree_map(lambda x: x[1:, 0], t_emissions)
     else:
-        t0 = jnp.arange(num_timesteps-1)
-        t1 = jnp.arange(1,num_timesteps)
-    
+        t0 = jnp.arange(num_timesteps - 1)
+        t1 = jnp.arange(1, num_timesteps)
+
     # Get inputs for remaining time steps
     next_inputs = tree_map(lambda x: x[1:], inputs)
-    
+
     # Sample the remaining emissions and states via scan
     _, (next_states, next_emissions) = lax.scan(
-        _step,
-        initial_state,
-        (next_keys, t0, t1, next_inputs)
+        _step, initial_state, (next_keys, t0, t1, next_inputs)
     )
 
     # Concatenate the initial state and emission with the following ones
@@ -735,24 +803,26 @@ def cdlgssm_joint_sample(
 
     return states, emissions
 
+
 # CD-LGSSM path sampling function, based on the model distributions and SDE solver
 def cdlgssm_path_sample(
-        params: ParamsCDLGSSM,
-        key: PRNGKey,
-        num_timesteps: int,
-        t_emissions: Optional[Float[Array, "num_timesteps 1"]]=None,
-        inputs: Optional[Float[Array, "num_timesteps input_dim"]]=None,
-        diffeqsolve_settings={}
-    ) -> Tuple[Float[Array, "num_timesteps state_dim"],
-                Float[Array, "num_timesteps emission_dim"]]:
+    params: ParamsCDLGSSM,
+    key: PRNGKey,
+    num_timesteps: int,
+    t_emissions: Optional[Float[Array, "num_timesteps 1"]] = None,
+    inputs: Optional[Float[Array, "num_timesteps input_dim"]] = None,
+    diffeqsolve_settings={},
+) -> Tuple[
+    Float[Array, "num_timesteps state_dim"], Float[Array, "num_timesteps emission_dim"]
+]:
     r"""Sample from a forward path of the CD-LGSSM
         to produce state and emission trajectories.
-    
+
     Args:
         params: CD-LGSSM parameters
         key: random number generator key
         num_timesteps: number of time steps to sample
-        t_emissions: continuous-time specific time instants of observations: if not None, it is an array 
+        t_emissions: continuous-time specific time instants of observations: if not None, it is an array
         inputs: optional array of inputs.
         diffeqsolve_settings: settings for the SDE solver
 
@@ -768,24 +838,18 @@ def cdlgssm_path_sample(
         # Compute the mean of the emission distribution
         mean = H @ x + D @ u + d
         # Compute the covariance of the emission distribution
-        R = jnp.diag(R) if R.ndim==1 else R
+        R = jnp.diag(R) if R.ndim == 1 else R
 
         # Return a sample from the emission distribution
-        return MVN(
-                mean,
-                R
-            ).sample(seed=key)
-    
+        return MVN(mean, R).sample(seed=key)
+
     # Function to sample initial state and emission
     def _sample_initial(key, params, inputs):
         # Split key for initial state and emission sampling
         key1, key2 = jr.split(key)
 
         # Sample initial state
-        initial_state = MVN(
-            params.initial.mean,
-            params.initial.cov
-        ).sample(seed=key1)
+        initial_state = MVN(params.initial.mean, params.initial.cov).sample(seed=key1)
 
         # Get initial emission parameters
         H0 = _get_params(params.emissions.weights, 2, 0)
@@ -796,14 +860,10 @@ def cdlgssm_path_sample(
         u0 = tree_map(lambda x: x[0], inputs)
 
         # Sample initial emission
-        initial_emission = _sample_emission(
-            key2,
-            H0, D0, d0, R0,
-            initial_state, u0
-        )
+        initial_emission = _sample_emission(key2, H0, D0, d0, R0, initial_state, u0)
 
         return initial_state, initial_emission
-    
+
     # Function to path-sample next state and emission given previous state
     def _step(prev_state, args):
         # Unpack the arguments
@@ -821,6 +881,7 @@ def cdlgssm_path_sample(
         # SDE definition as per the CD-LGSSM
         def drift(t, y, args):
             return F_t @ y + B @ inpt + b
+
         def diffusion(t, y, args):
             Q_sqrt = jnp.linalg.cholesky(Q_t)
             combined_diffusion = L_t @ Q_sqrt
@@ -834,26 +895,22 @@ def cdlgssm_path_sample(
             t0=t0,
             t1=t1,
             y0=prev_state,
-            **diffeqsolve_settings
+            **diffeqsolve_settings,
         )[0]
-        
+
         # Get emission parameters at time t1
         H = _get_params(params.emissions.weights, 2, t1)
         D = _get_params(params.emissions.input_weights, 2, t1)
         d = _get_params(params.emissions.bias, 1, t1)
         R = _get_params(params.emissions.cov, 2, t1)
         # Sample from emission distribution at time t1
-        emission = _sample_emission(
-            key2,
-            H, D, d, R,
-            state, inpt
-        )
+        emission = _sample_emission(key2, H, D, d, R, state, inpt)
 
         return state, (state, emission)
 
     # Split key for initial state and emission sampling
     key1, key2 = jr.split(key)
-    
+
     # Sample initial state and emission
     initial_state, initial_emission = _sample_initial(key1, params, inputs)
 
@@ -865,20 +922,18 @@ def cdlgssm_path_sample(
     # t0 and t1 are num_timesteps \times 0
     if t_emissions is not None:
         num_timesteps = t_emissions.shape[0]
-        t0 = tree_map(lambda x: x[0:-1,0], t_emissions)
-        t1 = tree_map(lambda x: x[1:,0], t_emissions)
+        t0 = tree_map(lambda x: x[0:-1, 0], t_emissions)
+        t1 = tree_map(lambda x: x[1:, 0], t_emissions)
     else:
-        t0 = jnp.arange(num_timesteps-1)
-        t1 = jnp.arange(1,num_timesteps)
-    
+        t0 = jnp.arange(num_timesteps - 1)
+        t1 = jnp.arange(1, num_timesteps)
+
     # Get inputs for remaining time steps
     next_inputs = tree_map(lambda x: x[1:], inputs)
-    
+
     # Sample the remaining emissions and states via scan
     _, (next_states, next_emissions) = lax.scan(
-        _step,
-        initial_state,
-        (next_keys, t0, t1, next_inputs)
+        _step, initial_state, (next_keys, t0, t1, next_inputs)
     )
 
     # Concatenate the initial state and emission with the following ones
@@ -888,17 +943,17 @@ def cdlgssm_path_sample(
 
     return states, emissions
 
+
 # CD-LGSSM Posterior Sampling function
 def cdlgssm_posterior_sample(
     key: PRNGKey,
     params: ParamsCDLGSSM,
-    emissions:  Float[Array, "num_timesteps emission_dim"],
-    t_emissions: Optional[Float[Array, "num_timesteps 1"]]=None,
-    filter_hyperparams: Optional[KFHyperParams]=None,
-    inputs: Optional[Float[Array, "num_timesteps input_dim"]]=None,
-    jitter: Optional[Scalar]=0,
+    emissions: Float[Array, "num_timesteps emission_dim"],
+    t_emissions: Optional[Float[Array, "num_timesteps 1"]] = None,
+    filter_hyperparams: Optional[KFHyperParams] = None,
+    inputs: Optional[Float[Array, "num_timesteps input_dim"]] = None,
+    jitter: Optional[Scalar] = 0,
     warn: bool = True,
-    
 ) -> Float[Array, "ntime state_dim"]:
     r"""Run forward-filtering, backward-sampling to draw samples from $p(z_{1:T} \mid y_{1:T}, u_{1:T})$.
 
@@ -906,40 +961,35 @@ def cdlgssm_posterior_sample(
         key: random number key.
         params: CD-LGSSM parameters.
         emissions: sequence of observations.
-        t_emissions: continuous-time specific time instants of observations: if not None, it is an array 
+        t_emissions: continuous-time specific time instants of observations: if not None, it is an array
         inputs: optional sequence of inptus.
         jitter: padding to add to the diagonal of the covariance matrix before sampling.
         warn: whether to issue warnings during smoothing (e.g., PSD issues).
-    
+
     Returns:
         Float[Array, "ntime state_dim"]: one sample of $z_{1:T}$ from the posterior distribution on latent states.
-    
+
     """
     # Figure out timestamps, as vectors to scan over
     # t_emissions is of shape num_timesteps \times 1
     # t0 and t1 are num_timesteps-1 \times 0
     if t_emissions is not None:
         num_timesteps = t_emissions.shape[0]
-        t0 = tree_map(lambda x: x[0:-1,0], t_emissions)
-        t1 = tree_map(lambda x: x[1:,0], t_emissions)
+        t0 = tree_map(lambda x: x[0:-1, 0], t_emissions)
+        t1 = tree_map(lambda x: x[1:, 0], t_emissions)
     else:
         num_timesteps = len(emissions)
-        t0 = jnp.arange(num_timesteps-1)
-        t1 = jnp.arange(1,num_timesteps)
+        t0 = jnp.arange(num_timesteps - 1)
+        t1 = jnp.arange(1, num_timesteps)
 
     # Indices for emissions
-    t0_idx = jnp.arange(num_timesteps-1)
+    t0_idx = jnp.arange(num_timesteps - 1)
     # Default inputs to zero if None
     inputs = jnp.zeros((num_timesteps, 0)) if inputs is None else inputs
 
     # Run the Kalman filter
     filtered_posterior = cdlgssm_filter(
-        params,
-        emissions,
-        t_emissions,
-        filter_hyperparams,
-        inputs,
-        warn=warn
+        params, emissions, t_emissions, filter_hyperparams, inputs, warn=warn
     )
     # Unpack the filtered posterior
     ll, filtered_means, filtered_covs, *_ = filtered_posterior
@@ -951,7 +1001,13 @@ def cdlgssm_posterior_sample(
         key, t0, t1, t0_idx, filtered_mean, filtered_cov = args
 
         # get parameters and inputs for time index t
-        F, Q = compute_pushforward(params, t0, t1, diffeqsolve_settings=filter_hyperparams.diffeqsolve_settings, warn=warn)
+        F, Q = compute_pushforward(
+            params,
+            t0,
+            t1,
+            diffeqsolve_settings=filter_hyperparams.diffeqsolve_settings,
+            warn=warn,
+        )
         B = _get_params(params.dynamics.input_weights, 2, t0)
         b = _get_params(params.dynamics.bias, 1, t0)
         # Get inputs at this time
@@ -959,17 +1015,10 @@ def cdlgssm_posterior_sample(
 
         # Condition on next state
         smoothed_mean, smoothed_cov = _condition_on(
-            filtered_mean,
-            filtered_cov,
-            F, B, b, Q, u,
-            next_state,
-            warn=warn
+            filtered_mean, filtered_cov, F, B, b, Q, u, next_state, warn=warn
         )
         # Sample the current state
-        state = MVN(
-            smoothed_mean,
-            smoothed_cov
-        ).sample(seed=key)
+        state = MVN(smoothed_mean, smoothed_cov).sample(seed=key)
 
         return state, state
 
@@ -977,10 +1026,7 @@ def cdlgssm_posterior_sample(
     key, this_key = jr.split(key, 2)
 
     # Sample the last state from the filtered distribution at time T
-    last_state = MVN(
-        filtered_means[-1],
-        filtered_covs[-1]
-    ).sample(seed=this_key)
+    last_state = MVN(filtered_means[-1], filtered_covs[-1]).sample(seed=this_key)
 
     # Sample the remaining states via scan, in reverse mode
     _, states = lax.scan(
@@ -988,8 +1034,11 @@ def cdlgssm_posterior_sample(
         last_state,
         (
             jr.split(key, num_timesteps - 1),
-            t0, t1, t0_idx,
-            filtered_means[:-1], filtered_covs[:-1],
+            t0,
+            t1,
+            t0_idx,
+            filtered_means[:-1],
+            filtered_covs[:-1],
         ),
         reverse=True,
     )
@@ -997,19 +1046,20 @@ def cdlgssm_posterior_sample(
     # Concatenate the sampled states and return
     return jnp.vstack([states, last_state])
 
+
 # CD-LGSSM Forecasting function
 def cdlgssm_forecast(
     params: ParamsCDLGSSM,
     init_forecast: Union[tfd.Distribution, Float[Array, "state_dim 1"]],
     t_init: Float[Array, "1 1"],
-    t_forecast: Optional[Float[Array, "num_timesteps 1"]]=None,
-    filter_hyperparams: Optional[KFHyperParams]=KFHyperParams(),
+    t_forecast: Optional[Float[Array, "num_timesteps 1"]] = None,
+    filter_hyperparams: Optional[KFHyperParams] = KFHyperParams(),
     inputs: Optional[Float[Array, "ntime input_dim"]] = None,
-    output_fields: Optional[List[str]]=[
+    output_fields: Optional[List[str]] = [
         "forecasted_state_means",
         "forecasted_state_covariances",
     ],
-    key: PRNGKey=jr.PRNGKey(0),
+    key: PRNGKey = jr.PRNGKey(0),
     diffeqsolve_settings: dict = {},
     warn: bool = True,
 ) -> GSSMForecast:
@@ -1022,7 +1072,7 @@ def cdlgssm_forecast(
             - if init_forecast is a distribution, then we forecast such distribution based on different filtering methods
             - if init_forecast is a point estimate of state, then we forecast a forward path starting at that state
         t_init: time-instant of the initial condition of forecast
-        t_forecast: continuous-time specific time instants of observations: if not None, it is an array 
+        t_forecast: continuous-time specific time instants of observations: if not None, it is an array
         filter_hyperparams: hyper-parameters of the filter
         inputs: optional array of inputs, of shape (1 + num_timesteps) \times input_dim
             - The extra input is needed for the initial emission, i.e., it should be at time t_init
@@ -1052,12 +1102,10 @@ def cdlgssm_forecast(
     if t_forecast is not None:
         num_timesteps = t_forecast.shape[0]
         t0 = tree_map(
-            lambda x: jnp.concatenate(
-                (t_init, t_forecast[:-1, 0])
-            ),
+            lambda x: jnp.concatenate((t_init, t_forecast[:-1, 0])),
             t_forecast,
         )
-        t1 = tree_map(lambda x: x[:,0], t_forecast)
+        t1 = tree_map(lambda x: x[:, 0], t_forecast)
     else:
         raise ValueError("t_forecast must be provided for forecasting")
 
@@ -1073,7 +1121,7 @@ def cdlgssm_forecast(
             # Unpack the inputs
             current_state_mean, current_state_cov = carry
             t0, t1, inpt = args
-            
+
             # CD-LGSSM parameters: just the dynamics
             B = _get_params(params.dynamics.input_weights, 2, t0)
             b = _get_params(params.dynamics.bias, 1, t0)
@@ -1084,7 +1132,7 @@ def cdlgssm_forecast(
                 diffeqsolve_settings=filter_hyperparams.diffeqsolve_settings,
                 warn=warn,
             )
-            
+
             # Predict the next state based on the KF
             pred_state_mean, pred_state_cov = _predict(
                 current_state_mean,
@@ -1109,7 +1157,7 @@ def cdlgssm_forecast(
 
         # Initialize the state, based on provided initial distribution's mean and covariance
         carry = (init_forecast.mean(), init_forecast.covariance())
-        
+
         # Run the Kalman filter steps via scan
         _, outputs = lax.scan(
             _step,
@@ -1122,8 +1170,8 @@ def cdlgssm_forecast(
             **outputs,
         )
     else:
-        # Forecasting point estimates, based on pushing forward the model                
-        
+        # Forecasting point estimates, based on pushing forward the model
+
         # Define the function to scan over
         def _step(prev_state, args):
             # Unpack the arguments
@@ -1139,6 +1187,7 @@ def cdlgssm_forecast(
             # SDE definition as per the CD-LGSSM
             def drift(t, y, args):
                 return F_t @ y + B @ inpt + b
+
             def diffusion(t, y, args):
                 Q_sqrt = jnp.linalg.cholesky(Q_t)
                 combined_diffusion = L_t @ Q_sqrt
@@ -1152,45 +1201,45 @@ def cdlgssm_forecast(
                 t0=t0,
                 t1=t1,
                 y0=prev_state,
-                **diffeqsolve_settings
+                **diffeqsolve_settings,
             )[0]
-            
+
             # Return the state
             return state, (state)
 
         # Split keys for each time step
-        next_keys = jr.split(key, num_timesteps )
+        next_keys = jr.split(key, num_timesteps)
 
-        # Forecast states over time, via scan       
+        # Forecast states over time, via scan
         _, (next_states) = lax.scan(
             _step,
             init_forecast,
             (next_keys, t0, t1, inputs),
-        ) # type: ignore
-        
+        )  # type: ignore
+
         # Build the forecast object
-        forecast = GSSMForecast(
-            forecasted_state_path=next_states
-        )
+        forecast = GSSMForecast(forecasted_state_path=next_states)
 
     # Return the forecast object
     return forecast
+
 
 # CD-LGSSM Emission function
 def cdlgssm_emissions(
     params: ParamsCDLGSSM,
     t_states: Float[Array, "num_timesteps 1"],
     state_means: Float[Array, "num_timesteps state_dim"],
-    state_covs: Optional[Float[Array, "num_timesteps state_dim state_dim"]]=None,
+    state_covs: Optional[Float[Array, "num_timesteps state_dim state_dim"]] = None,
     inputs: Optional[Float[Array, "num_timesteps input_dim"]] = None,
-    key: PRNGKey=jr.PRNGKey(0),
+    key: PRNGKey = jr.PRNGKey(0),
     warn: bool = True,
 ) -> Tuple[
-        Float[Array, "num_timesteps emission_dim"], Float[Array, "num_timesteps emission_dim emission_dim"]
-    ]:
+    Float[Array, "num_timesteps emission_dim"],
+    Float[Array, "num_timesteps emission_dim emission_dim"],
+]:
     r"""Compute the emissions corresponding to
         - a continuous-discrete linear model, as specified by params
-    
+
     Args:
         params: model parameters.
         t_states: continuous-time specific time instants of states
@@ -1208,13 +1257,13 @@ def cdlgssm_emissions(
     """
 
     # Emissions based on a linear transformation of the state through
-        
+
     # Figure out timestamps, as vectors to scan over
     # t_states is of shape num_timesteps \times 1
     # t0 and t1 are num_timesteps \times 0
     if t_states is not None:
         num_timesteps = t_states.shape[0]
-        t0 = tree_map(lambda x: x[:,0], t_states)
+        t0 = tree_map(lambda x: x[:, 0], t_states)
     else:
         raise ValueError("t_states must be provided for forecasting")
 
@@ -1231,7 +1280,7 @@ def cdlgssm_emissions(
         H = _get_params(params.emissions.weights, 2, t0)
         D = _get_params(params.emissions.input_weights, 2, t0)
         d = _get_params(params.emissions.bias, 1, t0)
-        
+
         # Emission mean, as linear combination of state
         emission_mean = H @ this_state + D @ inpt + d
 
@@ -1239,20 +1288,19 @@ def cdlgssm_emissions(
         R = _get_params(params.emissions.cov, 2, t0)
         if this_cov is not None:
             # If we have state covariances, then we compute the emission covariance
-            emission_cov = psd(H @ this_cov @ H.T + + R, warn=warn)
+            emission_cov = psd(H @ this_cov @ H.T + +R, warn=warn)
         else:
-            emission_cov = jnp.diag(R) if R.ndim==1 else R
-        
+            emission_cov = jnp.diag(R) if R.ndim == 1 else R
+
         # Return the state and emission's mean and covariance
         return this_state, (emission_mean, emission_cov)
 
-    # Compute emissions, over time, via scan       
+    # Compute emissions, over time, via scan
     _, (emissions_mean, emissions_covariance) = lax.scan(
         _step,
         state_means[0],
         (state_means, state_covs, t0, inputs),
-    ) # type: ignore
+    )  # type: ignore
 
     # Return the emission mean and covariance
     return emissions_mean, emissions_covariance
-
