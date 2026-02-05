@@ -6,10 +6,12 @@ import jax.random as jr
 
 # Scientific imports
 import numpy as np
+
 # Plotting imports
 from matplotlib import pyplot as plt
 from matplotlib.patches import Ellipse
 from matplotlib.colors import LinearSegmentedColormap
+from matplotlib import transforms
 import seaborn as sns
 
 _COLOR_NAMES = [
@@ -31,6 +33,7 @@ _COLOR_NAMES = [
     "dark brown",
 ]
 COLORS = sns.xkcd_palette(_COLOR_NAMES)
+
 
 ############################
 # State and emission filtering utils
@@ -55,7 +58,7 @@ def plot_simple(
 
     """
 
-    plot_advanced(
+    plot_states_and_emissions(
         time_grid_all=time_grid,
         true_states=true_states,
         true_emissions_noisy=true_emissions_noisy,
@@ -111,11 +114,19 @@ def plot_states_and_emissions(
         time_grid_filter = time_grid_all
         plot_divider = False
     if time_grid_all is None:
-        raise ValueError("time_grid_all must be specified if time_grid_filter or time_grid_forecast are not provided.")
+        raise ValueError(
+            "time_grid_all must be specified if time_grid_filter or time_grid_forecast are not provided."
+        )
 
     # Ensure at least one time grid is specified
-    if time_grid_all is None and time_grid_filter is None and time_grid_forecast is None:
-        raise ValueError("One of time_grid_all, time_grid_filter, or time_grid_forecast must be specified.")
+    if (
+        time_grid_all is None
+        and time_grid_filter is None
+        and time_grid_forecast is None
+    ):
+        raise ValueError(
+            "One of time_grid_all, time_grid_filter, or time_grid_forecast must be specified."
+        )
 
     # squeeze time grids to ensure they are 1D arrays
     time_grid_all = np.squeeze(time_grid_all)
@@ -150,17 +161,29 @@ def plot_states_and_emissions(
     if true_filtered_states is not None:
         true_filtered_states = true_filtered_states[start_idx_filter:end_idx_filter, :]
     if model_filtered_states is not None:
-        model_filtered_states = model_filtered_states[start_idx_filter:end_idx_filter, :]
+        model_filtered_states = model_filtered_states[
+            start_idx_filter:end_idx_filter, :
+        ]
     if true_filtered_covariances is not None:
-        true_filtered_covariances = true_filtered_covariances[start_idx_filter:end_idx_filter, :, :]
+        true_filtered_covariances = true_filtered_covariances[
+            start_idx_filter:end_idx_filter, :, :
+        ]
     if model_filtered_covariances is not None:
-        model_filtered_covariances = model_filtered_covariances[start_idx_filter:end_idx_filter, :, :]
+        model_filtered_covariances = model_filtered_covariances[
+            start_idx_filter:end_idx_filter, :, :
+        ]
     if true_forecast_states is not None:
-        true_forecast_states = true_forecast_states[start_idx_forecast:end_idx_forecast, :]
+        true_forecast_states = true_forecast_states[
+            start_idx_forecast:end_idx_forecast, :
+        ]
     if model_forecast_states is not None:
-        model_forecast_states = model_forecast_states[start_idx_forecast:end_idx_forecast, :]
+        model_forecast_states = model_forecast_states[
+            start_idx_forecast:end_idx_forecast, :
+        ]
     if model_forecast_covariances is not None:
-        model_forecast_covariances = model_forecast_covariances[start_idx_forecast:end_idx_forecast, :, :]
+        model_forecast_covariances = model_forecast_covariances[
+            start_idx_forecast:end_idx_forecast, :, :
+        ]
     if true_emissions is not None:
         true_emissions = true_emissions[start_idx_all:end_idx_all, :]
 
@@ -178,7 +201,9 @@ def plot_states_and_emissions(
     n_rows = max(n_states, n_emissions)
 
     # Create a canvas with subplots for states and emissions
-    fig, axes = plt.subplots(nrows=n_rows, ncols=2, figsize=(15, 2 * n_rows), sharex=True)
+    fig, axes = plt.subplots(
+        nrows=n_rows, ncols=2, figsize=(15, 2 * n_rows), sharex=True
+    )
 
     # Use vmap to apply emission_function across the batch of states
     if emission_function is not None:
@@ -224,8 +249,10 @@ def plot_states_and_emissions(
                 ):
                     axes[i, 0].fill_between(
                         time_grid_filter,
-                        true_filtered_states[:, i] - np.sqrt(true_filtered_covariances[:, i, i]),
-                        true_filtered_states[:, i] + np.sqrt(true_filtered_covariances[:, i, i]),
+                        true_filtered_states[:, i]
+                        - np.sqrt(true_filtered_covariances[:, i, i]),
+                        true_filtered_states[:, i]
+                        + np.sqrt(true_filtered_covariances[:, i, i]),
                         color=true_filtered_color,
                         alpha=0.3,
                     )
@@ -247,8 +274,10 @@ def plot_states_and_emissions(
                 ):
                     axes[i, 0].fill_between(
                         time_grid_filter,
-                        model_filtered_states[:, i] - np.sqrt(model_filtered_covariances[:, i, i]),
-                        model_filtered_states[:, i] + np.sqrt(model_filtered_covariances[:, i, i]),
+                        model_filtered_states[:, i]
+                        - np.sqrt(model_filtered_covariances[:, i, i]),
+                        model_filtered_states[:, i]
+                        + np.sqrt(model_filtered_covariances[:, i, i]),
                         color=model_filtered_color,
                         alpha=0.3,
                     )
@@ -277,12 +306,15 @@ def plot_states_and_emissions(
                 # Plot uncertainty bounds if available
                 if (
                     model_forecast_covariances is not None
-                    and model_forecast_covariances.shape[0] == time_grid_forecast.shape[0]
+                    and model_forecast_covariances.shape[0]
+                    == time_grid_forecast.shape[0]
                 ):
                     axes[i, 0].fill_between(
                         time_grid_forecast,
-                        model_forecast_states[:, i] - np.sqrt(model_forecast_covariances[:, i, i]),
-                        model_forecast_states[:, i] + np.sqrt(model_forecast_covariances[:, i, i]),
+                        model_forecast_states[:, i]
+                        - np.sqrt(model_forecast_covariances[:, i, i]),
+                        model_forecast_states[:, i]
+                        + np.sqrt(model_forecast_covariances[:, i, i]),
                         color=model_filtered_color,
                         alpha=0.3,
                     )
@@ -370,9 +402,15 @@ def plot_states_and_emissions(
         if switch_time is not None:
             for i in range(n_rows):
                 axes[i, 0].axvline(
-                    x=switch_time, color="k", linestyle="--", linewidth=1, label="Filter/Forecast Boundary"
+                    x=switch_time,
+                    color="k",
+                    linestyle="--",
+                    linewidth=1,
+                    label="Filter/Forecast Boundary",
                 )
-                axes[i, 1].axvline(x=switch_time, color="k", linestyle="--", linewidth=1)
+                axes[i, 1].axvline(
+                    x=switch_time, color="k", linestyle="--", linewidth=1
+                )
 
     # Set x-axis label only on the bottom subplots
     if n_rows > 0:
@@ -380,12 +418,15 @@ def plot_states_and_emissions(
             ax.set_xlabel("Time $t$")
 
     # Set a super title for the entire figure
-    plt.suptitle("True vs Filtered vs Forecast States and Emissions: True and Learned Models")
+    plt.suptitle(
+        "True vs Filtered vs Forecast States and Emissions: True and Learned Models"
+    )
 
     # Adjust layout to prevent overlap and show the plot
     plt.tight_layout()
     plt.subplots_adjust(top=0.95)  # Adjust space for the title
     plt.show()
+
 
 # Plot filtered and forecasted states and emissions from true and learned models
 def plot_filtered_and_forecasted(
@@ -413,11 +454,19 @@ def plot_filtered_and_forecasted(
         time_grid_filter = time_grid_all
         plot_divider = False
     if time_grid_all is None:
-        raise ValueError("time_grid_all must be specified if time_grid_filter or time_grid_forecast are not provided.")
+        raise ValueError(
+            "time_grid_all must be specified if time_grid_filter or time_grid_forecast are not provided."
+        )
 
     # Ensure at least one time grid is specified
-    if time_grid_all is None and time_grid_filter is None and time_grid_forecast is None:
-        raise ValueError("One of time_grid_all, time_grid_filter, or time_grid_forecast must be specified.")
+    if (
+        time_grid_all is None
+        and time_grid_filter is None
+        and time_grid_forecast is None
+    ):
+        raise ValueError(
+            "One of time_grid_all, time_grid_filter, or time_grid_forecast must be specified."
+        )
 
     # Squeeze time grids to ensure they are 1D arrays
     time_grid_all = np.squeeze(time_grid_all)
@@ -425,17 +474,31 @@ def plot_filtered_and_forecasted(
     time_grid_forecast = np.squeeze(time_grid_forecast)
 
     # Determine indices based on t_start and t_end for all time grids
-    start_idx_all = np.searchsorted(time_grid_all, t_start) if t_start is not None else 0
-    end_idx_all = np.searchsorted(time_grid_all, t_end, side="right") if t_end is not None else len(time_grid_all)
-
-    start_idx_filter = np.searchsorted(time_grid_filter, t_start) if t_start is not None else 0
-    end_idx_filter = (
-        np.searchsorted(time_grid_filter, t_end, side="right") if t_end is not None else len(time_grid_filter)
+    start_idx_all = (
+        np.searchsorted(time_grid_all, t_start) if t_start is not None else 0
+    )
+    end_idx_all = (
+        np.searchsorted(time_grid_all, t_end, side="right")
+        if t_end is not None
+        else len(time_grid_all)
     )
 
-    start_idx_forecast = np.searchsorted(time_grid_forecast, t_start) if t_start is not None else 0
+    start_idx_filter = (
+        np.searchsorted(time_grid_filter, t_start) if t_start is not None else 0
+    )
+    end_idx_filter = (
+        np.searchsorted(time_grid_filter, t_end, side="right")
+        if t_end is not None
+        else len(time_grid_filter)
+    )
+
+    start_idx_forecast = (
+        np.searchsorted(time_grid_forecast, t_start) if t_start is not None else 0
+    )
     end_idx_forecast = (
-        np.searchsorted(time_grid_forecast, t_end, side="right") if t_end is not None else len(time_grid_forecast)
+        np.searchsorted(time_grid_forecast, t_end, side="right")
+        if t_end is not None
+        else len(time_grid_forecast)
     )
 
     # Subset the time grids based on start and end indices
@@ -446,23 +509,39 @@ def plot_filtered_and_forecasted(
     # Subset the time and state arrays based on start and end indices for each grid
     def subset_data(data, start_idx, end_idx):
         if data is not None:
-            return data[..., start_idx:end_idx, :] if data.ndim > 2 else data[start_idx:end_idx, :]
+            return (
+                data[..., start_idx:end_idx, :]
+                if data.ndim > 2
+                else data[start_idx:end_idx, :]
+            )
         return None
 
     true_states = subset_data(true_states, start_idx_all, end_idx_all)
-    true_filtered_states = subset_data(true_filtered_states, start_idx_filter, end_idx_filter)
-    model_filtered_states = subset_data(model_filtered_states, start_idx_filter, end_idx_filter)
-    true_forecast_states = subset_data(true_forecast_states, start_idx_forecast, end_idx_forecast)
-    model_forecast_states = subset_data(model_forecast_states, start_idx_forecast, end_idx_forecast)
+    true_filtered_states = subset_data(
+        true_filtered_states, start_idx_filter, end_idx_filter
+    )
+    model_filtered_states = subset_data(
+        model_filtered_states, start_idx_filter, end_idx_filter
+    )
+    true_forecast_states = subset_data(
+        true_forecast_states, start_idx_forecast, end_idx_forecast
+    )
+    model_forecast_states = subset_data(
+        model_forecast_states, start_idx_forecast, end_idx_forecast
+    )
     true_emissions_noisy = subset_data(true_emissions_noisy, start_idx_all, end_idx_all)
 
     # Determine the number of rows for subplots
     n_states = true_states.shape[-1] if true_states is not None else 0
-    n_emissions = true_emissions_noisy.shape[-1] if true_emissions_noisy is not None else 0
+    n_emissions = (
+        true_emissions_noisy.shape[-1] if true_emissions_noisy is not None else 0
+    )
     n_rows = max(n_states, n_emissions)
 
     # Create a canvas with subplots for states and emissions
-    fig, axes = plt.subplots(nrows=n_rows, ncols=2, figsize=(15, 2 * n_rows), sharex=True)
+    fig, axes = plt.subplots(
+        nrows=n_rows, ncols=2, figsize=(15, 2 * n_rows), sharex=True
+    )
 
     # Function to determine if a batch dimension is present
     def has_batch_dimension(data, N_samples):
@@ -475,7 +554,9 @@ def plot_filtered_and_forecasted(
             mean = jnp.mean(y, axis=0)
             std = jnp.std(y, axis=0)
             ax.plot(x, mean, color=color, linestyle=linestyle, alpha=alpha, label=label)
-            ax.fill_between(x, mean - 1.96 * std, mean + 1.96 * std, color=color, alpha=0.3)
+            ax.fill_between(
+                x, mean - 1.96 * std, mean + 1.96 * std, color=color, alpha=0.3
+            )
         else:
             ax.plot(x, y, color=color, linestyle=linestyle, alpha=alpha, label=label)
 
@@ -483,16 +564,33 @@ def plot_filtered_and_forecasted(
     if true_states is not None:
         for i in range(n_states):
             # Plot true state values
-            axes[i, 0].plot(time_grid_all, true_states[..., i], "k-", alpha=0.5, linewidth=2, label=f"True State {i}")
+            axes[i, 0].plot(
+                time_grid_all,
+                true_states[..., i],
+                "k-",
+                alpha=0.5,
+                linewidth=2,
+                label=f"True State {i}",
+            )
             # Plot filtered state values from true model
             if true_filtered_states is not None:
                 plot_with_ci(
-                    axes[i, 0], time_grid_filter, true_filtered_states[..., i], f"True Filtered State {i}", "gray", "--"
+                    axes[i, 0],
+                    time_grid_filter,
+                    true_filtered_states[..., i],
+                    f"True Filtered State {i}",
+                    "gray",
+                    "--",
                 )
             # Plot filtered state values from learned model
             if model_filtered_states is not None:
                 plot_with_ci(
-                    axes[i, 0], time_grid_filter, model_filtered_states[..., i], f"Model Filtered State {i}", "C0", "--"
+                    axes[i, 0],
+                    time_grid_filter,
+                    model_filtered_states[..., i],
+                    f"Model Filtered State {i}",
+                    "C0",
+                    "--",
                 )
             # Plot forecast state values from true model
             if true_forecast_states is not None:
@@ -539,17 +637,25 @@ def plot_filtered_and_forecasted(
         return output_array
 
     # Plot the emissions in the second column
-    if true_emissions_noisy is not None or (emission_function is not None and model_filtered_states is not None):
+    if true_emissions_noisy is not None or (
+        emission_function is not None and model_filtered_states is not None
+    ):
         if emission_function is None:
-            raise ValueError("emission_function must be provided to plot emissions from the learned model.")
+            raise ValueError(
+                "emission_function must be provided to plot emissions from the learned model."
+            )
         else:
             if model_filtered_states is not None:
-                model_filtered_emissions = states_by_emission_fs(emission_function, model_filtered_states)
+                model_filtered_emissions = states_by_emission_fs(
+                    emission_function, model_filtered_states
+                )
             else:
                 model_filtered_emissions = None
 
             if model_forecast_states is not None:
-                model_forecast_emissions = states_by_emission_fs(emission_function, model_forecast_states)
+                model_forecast_emissions = states_by_emission_fs(
+                    emission_function, model_forecast_states
+                )
             else:
                 model_forecast_emissions = None
 
@@ -566,7 +672,12 @@ def plot_filtered_and_forecasted(
             # Plot emissions computed from filtered states
             if model_filtered_emissions is not None:
                 plot_with_ci(
-                    axes[i, 1], time_grid_filter, model_filtered_emissions[..., i], f"Filtered Emission {i}", "C0", "--"
+                    axes[i, 1],
+                    time_grid_filter,
+                    model_filtered_emissions[..., i],
+                    f"Filtered Emission {i}",
+                    "C0",
+                    "--",
                 )
             # Plot emissions computed from forecasted states
             if model_forecast_emissions is not None:
@@ -595,9 +706,15 @@ def plot_filtered_and_forecasted(
         if switch_time is not None:
             for i in range(n_rows):
                 axes[i, 0].axvline(
-                    x=switch_time, color="k", linestyle="--", linewidth=1, label="Filter/Forecast Boundary"
+                    x=switch_time,
+                    color="k",
+                    linestyle="--",
+                    linewidth=1,
+                    label="Filter/Forecast Boundary",
                 )
-                axes[i, 1].axvline(x=switch_time, color="k", linestyle="--", linewidth=1)
+                axes[i, 1].axvline(
+                    x=switch_time, color="k", linestyle="--", linewidth=1
+                )
 
     # Set x-axis label only on the bottom subplots
     if n_rows > 0:
@@ -605,7 +722,9 @@ def plot_filtered_and_forecasted(
             ax.set_xlabel("Time $t$")
 
     # Set a super title for the entire figure
-    plt.suptitle("True vs Filtered vs Forecast States and Emissions: True and Learned Models")
+    plt.suptitle(
+        "True vs Filtered vs Forecast States and Emissions: True and Learned Models"
+    )
 
     # Adjust layout to prevent overlap and show the plot
     plt.tight_layout()
@@ -621,22 +740,32 @@ def plot_filtered_and_forecasted(
     # There will only be 1 column of subplots, since we are plotting emissions.
 
     # Create a canvas with subplots for emissions
-    fig, axes = plt.subplots(nrows=n_emissions, ncols=1, figsize=(10, 2 * n_emissions), sharex=True)
+    fig, axes = plt.subplots(
+        nrows=n_emissions, ncols=1, figsize=(10, 2 * n_emissions), sharex=True
+    )
     if n_emissions == 1:
         axes = [axes]
 
     # Plot the emissions in the second column
-    if true_emissions_noisy is not None or (emission_function is not None and model_filtered_states is not None):
+    if true_emissions_noisy is not None or (
+        emission_function is not None and model_filtered_states is not None
+    ):
         if emission_function is None:
-            raise ValueError("emission_function must be provided to plot emissions from the learned model.")
+            raise ValueError(
+                "emission_function must be provided to plot emissions from the learned model."
+            )
         else:
             if model_filtered_states is not None:
-                model_filtered_emissions = states_by_emission_fs(emission_function, model_filtered_states)
+                model_filtered_emissions = states_by_emission_fs(
+                    emission_function, model_filtered_states
+                )
             else:
                 model_filtered_emissions = None
 
             if model_forecast_states is not None:
-                model_forecast_emissions = states_by_emission_fs(emission_function, model_forecast_states)
+                model_forecast_emissions = states_by_emission_fs(
+                    emission_function, model_forecast_states
+                )
             else:
                 model_forecast_emissions = None
 
@@ -660,32 +789,53 @@ def plot_filtered_and_forecasted(
             )(batched_data)
 
             # choose a grid of 1000 x values for the plot
-            x = jnp.linspace(jnp.min(batched_data), jnp.max(batched_data), n_grid_points)
+            x = jnp.linspace(
+                jnp.min(batched_data), jnp.max(batched_data), n_grid_points
+            )
             # compute the KDE estimate for each batch at the x values
             kde_estimates = jax.vmap(lambda kde: kde(x))(emission_kde)
             if plot_ensemble:
                 my_label = label + " Ensemble"
                 for kde in kde_estimates:
                     ax.plot(x, kde, color=color, alpha=0.1, label=my_label)
-                    my_label = None # only label the first plot
+                    my_label = None  # only label the first plot
                 return
             # compute the mean and std of the KDE estimates across batches
             kde_mean = jnp.mean(kde_estimates, axis=0)
             kde_std = jnp.std(kde_estimates, axis=0)
             # plot the mean KDE estimate with 95% CI
             ax.plot(x, kde_mean, color=color, label=label)
-            ax.fill_between(x, kde_mean - 1.96 * kde_std, kde_mean + 1.96 * kde_std, color=color, alpha=0.3)
+            ax.fill_between(
+                x,
+                kde_mean - 1.96 * kde_std,
+                kde_mean + 1.96 * kde_std,
+                color=color,
+                alpha=0.3,
+            )
 
             return
 
         for i in range(n_emissions):
             # plot kde for true_emissions_noisy[..., i] and label it as the i-th true emission
             if true_emissions_noisy is not None and len(true_emissions_noisy) > 0:
-                plot_kde_with_ci(axes[i], true_emissions_noisy[..., i], color="black", label="True Emission")
+                plot_kde_with_ci(
+                    axes[i],
+                    true_emissions_noisy[..., i],
+                    color="black",
+                    label="True Emission",
+                )
 
             # plot kde for model_forecast_emissions[..., i] and label it as the i-th learned emission
-            if model_forecast_emissions is not None and len(model_forecast_emissions) > 0:
-                plot_kde_with_ci(axes[i], model_forecast_emissions[..., i], color="blue", label="Learned Emission")
+            if (
+                model_forecast_emissions is not None
+                and len(model_forecast_emissions) > 0
+            ):
+                plot_kde_with_ci(
+                    axes[i],
+                    model_forecast_emissions[..., i],
+                    color="blue",
+                    label="Learned Emission",
+                )
             axes[i].set_ylabel(f"Emission {i}")
             axes[i].legend(loc="upper right")
 
@@ -699,8 +849,14 @@ def plot_filtered_and_forecasted(
 
     # Now do the same for the states. Each subplot row will correspond to a different state variable.
     # Create a canvas with subplots for emissions
-    if true_forecast_states is not None or model_forecast_states is not None or true_states is not None:
-        fig, axes = plt.subplots(nrows=n_states, ncols=1, figsize=(10, 2 * n_states), sharex=True)
+    if (
+        true_forecast_states is not None
+        or model_forecast_states is not None
+        or true_states is not None
+    ):
+        fig, axes = plt.subplots(
+            nrows=n_states, ncols=1, figsize=(10, 2 * n_states), sharex=True
+        )
         if n_states == 1:
             axes = [axes]
         # true_forecast_states[..., i] and model_forecast_states[..., i]
@@ -709,12 +865,24 @@ def plot_filtered_and_forecasted(
             # plot kde for true_emissions_noisy[..., i] and label it as the i-th true emission
 
             if true_forecast_states is not None and len(true_forecast_states) > 0:
-                plot_kde_with_ci(axes[i], true_forecast_states[..., i], color="black", label="True State")
+                plot_kde_with_ci(
+                    axes[i],
+                    true_forecast_states[..., i],
+                    color="black",
+                    label="True State",
+                )
             elif true_states is not None and len(true_states) > 0:
-                plot_kde_with_ci(axes[i], true_states[..., i], color="black", label="True State")
+                plot_kde_with_ci(
+                    axes[i], true_states[..., i], color="black", label="True State"
+                )
 
             if model_forecast_states is not None and len(model_forecast_states) > 0:
-                plot_kde_with_ci(axes[i], model_forecast_states[..., i], color="blue", label="Learned State")
+                plot_kde_with_ci(
+                    axes[i],
+                    model_forecast_states[..., i],
+                    color="blue",
+                    label="Learned State",
+                )
             axes[i].set_ylabel(f"State {i}")
             axes[i].legend(loc="upper right")
 
@@ -764,7 +932,12 @@ def gradient_cmap(colors, nsteps=256, bounds=None):
         blues.append((b, c[2], c[2]))
         alphas.append((b, c[3], c[3]) if len(c) == 4 else (b, 1.0, 1.0))
 
-    cdict = {"red": tuple(reds), "green": tuple(greens), "blue": tuple(blues), "alpha": tuple(alphas)}
+    cdict = {
+        "red": tuple(reds),
+        "green": tuple(greens),
+        "blue": tuple(blues),
+        "alpha": tuple(alphas),
+    }
 
     cmap = LinearSegmentedColormap("grad_colormap", cdict, nsteps)
     return cmap
@@ -788,7 +961,12 @@ def plot_ellipse(Sigma, mu, ax, n_std=3.0, facecolor="none", edgecolor="k", **kw
     #     kwargs['edgecolor'] = 'k'
 
     ellipse = Ellipse(
-        (0, 0), width=ell_radius_x * 2, height=ell_radius_y * 2, facecolor=facecolor, edgecolor=edgecolor, **kwargs
+        (0, 0),
+        width=ell_radius_x * 2,
+        height=ell_radius_y * 2,
+        facecolor=facecolor,
+        edgecolor=edgecolor,
+        **kwargs,
     )
 
     scale_x = jnp.sqrt(cov[0, 0]) * n_std
@@ -797,7 +975,12 @@ def plot_ellipse(Sigma, mu, ax, n_std=3.0, facecolor="none", edgecolor="k", **kw
     scale_y = jnp.sqrt(cov[1, 1]) * n_std
     mean_y = mu[1]
 
-    transf = transforms.Affine2D().rotate_deg(45).scale(scale_x, scale_y).translate(mean_x, mean_y)
+    transf = (
+        transforms.Affine2D()
+        .rotate_deg(45)
+        .scale(scale_x, scale_y)
+        .translate(mean_x, mean_y)
+    )
 
     ellipse.set_transform(transf + ax.transData)
 
@@ -834,7 +1017,18 @@ custom_rcparams_base = {
     "axes.spines.right": False,
     "axes.prop_cycle": plt.cycler(
         "color",
-        ["#1f77b4", "#ff7f0e", "#2ca02c", "#d62728", "#9467bd", "#8c564b", "#e377c2", "#7f7f7f", "#bcbd22", "#17becf"],
+        [
+            "#1f77b4",
+            "#ff7f0e",
+            "#2ca02c",
+            "#d62728",
+            "#9467bd",
+            "#8c564b",
+            "#e377c2",
+            "#7f7f7f",
+            "#bcbd22",
+            "#17becf",
+        ],
     ),
     "xtick.color": "555555",
     "ytick.color": "555555",
@@ -868,7 +1062,15 @@ custom_rcparams_notebook = {
 }
 
 
-def plot_learning_curve(marginal_lls, true_model, true_params, test_model, test_params, emissions, t_emissions=None):
+def plot_learning_curve(
+    marginal_lls,
+    true_model,
+    true_params,
+    test_model,
+    test_params,
+    emissions,
+    t_emissions=None,
+):
     plt.figure(figsize=(10, 6))
     plt.xlabel("Iteration")
     plt.ylabel("Marginal Joint Probability")
@@ -877,21 +1079,29 @@ def plot_learning_curve(marginal_lls, true_model, true_params, test_model, test_
     # Compute true_marginal_lls and true_logjoint here
     try:
         true_marginal_lls = vmap(
-            lambda emissions, t_emissions: true_model.marginal_log_prob(true_params, emissions, t_emissions[:, None])
+            lambda emissions, t_emissions: true_model.marginal_log_prob(
+                true_params, emissions, t_emissions[:, None]
+            )
         )(emissions, t_emissions)
 
         if test_params is not None:
             test_marginal_lls = vmap(
-                lambda emissions, t_emissions: test_model.marginal_log_prob(test_params, emissions, t_emissions[:, None])
+                lambda emissions, t_emissions: test_model.marginal_log_prob(
+                    test_params, emissions, t_emissions[:, None]
+                )
             )(emissions, t_emissions)
-    except:
-        true_marginal_lls = vmap(lambda emissions, t_emissions: true_model.marginal_log_prob(true_params, emissions))(
-            emissions, t_emissions
-        )
-        if test_params is not None:
-            test_marginal_lls = vmap(lambda emissions, t_emissions: test_model.marginal_log_prob(test_params, emissions))(
-                emissions, t_emissions
+    except Exception:
+        true_marginal_lls = vmap(
+            lambda emissions, t_emissions: true_model.marginal_log_prob(
+                true_params, emissions
             )
+        )(emissions, t_emissions)
+        if test_params is not None:
+            test_marginal_lls = vmap(
+                lambda emissions, t_emissions: test_model.marginal_log_prob(
+                    test_params, emissions
+                )
+            )(emissions, t_emissions)
 
     print("True marginal log probs", true_marginal_lls.sum())
     if test_params is not None:
@@ -903,7 +1113,9 @@ def plot_learning_curve(marginal_lls, true_model, true_params, test_model, test_
     print("True log prior", true_model.log_prior(true_params))
     true_logjoint = true_model.log_prior(true_params) + true_marginal_lls.sum()
     print("True log joint", true_logjoint)
-    plt.axhline(true_logjoint, color="k", linestyle=":", label=f"True ({true_logjoint:.2f})")
+    plt.axhline(
+        true_logjoint, color="k", linestyle=":", label=f"True ({true_logjoint:.2f})"
+    )
 
     y_min, y_max = adjusted_y_limits(marginal_lls, true_logjoint)
     plt.ylim(y_min, y_max)
@@ -952,13 +1164,19 @@ def setup_symlog_scale(ax):
     y_min, y_max = ax.get_ylim()
     print("y_min, y_max", y_min, y_max)
     # set axis limits to be larger than the data range in log scale
-    y_min = np.sign(y_min) * np.power(10, np.floor(np.log10(np.abs(y_min))) - np.sign(y_min))
-    y_max = np.sign(y_max) * np.power(10, np.ceil(np.log10(np.abs(y_max))) + np.sign(y_max))
+    y_min = np.sign(y_min) * np.power(
+        10, np.floor(np.log10(np.abs(y_min))) - np.sign(y_min)
+    )
+    y_max = np.sign(y_max) * np.power(
+        10, np.ceil(np.log10(np.abs(y_max))) + np.sign(y_max)
+    )
     print("y_min, y_max", y_min, y_max)
     ax.set_ylim(y_min, y_max)
 
 
-def plot_generalization(true_model, true_params, test_model, test_params, t_emissions, key, num_samples=1):
+def plot_generalization(
+    true_model, true_params, test_model, test_params, t_emissions, key, num_samples=1
+):
     num_timesteps = t_emissions.shape[0]
 
     keys = jr.split(key, num_samples)
@@ -967,8 +1185,13 @@ def plot_generalization(true_model, true_params, test_model, test_params, t_emis
     # generate a new set of emissions data
     def sample_with_emissions(key, t_emissions):
         try:
-            foo = true_model.sample(true_params, key, num_timesteps=num_timesteps, t_emissions=t_emissions[:, None])
-        except:
+            foo = true_model.sample(
+                true_params,
+                key,
+                num_timesteps=num_timesteps,
+                t_emissions=t_emissions[:, None],
+            )
+        except Exception:
             foo = true_model.sample(true_params, key, num_timesteps=num_timesteps)
         return foo
 
@@ -984,8 +1207,6 @@ def plot_generalization(true_model, true_params, test_model, test_params, t_emis
     ax.legend()
 
     # Run filtering and smoothing on the new emissions data
-    state_dim = true_model.state_dim
-    emission_dim = true_model.emission_dim
     plot_filtered_fits(
         true_model,
         true_params,
@@ -998,7 +1219,13 @@ def plot_generalization(true_model, true_params, test_model, test_params, t_emis
     )
 
     plot_smoothed_fits(
-        true_model, true_params, test_model, test_params, emissions, t_emissions_arrays, num_samples=num_samples
+        true_model,
+        true_params,
+        test_model,
+        test_params,
+        emissions,
+        t_emissions_arrays,
+        num_samples=num_samples,
     )
 
 
@@ -1013,20 +1240,27 @@ def plot_filtered_fits(
     true_states=None,
 ):
     state_dim = true_model.state_dim
-    emission_dim = true_model.emission_dim
-
     # run the filter w/ test_params on emissions data
     try:
-        filtered_posteriors = vmap(lambda y, t: test_model.filter(test_params, y, t[:, None]))(emissions, t_emissions)
-    except:
-        filtered_posteriors = vmap(lambda y, t: test_model.filter(test_params, y))(emissions, t_emissions)
+        filtered_posteriors = vmap(
+            lambda y, t: test_model.filter(test_params, y, t[:, None])
+        )(emissions, t_emissions)
+    except Exception:
+        filtered_posteriors = vmap(lambda y, t: test_model.filter(test_params, y))(
+            emissions, t_emissions
+        )
 
     # from pdb import set_trace; set_trace()
     # print(filtered_emissions_means.shape)
 
     # compute the standard deviation of the filtered emissions distribution
     filtered_emissions_std = jnp.sqrt(
-        jnp.array([filtered_posteriors.filtered_covariances[:, :, i, i] for i in range(state_dim)])
+        jnp.array(
+            [
+                filtered_posteriors.filtered_covariances[:, :, i, i]
+                for i in range(state_dim)
+            ]
+        )
     )
 
     print(filtered_posteriors.filtered_covariances.shape)
@@ -1057,8 +1291,12 @@ def plot_filtered_fits(
             )[0]
             plt.fill_between(
                 t_emissions[n],
-                spc * i + filtered_posteriors.filtered_means[n, :, i] - 2 * filtered_emissions_std[n, i],
-                spc * i + filtered_posteriors.filtered_means[n, :, i] + 2 * filtered_emissions_std[n, i],
+                spc * i
+                + filtered_posteriors.filtered_means[n, :, i]
+                - 2 * filtered_emissions_std[n, i],
+                spc * i
+                + filtered_posteriors.filtered_means[n, :, i]
+                + 2 * filtered_emissions_std[n, i],
                 color=ln.get_color(),
                 alpha=0.25,
             )
@@ -1071,19 +1309,25 @@ def plot_filtered_fits(
     plt.show()
 
 
-def plot_smoothed_fits(true_model, true_params, test_model, test_params, emissions, t_emissions, num_samples=1):
-    state_dim = true_model.state_dim
+def plot_smoothed_fits(
+    true_model,
+    true_params,
+    test_model,
+    test_params,
+    emissions,
+    t_emissions,
+    num_samples=1,
+):
     emission_dim = true_model.emission_dim
-
     # run the smoother w/ test_params on emissions data
     try:
         smoothed_emissions, smoothed_emissions_std = vmap(
             lambda y, t: test_model.posterior_predictive(test_params, y, t[:, None])
         )(emissions, t_emissions)
-    except:
-        smoothed_emissions, smoothed_emissions_std = vmap(lambda y, t: test_model.posterior_predictive(test_params, y))(
-            emissions, t_emissions
-        )
+    except Exception:
+        smoothed_emissions, smoothed_emissions_std = vmap(
+            lambda y, t: test_model.posterior_predictive(test_params, y)
+        )(emissions, t_emissions)
 
     # smoothed_emissions, smoothed_emissions_std = test_model.posterior_predictive(test_params, emissions, t_emissions)
 
@@ -1093,7 +1337,11 @@ def plot_smoothed_fits(true_model, true_params, test_model, test_params, emissio
     for n in range(num_samples):
         for i in range(emission_dim):
             plt.plot(
-                t_emissions[n], emissions[n, :, i] + spc * i, "--", color=f"C{n}", label="observed"
+                t_emissions[n],
+                emissions[n, :, i] + spc * i,
+                "--",
+                color=f"C{n}",
+                label="observed",
             )
             ln = plt.plot(
                 t_emissions[n],
@@ -1103,8 +1351,12 @@ def plot_smoothed_fits(true_model, true_params, test_model, test_params, emissio
             )[0]
             plt.fill_between(
                 t_emissions[n],
-                spc * i + smoothed_emissions[n, :, i] - 2 * smoothed_emissions_std[n, i],
-                spc * i + smoothed_emissions[n, :, i] + 2 * smoothed_emissions_std[n, i],
+                spc * i
+                + smoothed_emissions[n, :, i]
+                - 2 * smoothed_emissions_std[n, i],
+                spc * i
+                + smoothed_emissions[n, :, i]
+                + 2 * smoothed_emissions_std[n, i],
                 color=ln.get_color(),
                 alpha=0.25,
             )
@@ -1114,6 +1366,7 @@ def plot_smoothed_fits(true_model, true_params, test_model, test_params, emissio
     plt.legend(loc="upper left")
     plt.suptitle("True vs smoothed emissions")
     plt.show()
+
 
 #################### Parameter plotting
 # Useful utils for plotting parameters
@@ -1148,6 +1401,7 @@ def plot_matrix(matrix, title):
     plt.ylabel("Row")
     plt.show()
 
+
 # Compare to sets of parameters
 def compare_cdlgssm_parameters(true_params, test_params):
     for level_key, inner_tuple in true_params._asdict().items():
@@ -1170,6 +1424,7 @@ def compare_cdlgssm_parameters(true_params, test_params):
                 true_vectorized = true_value.flatten()
                 test_vectorized = test_value.flatten()
                 plot_vector(true_vectorized, test_vectorized, title + " (Vectorized)")
+
 
 # What is this?
 def compare_parameters2(true_params, test_params):
@@ -1198,7 +1453,9 @@ def compare_parameters2(true_params, test_params):
                 # Vectorize matrices
                 true_vectorized = true_value.flatten()
                 test_vectorized = test_value.flatten()
-                for i, (t_val, tst_val) in enumerate(zip(true_vectorized, test_vectorized)):
+                for i, (t_val, tst_val) in enumerate(
+                    zip(true_vectorized, test_vectorized)
+                ):
                     plot_data.append((t_val, tst_val))
                     labels.append(f"{title} (Vec) [{i}]")
 
@@ -1217,8 +1474,9 @@ def compare_parameters2(true_params, test_params):
 
     plt.show()
 
+
 # Plot parameter distributions
-def plot_param_distributions(samples, true, init, name='', burn_in_frac=0.5):
+def plot_param_distributions(samples, true, init, name="", burn_in_frac=0.5):
     """
     Plots d_params horizontal box plots for the given d_params x N_samples matrix.
 
@@ -1233,12 +1491,14 @@ def plot_param_distributions(samples, true, init, name='', burn_in_frac=0.5):
     - A matplotlib figure with d_params horizontal box plots.
     """
     d_params = samples.shape[1]
-    fig, ax = plt.subplots(figsize=(10, d_params * 2))  # Adjust figure size based on number of parameters
+    fig, ax = plt.subplots(
+        figsize=(10, d_params * 2)
+    )  # Adjust figure size based on number of parameters
 
     # apply burn-in
     burn_in = int(burn_in_frac * samples.shape[0])
     samples = samples[:, burn_in:]
-    
+
     # Create box plots
     ax.boxplot(samples, vert=False, patch_artist=True)
 
@@ -1247,8 +1507,24 @@ def plot_param_distributions(samples, true, init, name='', burn_in_frac=0.5):
     ax.set_yticklabels(["Parameter {}".format(i + 1) for i in range(d_params)])
 
     # Plot ground truth and estimates
-    ax.scatter(init, range(1, d_params + 1), color="magenta", marker="o", s=100, label="Initial Estimate", zorder=3)
-    ax.scatter(true, range(1, d_params + 1), color="red", marker="x", s=100, label="Ground Truth", zorder=4)
+    ax.scatter(
+        init,
+        range(1, d_params + 1),
+        color="magenta",
+        marker="o",
+        s=100,
+        label="Initial Estimate",
+        zorder=3,
+    )
+    ax.scatter(
+        true,
+        range(1, d_params + 1),
+        color="red",
+        marker="x",
+        s=100,
+        label="Ground Truth",
+        zorder=4,
+    )
 
     plt.xlabel("Value")
     plt.ylabel("Parameters")
@@ -1257,6 +1533,7 @@ def plot_param_distributions(samples, true, init, name='', burn_in_frac=0.5):
     plt.legend()
     plt.show()
 
+
 # Plot all parameter samples and compare with truth and init
 def plot_all_parameters(param_samples, true_params, init_params, burn_in_frac=0.5):
     """
@@ -1264,13 +1541,14 @@ def plot_all_parameters(param_samples, true_params, init_params, burn_in_frac=0.
     Burn-in is removed from the samples.
     """
     plot_param_distributions(
-        param_samples.initial.mean, true_params.initial.mean, init_params.initial.mean, name="Initial mean",
-        burn_in_frac=burn_in_frac
+        param_samples.initial.mean,
+        true_params.initial.mean,
+        init_params.initial.mean,
+        name="Initial mean",
+        burn_in_frac=burn_in_frac,
     )
     plot_param_distributions(
-        param_samples.initial.cov.reshape(
-            param_samples.initial.cov.shape[0], -1
-        ),
+        param_samples.initial.cov.reshape(param_samples.initial.cov.shape[0], -1),
         true_params.initial.cov.flatten(),
         init_params.initial.cov.flatten(),
         name="Initial cov",
@@ -1311,18 +1589,14 @@ def plot_all_parameters(param_samples, true_params, init_params, burn_in_frac=0.
         burn_in_frac=burn_in_frac,
     )
     plot_param_distributions(
-        param_samples.emissions.bias.reshape(
-            param_samples.emissions.bias.shape[0], -1
-        ),
+        param_samples.emissions.bias.reshape(param_samples.emissions.bias.shape[0], -1),
         true_params.emissions.bias.flatten(),
         init_params.emissions.bias.flatten(),
         name="Emissions function bias",
         burn_in_frac=burn_in_frac,
     )
     plot_param_distributions(
-        param_samples.emissions.cov.reshape(
-            param_samples.emissions.cov.shape[0], -1
-        ),
+        param_samples.emissions.cov.reshape(param_samples.emissions.cov.shape[0], -1),
         true_params.emissions.cov.flatten(),
         init_params.emissions.cov.flatten(),
         name="Emissions cov",

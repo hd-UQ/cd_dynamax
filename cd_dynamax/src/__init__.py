@@ -28,22 +28,20 @@ __all__ = [
     ### SSM classes ###
     "ContDiscreteNonlinearGaussianSSM",
     "ContDiscreteLinearGaussianSSM",
-    
+    "SSM",
+    "Prior",
     ### Param classes ###
     "ParamsCDNLGSSM",
     "ParamsCDLGSSM",
-    
     ### Non-linear filters/smoothers/forecasters ###
     "cdnlgssm_filter",
     "cdnlgssm_smoother",
     "cdnlgssm_forecast",
     "cdnlgssm_emissions",
-
     # Non-linear filtering Hyperparams
     "EKFHyperParams",
     "UKFHyperParams",
     "EnKFHyperParams",
-
     ### Linear filters/smoothers/forecasters/samplers ###
     "cdlgssm_filter",
     "cdlgssm_smoother",
@@ -51,8 +49,6 @@ __all__ = [
     "cdlgssm_emissions",
     "cdlgssm_posterior_sample",
     "cdlgssm_joint_sample",
-
     # Linear filtering Hyperparams (typically don't need to use these directly, can rely on default KFHyperParams)
     "KFHyperParams",
-
 ]

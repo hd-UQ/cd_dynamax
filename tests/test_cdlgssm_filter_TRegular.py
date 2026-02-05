@@ -1,24 +1,30 @@
 # Imports
+import jax
 import jax.numpy as jnp
 import jax.random as jr
 
 from cd_dynamax import ContDiscreteLinearGaussianSSM, LinearGaussianSSM
 from cd_dynamax.src.utils.test_utils import compare, compare_structs
+from cd_dynamax.dynamax.linear_gaussian_ssm.inference import lgssm_filter
+from cd_dynamax.src.continuous_discrete_linear_gaussian_ssm.models import (
+    cdlgssm_filter,
+)
+from cd_dynamax.dynamax.parameters import ParameterProperties
+from cd_dynamax.dynamax.utils.bijectors import RealToPSDBijector
+from cd_dynamax import KFHyperParams
+from cd_dynamax import cdlgssm_forecast, cdlgssm_emissions
+from tensorflow_probability.substrates.jax.distributions import (
+    MultivariateNormalFullCovariance as MVN,
+)
 
 # Whether to plot test results or not
 PLOT_TEST_RESULTS = False
 
 # JAX device check
 print("************* Checking JAX device *************")
-import jax
-print('Running on jax device:{}'.format(
-        jax.devices()
-    )
-)
-print('Running on jax device platform:{}'.format(
-        jax.devices()[0].platform
-    )
-)
+
+print("Running on jax device:{}".format(jax.devices()))
+print("Running on jax device platform:{}".format(jax.devices()[0].platform))
 print("***********************************************")
 
 # The idea of this test is as following (uses regular time intervals ONLY):
@@ -55,37 +61,20 @@ d_params, d_param_props = d_model.initialize(
 # Simulate from discrete model
 print("Simulating in discrete time")
 d_states, d_emissions = d_model.sample(
-    d_params,
-    key_sample,
-    num_timesteps=NUM_TIMESTEPS,
-    inputs=inputs
+    d_params, key_sample, num_timesteps=NUM_TIMESTEPS, inputs=inputs
 )
 
 print("Discrete time filtering: pre-fit")
-from cd_dynamax.dynamax.linear_gaussian_ssm.inference import lgssm_filter
-
 # Define filter
-d_filtered_posterior = lgssm_filter(
-    d_params,
-    d_emissions,
-    inputs
-)
+d_filtered_posterior = lgssm_filter(d_params, d_emissions, inputs)
 
 print("Fitting discrete time with SGD")
 d_sgd_fitted_params, d_sgd_lps = d_model.fit_sgd(
-    d_params,
-    d_param_props,
-    d_emissions,
-    inputs=inputs,
-    num_epochs=10
+    d_params, d_param_props, d_emissions, inputs=inputs, num_epochs=10
 )
 
 print("Discrete time filtering: post-fit")
-d_sgd_fitted_filtered_posterior = lgssm_filter(
-    d_sgd_fitted_params,
-    d_emissions,
-    inputs
-)
+d_sgd_fitted_filtered_posterior = lgssm_filter(d_sgd_fitted_params, d_emissions, inputs)
 
 print("************* Continuous-Discrete LGSSM *************")
 # Continuous-Discrete model
@@ -99,101 +88,98 @@ cd_model = ContDiscreteLinearGaussianSSM(
 )
 
 # Initialize, controlling what is learned
-from cd_dynamax.src.continuous_discrete_linear_gaussian_ssm.models import *
+
 cd_params, cd_param_props = cd_model.initialize(
     key_init,
     ## Initial
-    initial_mean = {
-            "params": jnp.zeros(cd_model.state_dim),
-            "props": ParameterProperties()
+    initial_mean={
+        "params": jnp.zeros(cd_model.state_dim),
+        "props": ParameterProperties(),
     },
-    initial_cov = {
+    initial_cov={
         "params": jnp.eye(cd_model.state_dim),
-        "props": ParameterProperties(constrainer=RealToPSDBijector())
+        "props": ParameterProperties(constrainer=RealToPSDBijector()),
     },
     ## Dynamics
-    dynamics_weights = {
+    dynamics_weights={
         "params": -0.1 * jnp.eye(cd_model.state_dim),
-        "props": ParameterProperties()
+        "props": ParameterProperties(),
     },
-    dynamics_bias = {
+    dynamics_bias={
         "params": jnp.zeros((cd_model.state_dim,)),
-        "props": ParameterProperties()
+        "props": ParameterProperties(),
     },
-    dynamics_diffusion_coefficient = {
+    dynamics_diffusion_coefficient={
         "params": 0.5 * jnp.eye(cd_model.state_dim),
-        "props": ParameterProperties()
+        "props": ParameterProperties(),
     },
-    dynamics_diffusion_cov = {
+    dynamics_diffusion_cov={
         "params": 0.5 * jnp.eye(cd_model.state_dim),
-        "props": ParameterProperties(constrainer=RealToPSDBijector())
+        "props": ParameterProperties(constrainer=RealToPSDBijector()),
     },
     ## Emission
-    emission_weights = {
+    emission_weights={
         "params": jr.normal(key_init, (cd_model.emission_dim, cd_model.state_dim)),
-        "props": ParameterProperties()
+        "props": ParameterProperties(),
     },
-    emission_bias = {
+    emission_bias={
         "params": jnp.zeros((cd_model.emission_dim,)),
-        "props": ParameterProperties()
+        "props": ParameterProperties(),
     },
-    emission_cov = {
+    emission_cov={
         "params": 0.1 * jnp.eye(cd_model.emission_dim),
-        "props": ParameterProperties(constrainer=RealToPSDBijector())
-    }
+        "props": ParameterProperties(constrainer=RealToPSDBijector()),
+    },
 )
 
 # Equivalent initialization to above
 cd_params, cd_param_props = cd_model.initialize(
     key_init,
     ## Initial
-    initial_mean = {
-            "params": jnp.zeros(cd_model.state_dim),
-            "props": ParameterProperties()
+    initial_mean={
+        "params": jnp.zeros(cd_model.state_dim),
+        "props": ParameterProperties(),
     },
-    initial_cov = {
+    initial_cov={
         "params": jnp.eye(cd_model.state_dim),
-        "props": ParameterProperties(constrainer=RealToPSDBijector())
+        "props": ParameterProperties(constrainer=RealToPSDBijector()),
     },
     ## Dynamics
-    dynamics_weights = {
+    dynamics_weights={
         "params": -0.1 * jnp.eye(cd_model.state_dim),
-        "props": ParameterProperties()
+        "props": ParameterProperties(),
     },
-    dynamics_bias = {
+    dynamics_bias={
         "params": jnp.zeros((cd_model.state_dim,)),
-        "props": ParameterProperties()
+        "props": ParameterProperties(),
     },
-    dynamics_diffusion_coefficient = {
+    dynamics_diffusion_coefficient={
         "params": jnp.eye(cd_model.state_dim),
-        "props": ParameterProperties()
+        "props": ParameterProperties(),
     },
-    dynamics_diffusion_cov = {
-        "params": (0.5*0.5)*0.5 * jnp.eye(cd_model.state_dim),
-        "props": ParameterProperties(constrainer=RealToPSDBijector())
+    dynamics_diffusion_cov={
+        "params": (0.5 * 0.5) * 0.5 * jnp.eye(cd_model.state_dim),
+        "props": ParameterProperties(constrainer=RealToPSDBijector()),
     },
     ## Emission
-    emission_weights = {
+    emission_weights={
         "params": jr.normal(key_init, (cd_model.emission_dim, cd_model.state_dim)),
-        "props": ParameterProperties()
+        "props": ParameterProperties(),
     },
-    emission_bias = {
+    emission_bias={
         "params": jnp.zeros((cd_model.emission_dim,)),
-        "props": ParameterProperties()
+        "props": ParameterProperties(),
     },
-    emission_cov = {
+    emission_cov={
         "params": 0.1 * jnp.eye(cd_model.emission_dim),
-        "props": ParameterProperties(constrainer=RealToPSDBijector())
-    }
+        "props": ParameterProperties(constrainer=RealToPSDBijector()),
+    },
 )
 
 # Simulate from continuous model
 print("Simulating in continuous-discrete time")
 cd_num_timesteps_states, cd_num_timesteps_emissions = cd_model.sample(
-    cd_params,
-    key_sample,
-    num_timesteps=NUM_TIMESTEPS,
-    inputs=inputs
+    cd_params, key_sample, num_timesteps=NUM_TIMESTEPS, inputs=inputs
 )
 
 cd_states, cd_emissions = cd_model.sample(
@@ -201,7 +187,7 @@ cd_states, cd_emissions = cd_model.sample(
     key_sample,
     num_timesteps=NUM_TIMESTEPS,
     t_emissions=t_emissions,
-    inputs=inputs
+    inputs=inputs,
 )
 
 print("\tChecking states...")
@@ -217,16 +203,15 @@ print("\tChecking emissions...")
 compare(d_emissions, cd_emissions)
 
 print("Continuous-Discrete time filtering: pre-fit")
-from cd_dynamax import cdlgssm_filter, KFHyperParams
 # We set dt_final=1 so that predicted mean and covariance at the end of sequence match those of discrete filtering
-kf_hyperparams=KFHyperParams(dt_final = 1.)
+kf_hyperparams = KFHyperParams(dt_final=1.0)
 # Define CD linear filter
 cd_filtered_posterior = cdlgssm_filter(
     cd_params,
     cd_emissions,
     t_emissions,
     filter_hyperparams=kf_hyperparams,
-    inputs=inputs
+    inputs=inputs,
 )
 
 print("Comparing filtered posteriors...")
@@ -240,7 +225,7 @@ cd_sgd_fitted_params, cd_sgd_lps = cd_model.fit_sgd(
     t_emissions,
     filter_hyperparams=kf_hyperparams,
     inputs=inputs,
-    num_epochs=10
+    num_epochs=10,
 )
 
 print("\tSGD works!")
@@ -258,22 +243,29 @@ cd_sgd_fitted_filtered_posterior = cdlgssm_filter(
     cd_emissions,
     t_emissions,
     filter_hyperparams=kf_hyperparams,
-    inputs=inputs
+    inputs=inputs,
 )
 
 print("WARNING: Please take the following comparisons with a grain of salt.")
-compare_structs(d_sgd_fitted_filtered_posterior, cd_sgd_fitted_filtered_posterior, accept_failure=True)
+compare_structs(
+    d_sgd_fitted_filtered_posterior,
+    cd_sgd_fitted_filtered_posterior,
+    accept_failure=True,
+)
 
 if PLOT_TEST_RESULTS:
-    print("WARNING: plotting filtering results for understanding impact of SGD differences.")
+    print(
+        "WARNING: plotting filtering results for understanding impact of SGD differences."
+    )
     import matplotlib.pyplot as plt
+
     for n_state in jnp.arange(STATE_DIM):
         plt.figure()
         plt.plot(
             t_emissions,
             d_states[:, n_state],
             label="true discrete position",
-            color="black"
+            color="black",
         )
         plt.plot(
             t_emissions,
@@ -290,7 +282,7 @@ if PLOT_TEST_RESULTS:
             cd_sgd_fitted_filtered_posterior.filtered_means[:, n_state],
             label="Post-SGD fit Continuous-Discrete filtered state",
             color="blue",
-            marker="x"
+            marker="x",
         )
         plt.xlabel("time")
         plt.ylabel("x_{}".format(n_state))
@@ -305,11 +297,12 @@ print("All Discrete to Continous-Discrete model and filtering tests passed!")
 print("************* Continuous-Discrete LGSSM Forecasting *************")
 # Define forecasting time points
 FORECAST_TIMESTEPS = 25
-t_forecast_emissions = jnp.arange(NUM_TIMESTEPS, NUM_TIMESTEPS + FORECAST_TIMESTEPS)[:, None]
+t_forecast_emissions = jnp.arange(NUM_TIMESTEPS, NUM_TIMESTEPS + FORECAST_TIMESTEPS)[
+    :, None
+]
 init_time = t_emissions[-1]
 
 # Run forecast on forecasting time points
-from cd_dynamax import cdlgssm_forecast
 # Forecasting randomness
 key_forecast = jr.split(key_sample)[0]
 
@@ -327,7 +320,10 @@ cd_point_forecasted = cdlgssm_forecast(
 )
 
 # Initialize forecast with last filtered state distribution
-cd_dist_init_forecast = MVN(cd_filtered_posterior.filtered_means[-1, :], cd_filtered_posterior.filtered_covariances[-1, :])
+cd_dist_init_forecast = MVN(
+    cd_filtered_posterior.filtered_means[-1, :],
+    cd_filtered_posterior.filtered_covariances[-1, :],
+)
 cd_dist_forecasted = cdlgssm_forecast(
     params=cd_params,
     init_forecast=cd_dist_init_forecast,
@@ -342,13 +338,14 @@ cd_dist_forecasted = cdlgssm_forecast(
 if PLOT_TEST_RESULTS:
     print("Plotting forecasted state path and distributions.")
     import matplotlib.pyplot as plt
+
     for n_state in jnp.arange(STATE_DIM):
         plt.figure()
         plt.plot(
             t_forecast_emissions,
             cd_point_forecasted.forecasted_state_path[:, n_state],
             label="Forecasted path (point estimate)",
-            color="black"
+            color="black",
         )
         plt.plot(
             t_forecast_emissions,
@@ -362,8 +359,14 @@ if PLOT_TEST_RESULTS:
         )
         plt.fill_between(
             t_forecast_emissions[:, 0],
-            cd_dist_forecasted.forecasted_state_means[:, n_state] - jnp.sqrt(cd_dist_forecasted.forecasted_state_covariances[:, n_state, n_state]),
-            cd_dist_forecasted.forecasted_state_means[:, n_state] + jnp.sqrt(cd_dist_forecasted.forecasted_state_covariances[:, n_state, n_state]),
+            cd_dist_forecasted.forecasted_state_means[:, n_state]
+            - jnp.sqrt(
+                cd_dist_forecasted.forecasted_state_covariances[:, n_state, n_state]
+            ),
+            cd_dist_forecasted.forecasted_state_means[:, n_state]
+            + jnp.sqrt(
+                cd_dist_forecasted.forecasted_state_covariances[:, n_state, n_state]
+            ),
             color="orange",
             alpha=0.2,
             label="Forecasted state uncertainty (1 std)",
@@ -376,32 +379,36 @@ if PLOT_TEST_RESULTS:
         plt.show()
 
 # Compute emissions from forecasted states
-from cd_dynamax import cdlgssm_emissions
-cd_point_emissions_forecasted_means, cd_point_emissions_forecasted_covariances = cdlgssm_emissions(
-    params=cd_params,
-    t_states=t_forecast_emissions,
-    state_means=cd_point_forecasted.forecasted_state_path,
-    inputs=inputs,
+cd_point_emissions_forecasted_means, cd_point_emissions_forecasted_covariances = (
+    cdlgssm_emissions(
+        params=cd_params,
+        t_states=t_forecast_emissions,
+        state_means=cd_point_forecasted.forecasted_state_path,
+        inputs=inputs,
+    )
 )
 
-cd_dist_emissions_forecasted_means, cd_dist_emissions_forecasted_covariances = cdlgssm_emissions(
-    params=cd_params,
-    t_states=t_forecast_emissions,
-    state_means=cd_dist_forecasted.forecasted_state_means,
-    state_covs=cd_dist_forecasted.forecasted_state_covariances,
-    inputs=inputs,
+cd_dist_emissions_forecasted_means, cd_dist_emissions_forecasted_covariances = (
+    cdlgssm_emissions(
+        params=cd_params,
+        t_states=t_forecast_emissions,
+        state_means=cd_dist_forecasted.forecasted_state_means,
+        state_covs=cd_dist_forecasted.forecasted_state_covariances,
+        inputs=inputs,
+    )
 )
 
 if PLOT_TEST_RESULTS:
     print("Plotting forecasted emission path and distributions.")
     import matplotlib.pyplot as plt
+
     for n_emission in jnp.arange(EMISSION_DIM):
         plt.figure()
         plt.plot(
             t_forecast_emissions,
             cd_point_emissions_forecasted_means[:, n_emission],
             label="Forecasted emission path (point estimate)",
-            color="black"
+            color="black",
         )
         plt.plot(
             t_forecast_emissions,
@@ -415,8 +422,14 @@ if PLOT_TEST_RESULTS:
         )
         plt.fill_between(
             t_forecast_emissions[:, 0],
-            cd_dist_emissions_forecasted_means[:, n_emission] - jnp.sqrt(cd_dist_emissions_forecasted_covariances[:, n_emission, n_emission]),
-            cd_dist_emissions_forecasted_means[:, n_emission] + jnp.sqrt(cd_dist_emissions_forecasted_covariances[:, n_emission, n_emission]),
+            cd_dist_emissions_forecasted_means[:, n_emission]
+            - jnp.sqrt(
+                cd_dist_emissions_forecasted_covariances[:, n_emission, n_emission]
+            ),
+            cd_dist_emissions_forecasted_means[:, n_emission]
+            + jnp.sqrt(
+                cd_dist_emissions_forecasted_covariances[:, n_emission, n_emission]
+            ),
             color="orange",
             alpha=0.2,
             label="Forecasted emission uncertainty (1 std)",

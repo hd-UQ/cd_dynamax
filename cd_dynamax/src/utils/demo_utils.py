@@ -7,9 +7,7 @@ import jax.random as jr
 import itertools
 
 # CD-Dynamax imports
-from cd_dynamax import (
-    EnKFHyperParams, EKFHyperParams, UKFHyperParams
-)
+from cd_dynamax import EnKFHyperParams, EKFHyperParams, UKFHyperParams
 
 # Plotting imports
 import numpy as np
@@ -19,10 +17,13 @@ import seaborn as sns
 from sklearn.decomposition import PCA
 from scipy.stats import gaussian_kde
 
+
 # -----------------------
 # Data-generation helpers
 # -----------------------
-def sample_t_emissions(start=0.0, stop=10.0, dt=0.1, regular=True, key=None, check=True, verbose=True):
+def sample_t_emissions(
+    start=0.0, stop=10.0, dt=0.1, regular=True, key=None, check=True, verbose=True
+):
     """
     Generate emission times between [start, stop) using different sampling styles.
 
@@ -43,7 +44,9 @@ def sample_t_emissions(start=0.0, stop=10.0, dt=0.1, regular=True, key=None, che
             raise ValueError("`key` must be provided for uniform sampling.")
         N = int(jnp.ceil((stop - start) / dt))
         key, subkey = jax.random.split(key)
-        t_emissions = jnp.sort(jax.random.uniform(subkey, (N,), minval=start, maxval=stop))
+        t_emissions = jnp.sort(
+            jax.random.uniform(subkey, (N,), minval=start, maxval=stop)
+        )
         t_emissions = t_emissions.reshape(-1, 1)
 
     # ---- Post-checks ----
@@ -58,12 +61,15 @@ def sample_t_emissions(start=0.0, stop=10.0, dt=0.1, regular=True, key=None, che
             assert not has_dupes, "t_emissions contains duplicate points."
 
             if verbose:
-                print(f"[make_t_emissions] Generated {t_emissions.shape[0]} points from {start} to {stop} with avg step ~{dt:.4f}")
+                print(
+                    f"[make_t_emissions] Generated {t_emissions.shape[0]} points from {start} to {stop} with avg step ~{dt:.4f}"
+                )
             print(f"[make_t_emissions] Smallest time step = {min_step:.6f}")
         else:
             print("[make_t_emissions] Only one or zero points generated.")
 
     return t_emissions
+
 
 # ------------------------
 # MCMC Plot helpers
@@ -74,7 +80,7 @@ def plot_forest(mcmc_samples, param_name="beta", max_params=50, figsize=(10, 6))
     Works for 1D flattened parameters.
     """
     arr = np.asarray(mcmc_samples[param_name])  # (num_samples, ..., D?)
-    flat = arr.reshape(arr.shape[0], -1)        # (num_samples, P)
+    flat = arr.reshape(arr.shape[0], -1)  # (num_samples, P)
     P = flat.shape[1]
     idx = np.arange(min(P, max_params))
 
@@ -83,8 +89,15 @@ def plot_forest(mcmc_samples, param_name="beta", max_params=50, figsize=(10, 6))
     uppers = np.percentile(flat, 97.5, axis=0)[idx]
 
     fig, ax = plt.subplots(figsize=figsize)
-    ax.errorbar(means, idx, xerr=[means - lowers, uppers - means],
-                fmt="o", color="tab:blue", ecolor="gray", alpha=0.8)
+    ax.errorbar(
+        means,
+        idx,
+        xerr=[means - lowers, uppers - means],
+        fmt="o",
+        color="tab:blue",
+        ecolor="gray",
+        alpha=0.8,
+    )
     ax.set_yticks(idx)
     ax.set_yticklabels([f"{param_name}[{i}]" for i in idx])
     ax.axvline(0, color="k", linestyle="--", lw=1)
@@ -113,7 +126,9 @@ def plot_violin(mcmc_samples, param_name="beta", max_params=50, figsize=(12, 6))
     return fig
 
 
-def plot_correlation_heatmap(mcmc_samples, param_name="beta", figsize=(8, 6), max_params=50):
+def plot_correlation_heatmap(
+    mcmc_samples, param_name="beta", figsize=(8, 6), max_params=50
+):
     """
     Heatmap of posterior correlations between parameters.
     Subsamples if too many parameters.
@@ -129,9 +144,14 @@ def plot_correlation_heatmap(mcmc_samples, param_name="beta", figsize=(8, 6), ma
     corr = np.corrcoef(flat.T)
 
     fig, ax = plt.subplots(figsize=figsize)
-    sns.heatmap(corr, cmap="coolwarm", center=0, ax=ax,
-                xticklabels=[f"{i}" for i in range(P)],
-                yticklabels=[f"{i}" for i in range(P)])
+    sns.heatmap(
+        corr,
+        cmap="coolwarm",
+        center=0,
+        ax=ax,
+        xticklabels=[f"{i}" for i in range(P)],
+        yticklabels=[f"{i}" for i in range(P)],
+    )
     ax.set_title(f"Posterior correlation heatmap ({param_name}, first {P})")
     plt.tight_layout()
     return fig
@@ -155,6 +175,7 @@ def plot_pca_scatter(mcmc_samples, param_name="beta", figsize=(6, 6)):
     plt.tight_layout()
     return fig
 
+
 # ------------------------
 # Plot helpers
 # ------------------------
@@ -164,19 +185,25 @@ def plot_coeff_heatmaps(W_true, W_learned, exponents=None, relative_error=False)
     norm = mcolors.TwoSlopeNorm(vmin=-vlim, vcenter=0.0, vmax=vlim)
 
     im0 = axes[0].imshow(W_true, aspect="auto", cmap="seismic", norm=norm)
-    axes[0].set_title("True weights"); axes[0].set_xlabel("Term index"); axes[0].set_ylabel("State index")
+    axes[0].set_title("True weights")
+    axes[0].set_xlabel("Term index")
+    axes[0].set_ylabel("State index")
     fig.colorbar(im0, ax=axes[0], fraction=0.046, pad=0.04)
 
     im1 = axes[1].imshow(W_learned, aspect="auto", cmap="seismic", norm=norm)
-    axes[1].set_title("Learned weights (SVI median)"); axes[1].set_xlabel("Term index"); axes[1].set_ylabel("State index")
+    axes[1].set_title("Learned weights (SVI median)")
+    axes[1].set_xlabel("Term index")
+    axes[1].set_ylabel("State index")
     fig.colorbar(im1, ax=axes[1], fraction=0.046, pad=0.04)
 
-    abs_err = jnp.abs(W_learned - W_true) #/ jnp.maximum(jnp.abs(W_true), 1e-8)
+    abs_err = jnp.abs(W_learned - W_true)  # / jnp.maximum(jnp.abs(W_true), 1e-8)
     err_title = "Relative error" if relative_error else "Absolute error"
     if relative_error:
         abs_err /= jnp.maximum(jnp.abs(W_true), 1e-8)
     im2 = axes[2].imshow(abs_err, aspect="auto", cmap="viridis")
-    axes[2].set_title(err_title); axes[2].set_xlabel("Term index"); axes[2].set_ylabel("State index")
+    axes[2].set_title(err_title)
+    axes[2].set_xlabel("Term index")
+    axes[2].set_ylabel("State index")
     fig.colorbar(im2, ax=axes[2], fraction=0.046, pad=0.04)
 
     return fig
@@ -185,7 +212,7 @@ def plot_coeff_heatmaps(W_true, W_learned, exponents=None, relative_error=False)
 def plot_drift_field(
     f_true,
     f_learned,
-    f_learned_sd=None,     # callable or None
+    f_learned_sd=None,  # callable or None
     x1_range=(-3.0, 3.0),
     x2_range=(-3.2, 3.2),
     num_points=50,
@@ -210,11 +237,11 @@ def plot_drift_field(
     grid_points = jnp.stack([X1.ravel(), X2.ravel()], axis=-1)
 
     # Evaluate true, learned drift and optional stddev
-    f_true_vals = jax.vmap(f_true)(grid_points)        # (N, 2)
+    f_true_vals = jax.vmap(f_true)(grid_points)  # (N, 2)
     f_learned_vals = jax.vmap(f_learned)(grid_points)  # (N, 2)
 
     if f_learned_sd is not None:
-        f_learned_sd_vals = jax.vmap(f_learned_sd)(grid_points)#.squeeze(1)  # (N, 2)
+        f_learned_sd_vals = jax.vmap(f_learned_sd)(grid_points)  # .squeeze(1)  # (N, 2)
         if f_learned_sd_vals.ndim == 3 and f_learned_sd_vals.shape[1] == 1:
             f_learned_sd_vals = f_learned_sd_vals.squeeze(1)
         f1_sd = f_learned_sd_vals[:, 0].reshape(num_points, num_points)
@@ -232,8 +259,8 @@ def plot_drift_field(
     f2_err = jnp.abs(f2_learned - f2_true)
 
     if relative_error:
-        f1_err /= (jnp.abs(f1_true) + 1e-6)
-        f2_err /= (jnp.abs(f2_true) + 1e-6)
+        f1_err /= jnp.abs(f1_true) + 1e-6
+        f2_err /= jnp.abs(f2_true) + 1e-6
 
     # Color normalization
     vlim1 = jnp.max(jnp.abs(jnp.concatenate([f1_true.ravel(), f1_learned.ravel()])))
@@ -241,51 +268,99 @@ def plot_drift_field(
 
     # Subplot grid: add uncertainty column if available
     ncols = 4 if f_learned_sd is not None else 3
-    fig, axes = plt.subplots(2, ncols, figsize=(5*ncols, 8), constrained_layout=True)
+    fig, axes = plt.subplots(2, ncols, figsize=(5 * ncols, 8), constrained_layout=True)
 
     # f1 row
-    im0 = axes[0, 0].imshow(f1_true.T, origin="lower",
-                            extent=(*x1_range, *x2_range),
-                            cmap="seismic", vmin=-vlim1, vmax=vlim1, aspect="auto")
-    axes[0, 0].set_title("f1 true"); fig.colorbar(im0, ax=axes[0, 0], fraction=0.046, pad=0.04)
+    im0 = axes[0, 0].imshow(
+        f1_true.T,
+        origin="lower",
+        extent=(*x1_range, *x2_range),
+        cmap="seismic",
+        vmin=-vlim1,
+        vmax=vlim1,
+        aspect="auto",
+    )
+    axes[0, 0].set_title("f1 true")
+    fig.colorbar(im0, ax=axes[0, 0], fraction=0.046, pad=0.04)
 
-    im1 = axes[0, 1].imshow(f1_learned.T, origin="lower",
-                            extent=(*x1_range, *x2_range),
-                            cmap="seismic", vmin=-vlim1, vmax=vlim1, aspect="auto")
-    axes[0, 1].set_title("f1 learned"); fig.colorbar(im1, ax=axes[0, 1], fraction=0.046, pad=0.04)
+    im1 = axes[0, 1].imshow(
+        f1_learned.T,
+        origin="lower",
+        extent=(*x1_range, *x2_range),
+        cmap="seismic",
+        vmin=-vlim1,
+        vmax=vlim1,
+        aspect="auto",
+    )
+    axes[0, 1].set_title("f1 learned")
+    fig.colorbar(im1, ax=axes[0, 1], fraction=0.046, pad=0.04)
 
-    im2 = axes[0, 2].imshow(f1_err.T, origin="lower",
-                            extent=(*x1_range, *x2_range),
-                            cmap="viridis", aspect="auto")
-    axes[0, 2].set_title("f1 error"); fig.colorbar(im2, ax=axes[0, 2], fraction=0.046, pad=0.04)
+    im2 = axes[0, 2].imshow(
+        f1_err.T,
+        origin="lower",
+        extent=(*x1_range, *x2_range),
+        cmap="viridis",
+        aspect="auto",
+    )
+    axes[0, 2].set_title("f1 error")
+    fig.colorbar(im2, ax=axes[0, 2], fraction=0.046, pad=0.04)
 
     if f1_sd is not None:
-        im3 = axes[0, 3].imshow(f1_sd.T, origin="lower",
-                                extent=(*x1_range, *x2_range),
-                                cmap="magma", aspect="auto")
-        axes[0, 3].set_title("f1 stddev"); fig.colorbar(im3, ax=axes[0, 3], fraction=0.046, pad=0.04)
+        im3 = axes[0, 3].imshow(
+            f1_sd.T,
+            origin="lower",
+            extent=(*x1_range, *x2_range),
+            cmap="magma",
+            aspect="auto",
+        )
+        axes[0, 3].set_title("f1 stddev")
+        fig.colorbar(im3, ax=axes[0, 3], fraction=0.046, pad=0.04)
 
     # f2 row
-    im4 = axes[1, 0].imshow(f2_true.T, origin="lower",
-                            extent=(*x1_range, *x2_range),
-                            cmap="seismic", vmin=-vlim2, vmax=vlim2, aspect="auto")
-    axes[1, 0].set_title("f2 true"); fig.colorbar(im4, ax=axes[1, 0], fraction=0.046, pad=0.04)
+    im4 = axes[1, 0].imshow(
+        f2_true.T,
+        origin="lower",
+        extent=(*x1_range, *x2_range),
+        cmap="seismic",
+        vmin=-vlim2,
+        vmax=vlim2,
+        aspect="auto",
+    )
+    axes[1, 0].set_title("f2 true")
+    fig.colorbar(im4, ax=axes[1, 0], fraction=0.046, pad=0.04)
 
-    im5 = axes[1, 1].imshow(f2_learned.T, origin="lower",
-                            extent=(*x1_range, *x2_range),
-                            cmap="seismic", vmin=-vlim2, vmax=vlim2, aspect="auto")
-    axes[1, 1].set_title("f2 learned"); fig.colorbar(im5, ax=axes[1, 1], fraction=0.046, pad=0.04)
+    im5 = axes[1, 1].imshow(
+        f2_learned.T,
+        origin="lower",
+        extent=(*x1_range, *x2_range),
+        cmap="seismic",
+        vmin=-vlim2,
+        vmax=vlim2,
+        aspect="auto",
+    )
+    axes[1, 1].set_title("f2 learned")
+    fig.colorbar(im5, ax=axes[1, 1], fraction=0.046, pad=0.04)
 
-    im6 = axes[1, 2].imshow(f2_err.T, origin="lower",
-                            extent=(*x1_range, *x2_range),
-                            cmap="viridis", aspect="auto")
-    axes[1, 2].set_title("f2 error"); fig.colorbar(im6, ax=axes[1, 2], fraction=0.046, pad=0.04)
+    im6 = axes[1, 2].imshow(
+        f2_err.T,
+        origin="lower",
+        extent=(*x1_range, *x2_range),
+        cmap="viridis",
+        aspect="auto",
+    )
+    axes[1, 2].set_title("f2 error")
+    fig.colorbar(im6, ax=axes[1, 2], fraction=0.046, pad=0.04)
 
     if f2_sd is not None:
-        im7 = axes[1, 3].imshow(f2_sd.T, origin="lower",
-                                extent=(*x1_range, *x2_range),
-                                cmap="magma", aspect="auto")
-        axes[1, 3].set_title("f2 stddev"); fig.colorbar(im7, ax=axes[1, 3], fraction=0.046, pad=0.04)
+        im7 = axes[1, 3].imshow(
+            f2_sd.T,
+            origin="lower",
+            extent=(*x1_range, *x2_range),
+            cmap="magma",
+            aspect="auto",
+        )
+        axes[1, 3].set_title("f2 stddev")
+        fig.colorbar(im7, ax=axes[1, 3], fraction=0.046, pad=0.04)
 
     for ax in axes.ravel():
         ax.set_xlabel("x1")
@@ -293,20 +368,20 @@ def plot_drift_field(
         ax.grid(False)
 
     if return_rmse:
-        rmse = jnp.sqrt(jnp.mean((f_learned_vals - f_true_vals)**2))
+        rmse = jnp.sqrt(jnp.mean((f_learned_vals - f_true_vals) ** 2))
         return fig, rmse
     else:
         return fig
 
 
 def plot_particle_diagnostics(
-    t_emissions,       # shape (T,) time vector
-    x_ens_filtered,    # shape (T, N, D) ensemble after update
-    x_ens_predicted,   # shape (T, N, D) ensemble before update (forecast)
-    observations,      # shape (T, D_obs) -- assume D_obs == D for now
+    t_emissions,  # shape (T,) time vector
+    x_ens_filtered,  # shape (T, N, D) ensemble after update
+    x_ens_predicted,  # shape (T, N, D) ensemble before update (forecast)
+    observations,  # shape (T, D_obs) -- assume D_obs == D for now
     start_idx=0,
     stop_idx=None,
-    figsize=(12, 6)
+    figsize=(12, 6),
 ):
     """
     Plot particle forecasts and updates over time, along with observations.
@@ -335,22 +410,44 @@ def plot_particle_diagnostics(
         ax = axes[d]
 
         # Plot observations
-        ax.plot(t_range, observations[start_idx:stop_idx, d], "rx", label="obs", markersize=20)
+        ax.plot(
+            t_range,
+            observations[start_idx:stop_idx, d],
+            "rx",
+            label="obs",
+            markersize=20,
+        )
 
         # Plot filtered and forecast ensembles
         for i, t in enumerate(range(start_idx, stop_idx - 1)):
             t0 = t_emissions[t]
-            t1 = t_emissions[t+1]
+            t1 = t_emissions[t + 1]
 
             xf = x_ens_filtered[t, :, d]
-            xp = x_ens_predicted[t+1, :, d]
+            xp = x_ens_predicted[t + 1, :, d]
 
-            ax.scatter(np.full(N, t0), xf, color="tab:blue", alpha=0.5, s=15, label="filtered" if (d==0 and i==0) else "")
-            ax.scatter(np.full(N, t1), xp, color="tab:orange", alpha=0.5, s=15, label="forecast" if (d==0 and i==0) else "")
+            ax.scatter(
+                np.full(N, t0),
+                xf,
+                color="tab:blue",
+                alpha=0.5,
+                s=15,
+                label="filtered" if (d == 0 and i == 0) else "",
+            )
+            ax.scatter(
+                np.full(N, t1),
+                xp,
+                color="tab:orange",
+                alpha=0.5,
+                s=15,
+                label="forecast" if (d == 0 and i == 0) else "",
+            )
 
             # connect filtered[t] to forecast[t+1] with faint lines
             for n in range(N):
-                ax.plot([t0, t1], [xf[n], xp[n]], color="gray", alpha=0.2, linewidth=0.8)
+                ax.plot(
+                    [t0, t1], [xf[n], xp[n]], color="gray", alpha=0.2, linewidth=0.8
+                )
 
         ax.set_ylabel(f"state {d}")
         ax.grid(True, linestyle="--", alpha=0.3)
@@ -361,10 +458,12 @@ def plot_particle_diagnostics(
 
     return fig
 
+
 def _finite_1d(a):
     a = np.asarray(a)
     a = a[np.isfinite(a)]
     return a.ravel()
+
 
 def _as_2d_TD(x):
     """Assume (T,D) or (T,) -> return (T,D)."""
@@ -375,13 +474,19 @@ def _as_2d_TD(x):
         return x
     raise ValueError(f"Expected 1D or 2D, got {x.shape}.")
 
+
 def _series_colors(series_keys):
     """Deterministic color mapping: one color per series key, consistent across subplots."""
-    base = plt.rcParams['axes.prop_cycle'].by_key().get('color', ['C0','C1','C2','C3','C4','C5','C6','C7','C8','C9'])
+    base = (
+        plt.rcParams["axes.prop_cycle"]
+        .by_key()
+        .get("color", ["C0", "C1", "C2", "C3", "C4", "C5", "C6", "C7", "C8", "C9"])
+    )
     colors = {}
     for i, k in enumerate(series_keys):
         colors[k] = base[i % len(base)]
     return colors
+
 
 def plot_traj_kde(
     series_dict,
@@ -389,8 +494,8 @@ def plot_traj_kde(
     pool_dims=False,
     dim_names=None,
     gridsize=512,
-    bw_method="scott",   # or "silverman" or float
-    xlim=None,           # None -> auto from pooled data; or (lo, hi)
+    bw_method="scott",  # or "silverman" or float
+    xlim=None,  # None -> auto from pooled data; or (lo, hi)
     figsize=(9, 5),
     linewidth=2.0,
     alpha=0.85,
@@ -421,7 +526,11 @@ def plot_traj_kde(
     # ---------- Case 1: flatten (single axis) ----------
     if not per_dim:
         data = {k: _finite_1d(v) for k, v in series_2d.items()}
-        pooled = np.concatenate([d for d in data.values() if d.size > 0]) if data else np.array([])
+        pooled = (
+            np.concatenate([d for d in data.values() if d.size > 0])
+            if data
+            else np.array([])
+        )
         if pooled.size == 0:
             raise ValueError("All inputs empty/NaN.")
         lo, hi = (np.min(pooled), np.max(pooled)) if xlim is None else xlim
@@ -433,29 +542,42 @@ def plot_traj_kde(
         for label, d in data.items():
             color = color_map[label]
             if d.size < 2 or np.std(d) == 0:
-                ax.plot([float(d.mean()) if d.size else 0]*2, [0, 1], color=color, alpha=0.4)
+                ax.plot(
+                    [float(d.mean()) if d.size else 0] * 2,
+                    [0, 1],
+                    color=color,
+                    alpha=0.4,
+                )
             else:
                 kde = gaussian_kde(d, bw_method=bw_method)
                 ax.plot(xs, kde(xs), color=color, linewidth=linewidth, alpha=alpha)
-        ax.set_xlabel("Value"); ax.set_ylabel("Density")
-        if title: ax.set_title(title)
+        ax.set_xlabel("Value")
+        ax.set_ylabel("Density")
+        if title:
+            ax.set_title(title)
 
         # Build legend once, outside, using series keys and their colors
-        handles = [plt.Line2D([0],[0], color=color_map[k], lw=linewidth) for k in keys]
+        handles = [plt.Line2D([0], [0], color=color_map[k], lw=linewidth) for k in keys]
         fig.subplots_adjust(right=0.80)
-        fig.legend(handles, keys, loc="center left", bbox_to_anchor=(0.82, 0.5), frameon=False)
+        fig.legend(
+            handles, keys, loc="center left", bbox_to_anchor=(0.82, 0.5), frameon=False
+        )
         return fig
 
     # ---------- Per-dim modes require same D across series ----------
     if len(Ds) != 1:
         shapes = {k: v.shape for k, v in series_2d.items()}
-        raise ValueError(f"When per_dim=True, all series must share the same D. Got Ds={Ds}, shapes={shapes}.")
+        raise ValueError(
+            f"When per_dim=True, all series must share the same D. Got Ds={Ds}, shapes={shapes}."
+        )
     D = Ds.pop()
 
     # ---------- Case 2: per-dim with dims pooled (single axis) ----------
     if pool_dims:
         pooled_per_series = {k: _finite_1d(v) for k, v in series_2d.items()}
-        pooled_all = np.concatenate([v for v in pooled_per_series.values() if v.size > 0])
+        pooled_all = np.concatenate(
+            [v for v in pooled_per_series.values() if v.size > 0]
+        )
         lo, hi = (np.min(pooled_all), np.max(pooled_all)) if xlim is None else xlim
         if not np.isfinite(lo) or not np.isfinite(hi) or lo == hi:
             lo, hi = lo - 0.5, hi + 0.5
@@ -465,16 +587,25 @@ def plot_traj_kde(
         for label, d in pooled_per_series.items():
             color = color_map[label]
             if d.size < 2 or np.std(d) == 0:
-                ax.plot([float(d.mean()) if d.size else 0]*2, [0, 1], color=color, alpha=0.4)
+                ax.plot(
+                    [float(d.mean()) if d.size else 0] * 2,
+                    [0, 1],
+                    color=color,
+                    alpha=0.4,
+                )
             else:
                 kde = gaussian_kde(d, bw_method=bw_method)
                 ax.plot(xs, kde(xs), color=color, linewidth=linewidth, alpha=alpha)
-        ax.set_xlabel("Value"); ax.set_ylabel("Density")
-        if title: ax.set_title(title + " (dims pooled)" if title else "Dims pooled")
+        ax.set_xlabel("Value")
+        ax.set_ylabel("Density")
+        if title:
+            ax.set_title(title + " (dims pooled)" if title else "Dims pooled")
 
-        handles = [plt.Line2D([0],[0], color=color_map[k], lw=linewidth) for k in keys]
+        handles = [plt.Line2D([0], [0], color=color_map[k], lw=linewidth) for k in keys]
         fig.subplots_adjust(right=0.80)
-        fig.legend(handles, keys, loc="center left", bbox_to_anchor=(0.82, 0.5), frameon=False)
+        fig.legend(
+            handles, keys, loc="center left", bbox_to_anchor=(0.82, 0.5), frameon=False
+        )
         return fig
 
     # ---------- Case 3: per-dim with subplots (what you want) ----------
@@ -510,13 +641,14 @@ def plot_traj_kde(
             dvals = _finite_1d(arr[:, d])
             if dvals.size < 2 or np.std(dvals) == 0:
                 if dvals.size:
-                    ax.plot([float(dvals.mean())]*2, [0, 1], color=color, alpha=0.4)
+                    ax.plot([float(dvals.mean())] * 2, [0, 1], color=color, alpha=0.4)
                 continue
             kde = gaussian_kde(dvals, bw_method=bw_method)
             ax.plot(xs, kde(xs), color=color, linewidth=linewidth, alpha=alpha)
 
         name = f"Dim {d}" if dim_names is None else dim_names[d]
-        ax.set_xlabel(name); ax.set_ylabel("Density")
+        ax.set_xlabel(name)
+        ax.set_ylabel("Density")
         ax.set_title(f"KDE — {name}")
 
     # Remove unused axes (if D < nrows*ncols)
@@ -527,22 +659,32 @@ def plot_traj_kde(
         fig.suptitle(title, y=0.995)
 
     # One legend outside, with exactly len(series_dict) entries, matching colors
-    handles = [plt.Line2D([0],[0], color=color_map[k], lw=linewidth) for k in keys]
+    handles = [plt.Line2D([0], [0], color=color_map[k], lw=linewidth) for k in keys]
     fig.subplots_adjust(right=0.80)  # reserve space
-    fig.legend(handles, keys, loc="center left", bbox_to_anchor=(0.82, 0.5), frameon=False)
+    fig.legend(
+        handles, keys, loc="center left", bbox_to_anchor=(0.82, 0.5), frameon=False
+    )
 
     fig.tight_layout(rect=[0, 0, 0.80, 0.96] if title else [0, 0, 0.80, 0.98])
     return fig
 
-def plot_loss_curve(loss_values, loss_label="ELBO Loss", baseline_value=None, baseline_label="Baseline", figsize=(8,5), title="SVI Loss Curve"):
+
+def plot_loss_curve(
+    loss_values,
+    loss_label="ELBO Loss",
+    baseline_value=None,
+    baseline_label="Baseline",
+    figsize=(8, 5),
+    title="SVI Loss Curve",
+):
     """
     Plot loss values over iterations.
-    
+
     Args:
         loss_values: (num_iters,) array of loss values
         figsize: tuple, figure size
         title: str, plot title
-    
+
     Returns:
         matplotlib Figure
     """
@@ -550,7 +692,13 @@ def plot_loss_curve(loss_values, loss_label="ELBO Loss", baseline_value=None, ba
     ax.plot(loss_values, color="tab:blue", linewidth=2.0, label=loss_label)
     if baseline_value is not None:
         # dotted horizontal line
-        ax.axhline(baseline_value, color="tab:orange", linestyle=":", linewidth=2.0, label=baseline_label)
+        ax.axhline(
+            baseline_value,
+            color="tab:orange",
+            linestyle=":",
+            linewidth=2.0,
+            label=baseline_label,
+        )
         ax.legend()
     ax.set_xlabel("Iteration")
     ax.set_ylabel("Loss")
@@ -558,47 +706,56 @@ def plot_loss_curve(loss_values, loss_label="ELBO Loss", baseline_value=None, ba
     ax.grid(True, linestyle="--", alpha=0.3)
     return fig
 
+
 def plot_simulated_data(t=None, states=None, emissions=None):
     """
     Plot simulated states and emissions over time.
     Each state dimension gets its own subplot.
-    
+
     Args:
         t: (T,) time vector
         states: (T, state_dim) true states
         emissions: (T, emission_dim) observed emissions
             Assume emission_dim <= state_dim and emissions correspond to first N states.
-    
+
     Returns:
         matplotlib Figure
     """
-    
+
     # Validate inputs
     if states is None and emissions is None:
         raise ValueError("At least one of states or emissions must be provided.")
-    
+
     # Make a single figure with subplots for each state and emission overlayed
     # Assume that the N emissions correspond to the the first N states
-    
+
     n_rows = states.shape[1] if states is not None else emissions.shape[1]
     fig, axes = plt.subplots(n_rows, 1, figsize=(10, 3 * n_rows), sharex=True)
     if n_rows == 1:
         axes = [axes]
-        
+
     for i, ax in enumerate(axes):
         if states is not None:
             ax.plot(t, states[:, i], label="State", color="tab:blue")
         if emissions is not None and i < emissions.shape[1]:
-            ax.scatter(t, emissions[:, i], label="Emission", color="tab:orange", s=10, alpha=0.6)
+            ax.scatter(
+                t,
+                emissions[:, i],
+                label="Emission",
+                color="tab:orange",
+                s=10,
+                alpha=0.6,
+            )
         ax.set_ylabel(f"Dim {i}")
         ax.grid(True, linestyle="--", alpha=0.3)
         if i == 0:
             ax.legend()
-    
+
     axes[-1].set_xlabel("Time")
     fig.suptitle("States and Emissions", fontsize=16)
     fig.tight_layout(rect=[0, 0, 1, 0.96])
     return fig
+
 
 def all_multi_indices(d, max_degree):
     out = []
@@ -608,16 +765,20 @@ def all_multi_indices(d, max_degree):
                 out.append(exps)
     return out
 
+
 def build_exponents(input_dim, max_degree):
     idx = all_multi_indices(input_dim, max_degree)
     return jnp.array(idx, dtype=jnp.int32)
 
+
 def eval_monomials(x, exponents):
-    return jnp.prod(jnp.where(exponents==0, 1.0, x[None,:]**exponents), axis=1)
+    return jnp.prod(jnp.where(exponents == 0, 1.0, x[None, :] ** exponents), axis=1)
+
 
 def poly_drift(x, weights, exponents):
     phi = eval_monomials(x, exponents)
     return weights @ phi
+
 
 # -----------------------------
 # Neural Network Drift Function
@@ -632,17 +793,24 @@ def make_nn_init_dict(key, state_dim, hidden_dims, eps=1):
 
     in_dim = state_dim
     for layer_idx, out_dim in enumerate(hidden_dims):
-        kW, kb = next(keys), next(keys)
-        params[f"W{layer_idx}"] = eps * jnp.sqrt(2.0 / in_dim) * jr.normal(kW, (in_dim, out_dim))
+        kW = next(keys)
+        next(keys)  # Skip bias key
+        params[f"W{layer_idx}"] = (
+            eps * jnp.sqrt(2.0 / in_dim) * jr.normal(kW, (in_dim, out_dim))
+        )
         params[f"b{layer_idx}"] = jnp.zeros((out_dim,))
         in_dim = out_dim
 
     # Output layer
-    kW_out, kb_out = next(keys), next(keys)
-    params["W_out"] = eps * jnp.sqrt(2.0 / in_dim) * jr.normal(kW_out, (in_dim, state_dim))
+    kW_out = next(keys)
+    next(keys)  # Skip bias key
+    params["W_out"] = (
+        eps * jnp.sqrt(2.0 / in_dim) * jr.normal(kW_out, (in_dim, state_dim))
+    )
     params["b_out"] = jnp.zeros((state_dim,))
 
     return params
+
 
 # ------------------------
 # Filter hyperparameter helper
@@ -654,7 +822,7 @@ def make_filter_hyperparams(cfg):
         # 'adjoint': eval(cfg.diffeqsolve_settings['adjoint']),
         # 'dt0': cfg.diffeqsolve_settings['dt0'],
         # 'tol_vbt': cfg.diffeqsolve_settings['tol_vbt'],
-        'max_steps': cfg.diffeqsolve_max_steps,
+        "max_steps": cfg.diffeqsolve_max_steps,
     }
     if cfg.filter_type == "EnKF":
         return EnKFHyperParams(

@@ -8,9 +8,11 @@ import optax
 
 # From dynamax
 from cd_dynamax.dynamax.utils.utils import pytree_len
+
 # Import original dynamax run_sgd, and sample_minibatches
 from cd_dynamax.dynamax.utils.optimize import run_sgd as dynamax_run_sgd
 from cd_dynamax.dynamax.utils.optimize import sample_minibatches
+
 
 # Create an optimizer with optional learning rate scheduler and gradient clipping
 def make_optimizer(
@@ -19,15 +21,18 @@ def make_optimizer(
     epochs_per_step=1500,
     num_epochs=5000,
     use_lr_scheduler=True,
-    clip_norm=1.0, # if None, don't clip
+    clip_norm=1.0,  # if None, don't clip
 ):
     if use_lr_scheduler:
         # Define the boundaries where the decay should happen
-        boundaries = [epochs_per_step * i for i in range(1, num_epochs // epochs_per_step + 1)]
+        boundaries = [
+            epochs_per_step * i for i in range(1, num_epochs // epochs_per_step + 1)
+        ]
 
         # Create a step decay learning rate schedule
         scheduler = optax.piecewise_constant_schedule(
-            init_value=initial_learning_rate, boundaries_and_scales={boundary: decay_factor for boundary in boundaries}
+            init_value=initial_learning_rate,
+            boundaries_and_scales={boundary: decay_factor for boundary in boundaries},
         )
     else:
         # Use a constant learning rate if scheduler is not used
@@ -48,16 +53,18 @@ def make_optimizer(
 
 # cd-dynamax wrapper of dynamax's run_sgd
 # to be able to return the history of parameters and gradients
-def run_sgd(loss_fn,
-            params,
-            dataset,
-            optimizer=optax.adam(1e-3),
-            batch_size=1,
-            num_epochs=50,
-            shuffle=False,
-            return_param_history=False,
-            return_grad_history=False,
-            key=jr.PRNGKey(0)):
+def run_sgd(
+    loss_fn,
+    params,
+    dataset,
+    optimizer=optax.adam(1e-3),
+    batch_size=1,
+    num_epochs=50,
+    shuffle=False,
+    return_param_history=False,
+    return_grad_history=False,
+    key=jr.PRNGKey(0),
+):
     """
     Note that batch_emissions is initially of shape (N,T)
     where N is the number of independent sequences and
@@ -86,16 +93,9 @@ def run_sgd(loss_fn,
     # call original run_sgd function
     if not return_param_history and not return_grad_history:
         params, losses = dynamax_run_sgd(
-            loss_fn,
-            params,
-            dataset,
-            optimizer,
-            batch_size,
-            num_epochs,
-            shuffle,
-            key
+            loss_fn, params, dataset, optimizer, batch_size, num_epochs, shuffle, key
         )
-    
+
     # Replica of dynamax_run_sgd function with modifications
     else:
         opt_state = optimizer.init(params)
@@ -119,20 +119,38 @@ def run_sgd(loss_fn,
 
             def body_fun(state):
                 itr, params, opt_state, avg_loss, grads = state
-                minibatch = next(sample_generator)  ## TODO: Does this work inside while_loop??
+                minibatch = next(
+                    sample_generator
+                )  ## TODO: Does this work inside while_loop??
                 this_loss, grads = loss_grad_fn(params, minibatch)
                 updates, opt_state = optimizer.update(grads, opt_state)
                 params = optax.apply_updates(params, updates)
-                return itr + 1, params, opt_state, (avg_loss * itr + this_loss) / (itr + 1), grads
+                return (
+                    itr + 1,
+                    params,
+                    opt_state,
+                    (avg_loss * itr + this_loss) / (itr + 1),
+                    grads,
+                )
 
-            init_val = (0, params, opt_state, 0.0, params) # last param is dummy for grads.
-            _, params, opt_state, avg_loss, grads = lax.while_loop(cond_fun, body_fun, init_val)
+            init_val = (
+                0,
+                params,
+                opt_state,
+                0.0,
+                params,
+            )  # last param is dummy for grads.
+            _, params, opt_state, avg_loss, grads = lax.while_loop(
+                cond_fun, body_fun, init_val
+            )
 
             return (params, opt_state), (avg_loss, params, grads)
 
         keys = jr.split(key, num_epochs)
-        (params, _), (losses, param_history, grad_history) = lax.scan(train_step, (params, opt_state), keys)
-        
+        (params, _), (losses, param_history, grad_history) = lax.scan(
+            train_step, (params, opt_state), keys
+        )
+
     # If not interested in history of parameters
     if not return_param_history:
         param_history = None
