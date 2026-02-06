@@ -52,7 +52,6 @@ include = ["cd_dynamax*"]
 dev = [
     "pytest>=8.0",
     "ruff",
-    "pytest",
 ]
 
 [tool.ruff.lint]

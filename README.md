@@ -101,6 +101,25 @@ For instance:
 
 - Several [tests](./tests/README.md) to establish cd-dynamax general functionality, as well as linear and non-linear filters/smoothers tests: e.g., checks that non-linear algorithms applied to linear problems return similar results as linear algorithms.
 
+## [Makefile](./Makefile)
+
+- We provide a [Makefile](./Makefile) to automate common tasks, such as running tests and demos.
+
+- To run all tests, simply execute:
+```bash
+make test
+```
+
+- For linting, we use `ruff`:
+```bashbash
+make lint
+```
+
+- We can also clean up build artifacts and temporary files:
+```bashbash
+make clean
+```
+
 # Installation
 
 We support installation via **Conda** (recommended) or via a standard Python virtual environment.
@@ -158,3 +177,4 @@ Check the [JAX installation docs](https://jax.readthedocs.io/en/latest/installat
     ```bash
     pytest
     ```
+
