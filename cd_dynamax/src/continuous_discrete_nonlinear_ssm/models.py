@@ -247,7 +247,9 @@ class ContDiscreteNonlinearSSM(SSM):
 
         # Time grid
         if t_emissions is not None:
-            ts = jnp.squeeze(t_emissions)
+            # Keep singleton-time inputs indexable (e.g. shape (1, 1) -> (1,))
+            # so downstream DPF logic can safely do t_currs[:1], t_currs[:-1].
+            ts = jnp.atleast_1d(jnp.squeeze(t_emissions))
         else:
             ts = jnp.arange(num_timesteps)
 

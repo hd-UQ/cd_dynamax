@@ -681,6 +681,15 @@ def cdnlgssm_joint_sample(
 
         return initial_state, initial_emission
 
+    # Single timepoint: no scan, return initial state and emission only
+    if num_timesteps == 1:
+        key1, _ = jr.split(key)
+        initial_state, initial_emission = _sample_initial(key1, params, inputs)
+        return (
+            jnp.expand_dims(initial_state, 0),
+            jnp.expand_dims(initial_emission, 0),
+        )
+
     def _step(prev_state, args):
         key, t0, t1, inpt = args
         key1, key2 = jr.split(key, 2)
@@ -796,6 +805,15 @@ def cdnlgssm_path_sample(
         ).sample(seed=key2)
 
         return initial_state, initial_emission
+
+    # Single timepoint: no scan, return initial state and emission only
+    if num_timesteps == 1:
+        key1, _ = jr.split(key)
+        initial_state, initial_emission = _sample_initial(key1, params, inputs)
+        return (
+            jnp.expand_dims(initial_state, 0),
+            jnp.expand_dims(initial_emission, 0),
+        )
     
     def _step(prev_state, args):
         key, t0, t1, inpt = args

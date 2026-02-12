@@ -290,6 +290,15 @@ def cdlgssm_joint_sample(
         initial_emission = _sample_emission(key2, H0, D0, d0, R0, initial_state, u0)
         return initial_state, initial_emission
 
+    # Single timepoint: no scan, return initial state and emission only
+    if num_timesteps == 1:
+        key1, _ = jr.split(key)
+        initial_state, initial_emission = _sample_initial(key1, params, inputs)
+        return (
+            jnp.expand_dims(initial_state, 0),
+            jnp.expand_dims(initial_emission, 0),
+        )
+
     def _step(prev_state, args):
         key, t0, t1, inpt = args
         key1, key2 = jr.split(key, 2)
@@ -316,7 +325,7 @@ def cdlgssm_joint_sample(
 
     # Sample the remaining emissions and states
     next_keys = jr.split(key2, num_timesteps - 1)
-    
+
     # Figure out timestamps, as vectors to scan over
     # t_emissions is of shape num_timesteps \times 1
     # t0 and t1 are num_timesteps \times 0
@@ -395,6 +404,15 @@ def cdlgssm_path_sample(
         )
 
         return initial_state, initial_emission
+
+    # Single timepoint: no scan, return initial state and emission only
+    if num_timesteps == 1:
+        key1, _ = jr.split(key)
+        initial_state, initial_emission = _sample_initial(key1, params, inputs)
+        return (
+            jnp.expand_dims(initial_state, 0),
+            jnp.expand_dims(initial_emission, 0),
+        )
     
     def _step(prev_state, args):
         key, t0, t1, inpt = args
