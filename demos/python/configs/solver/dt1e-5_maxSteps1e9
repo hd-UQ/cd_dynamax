@@ -4,5 +4,5 @@ solver: None
 stepsize_controller: dfx.ConstantStepSize()
 adjoint: dfx.RecursiveCheckpointAdjoint()
 dt0: 1e-5
-tol_vbt: 1e-1
+tol_vbt: 5e-6
 max_steps: 1e9

@@ -4,5 +4,5 @@ solver: None
 stepsize_controller: dfx.ConstantStepSize()
 adjoint: dfx.DirectAdjoint()
 dt0: 0.01
-tol_vbt: 1e-1
+tol_vbt: 5e-3
 max_steps: 1e2

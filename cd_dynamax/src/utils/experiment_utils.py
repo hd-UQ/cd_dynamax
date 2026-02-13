@@ -356,7 +356,7 @@ def solver_settings_from_config(
         "diffeqsolve_settings", "dt0", fallback=0.01
     )
     diffeqsolve_settings["tol_vbt"] = solver_config.getfloat(
-        "diffeqsolve_settings", "tol_vbt", fallback=1e-1
+        "diffeqsolve_settings", "tol_vbt", fallback=diffeqsolve_settings["dt0"] / 2.0
     )
     diffeqsolve_settings["max_steps"] = solver_config.getfloat(
         "diffeqsolve_settings", "max_steps", fallback=1e2
