@@ -477,6 +477,7 @@ class ContDiscreteLinearGaussianSSM(SSM):
         filter_hyperparams: Optional[KFHyperParams] = KFHyperParams(),
         inputs: Optional[Float[Array, "ntime input_dim"]] = None,
         key: PRNGKey = jr.PRNGKey(0),
+        warn: bool = True,
     ) -> Scalar:
         r"""Compute the marginal log likelihood of a sequence of emissions under the CD-LGSSM model.
 
@@ -487,12 +488,13 @@ class ContDiscreteLinearGaussianSSM(SSM):
             filter_hyperparams: hyperparameters for the Kalman filter.
             inputs: optional sequence of inputs.
             key: random number generator.
+            warn: whether to warn about numerical issues.
         Returns:
             Marginal log likelihood of the emissions, $\log p(y_{1:T})$.
         """
         # Run CD-Kalman filter to compute marginal log likelihood
         filtered_posterior = cdlgssm_filter(
-            params, emissions, t_emissions, filter_hyperparams, inputs
+            params, emissions, t_emissions, filter_hyperparams, inputs, warn=warn
         )
         return filtered_posterior.marginal_loglik
 
