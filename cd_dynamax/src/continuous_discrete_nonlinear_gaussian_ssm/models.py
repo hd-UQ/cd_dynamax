@@ -569,6 +569,7 @@ class ContDiscreteNonlinearGaussianSSM(SSM):
         ] = EKFHyperParams(),
         inputs: Optional[Float[Array, "ntime input_dim"]] = None,
         key: PRNGKey = jr.PRNGKey(0),
+        warn: bool = True,
     ) -> Scalar:
         r"""Compute the marginal log-likelihood of a sequence of emissions under the CD-NLGSSM model,
         Args:
@@ -590,6 +591,7 @@ class ContDiscreteNonlinearGaussianSSM(SSM):
             filter_hyperparams=filter_hyperparams,
             inputs=inputs,
             key=key,
+            warn=warn,
         )
         return filtered_posterior.marginal_loglik
 

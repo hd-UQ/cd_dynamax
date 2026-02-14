@@ -496,7 +496,13 @@ class SSM(ABC):
                 props,
             )
             return self.marginal_log_prob(
-                full_params, emissions, t_emissions, filter_hyperparams, inputs, key=key
+                full_params,
+                emissions,
+                t_emissions,
+                filter_hyperparams,
+                inputs,
+                key=key,
+                warn=False,
             )
 
         if return_log_prob:
@@ -655,6 +661,7 @@ class SSM(ABC):
                     self.marginal_log_prob,
                     params,
                     filter_hyperparams=filter_hyperparams,
+                    warn=False,
                 )  # partial with fixed params arg and filter_hyperparams kwarg
             )(
                 # arguments to vmap over
@@ -837,6 +844,7 @@ class SSM(ABC):
                     self.marginal_log_prob,
                     params,
                     filter_hyperparams=filter_hyperparams,
+                    warn=False,
                 )
             )(
                 emissions=batch_emissions,
@@ -1096,6 +1104,7 @@ class SSM(ABC):
                     self.marginal_log_prob,
                     params,
                     filter_hyperparams=filter_hyperparams,
+                    warn=False,
                 )  # partial with fixed params arg and filter_hyperparams kwarg
             )(
                 # arguments to vmap over
@@ -1477,6 +1486,7 @@ class SSM(ABC):
                     self.marginal_log_prob,
                     params,
                     filter_hyperparams=filter_hyperparams,
+                    warn=False,
                 )  # partial with fixed params arg and filter_hyperparams kwarg
             )(
                 # arguments to vmap over
