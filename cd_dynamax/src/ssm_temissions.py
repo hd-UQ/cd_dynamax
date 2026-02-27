@@ -457,6 +457,7 @@ class SSM(ABC):
         filter_hyperparams: Optional[Any] = None,
         inputs: Optional[Float[Array, "ntime input_dim"]] = None,
         return_log_prob: bool = False,
+        warn: bool = True,
         key: PRNGKey = jr.PRNGKey(0),
     ) -> Scalar:
         r"""Compute the score function, i.e., the gradient of the log marginal likelihood of observations:
@@ -470,6 +471,7 @@ class SSM(ABC):
             filter_hyperparams: hyperparameters of the filtering algorithm
             inputs: current inputs  $u_t$
             return_log_prob: whether or not to return the log probability in addition to its gradient
+            warn: whether to print warnings from filters
             key: random number generator (for use in randomized methods approximating the marginal likelihood)
 
         Returns:
@@ -496,7 +498,13 @@ class SSM(ABC):
                 props,
             )
             return self.marginal_log_prob(
-                full_params, emissions, t_emissions, filter_hyperparams, inputs, key=key
+                full_params,
+                emissions,
+                t_emissions,
+                filter_hyperparams,
+                inputs,
+                key=key,
+                warn=warn,
             )
 
         if return_log_prob:
@@ -584,6 +592,7 @@ class SSM(ABC):
         shuffle: bool = False,
         return_param_history: bool = False,
         return_grad_history: bool = False,
+        warn: bool = True,
         key: PRNGKey = jr.PRNGKey(0),
     ) -> Tuple[ParameterSet, Float[Array, " niter"]]:
         r"""Compute parameter MLE/MAP estimate using Stochastic Gradient Descent (SGD).
@@ -655,6 +664,7 @@ class SSM(ABC):
                     self.marginal_log_prob,
                     params,
                     filter_hyperparams=filter_hyperparams,
+                    warn=warn,
                 )  # partial with fixed params arg and filter_hyperparams kwarg
             )(
                 # arguments to vmap over
@@ -770,6 +780,7 @@ class SSM(ABC):
         method: str = "Nelder-Mead",
         options: dict = {"maxiter": 5000},
         return_param_history: bool = False,
+        warn: bool = True,
     ) -> Tuple[ParameterSet, Float[Array, " niter"], Optional[ParameterSet]]:
         """
         Compute parameter MLE/MAP estimate using SciPy-based chosen method.
@@ -791,7 +802,7 @@ class SSM(ABC):
             method: optimization method to use, e.g. "Nelder-Mead", "BFGS", etc.
             options: dictionary of options to pass to the SciPy optimizer
             return_param_history: whether to return the history of parameters
-
+            warn: whether to print warnings from filters
         Returns:
             params_fitted: final fitted parameters (PyTree, constrained)
             losses: array of loss values per iteration
@@ -837,6 +848,7 @@ class SSM(ABC):
                     self.marginal_log_prob,
                     params,
                     filter_hyperparams=filter_hyperparams,
+                    warn=warn,
                 )
             )(
                 emissions=batch_emissions,
@@ -1035,6 +1047,7 @@ class SSM(ABC):
             "parameters": {},  # Additional parameters for the MCMC algorithm
         },
         verbose=True,
+        warn=True,
         key: PRNGKey = jr.PRNGKey(0),
     ) -> Tuple[
         ParameterSet,
@@ -1058,6 +1071,7 @@ class SSM(ABC):
                     warmup_samples: number of warmup steps
                     parameters: additional parameters for the MCMC algorithm
             verbose: whether or not to show a progress bar
+            warn: whether to print warnings from filters
             key: a random number generator
 
         Returns:
@@ -1096,6 +1110,7 @@ class SSM(ABC):
                     self.marginal_log_prob,
                     params,
                     filter_hyperparams=filter_hyperparams,
+                    warn=warn,
                 )  # partial with fixed params arg and filter_hyperparams kwarg
             )(
                 # arguments to vmap over
@@ -1429,6 +1444,7 @@ class SSM(ABC):
                 Float[Array, "num_batches num_timesteps input_dim"],
             ]
         ] = None,
+        warn: bool = True,
     ):
         r"""Compute the observed Fisher information matrix for the model parameters.
 
@@ -1439,7 +1455,7 @@ class SSM(ABC):
             t_emissions: continuous-time specific time instants: if not None, it is an array
             filter_hyperparams: if needed, hyperparameters of the filtering algorithm
             inputs: one or more sequences of corresponding inputs
-
+            warn: whether to print warnings from filters
         Returns:
             Fisher information PyTree.
 
@@ -1477,6 +1493,7 @@ class SSM(ABC):
                     self.marginal_log_prob,
                     params,
                     filter_hyperparams=filter_hyperparams,
+                    warn=warn,
                 )  # partial with fixed params arg and filter_hyperparams kwarg
             )(
                 # arguments to vmap over

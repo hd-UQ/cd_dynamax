@@ -210,9 +210,19 @@ def create_cddynamax_model_from_config(
     if cddynamax_model_class_name not in ["CDLGSSM", "CDNLGSSM"]:
         raise ValueError(f"Unknown model class name: {cddynamax_model_class_name}")
 
-    # Apply overrides if provided
+    # Apply overrides if provided.
+    # For object-valued initial_values.* overrides (e.g. NamedTuples with JAX arrays),
+    # avoid routing through ConfigParser stringification, which is not eval-safe.
+    direct_initial_value_overrides = {}
     if overrides is not None:
-        config = override_config(cfg=config, overrides=overrides)
+        config_overrides = {}
+        for k, v in overrides.items():
+            if k.startswith("initial_values.") and not isinstance(v, str):
+                _, opt = k.split(".", 1)
+                direct_initial_value_overrides[opt] = v
+            else:
+                config_overrides[k] = v
+        config = override_config(cfg=config, overrides=config_overrides)
 
     # Choose the model class
     if cddynamax_model_class_name == "CDLGSSM":
@@ -245,6 +255,9 @@ def create_cddynamax_model_from_config(
     initial_params = {}
     for key, val in initial_config_values.items():
         initial_params[key] = eval(val)
+    # Apply direct object overrides after config parsing/eval.
+    # This supports values that cannot round-trip through str(...) + eval(...).
+    initial_params.update(direct_initial_value_overrides)
 
     # Load the prior from the configuration file, if present
     prior_config_file = config.get("prior", "prior_class_file", fallback=None)
@@ -356,7 +369,7 @@ def solver_settings_from_config(
         "diffeqsolve_settings", "dt0", fallback=0.01
     )
     diffeqsolve_settings["tol_vbt"] = solver_config.getfloat(
-        "diffeqsolve_settings", "tol_vbt", fallback=1e-1
+        "diffeqsolve_settings", "tol_vbt", fallback=diffeqsolve_settings["dt0"] / 2.0
     )
     diffeqsolve_settings["max_steps"] = solver_config.getfloat(
         "diffeqsolve_settings", "max_steps", fallback=1e2

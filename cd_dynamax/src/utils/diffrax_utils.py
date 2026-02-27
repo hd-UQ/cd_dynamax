@@ -53,7 +53,7 @@ def diffeqsolve(
     stepsize_controller: dfx.AbstractStepSizeController = dfx.ConstantStepSize(),
     adjoint: dfx.AbstractAdjoint = dfx.RecursiveCheckpointAdjoint(),
     dt0: float = 0.01,
-    tol_vbt: float = 1e-1,  # tolerance for virtual brownian tree
+    tol_vbt: float | None = None,  # tolerance for virtual brownian tree
     max_steps: int = 1e5,
     diffusion=None,
     key=None,
@@ -81,6 +81,9 @@ def diffeqsolve(
     """
 
     max_steps = int(max_steps)
+
+    if tol_vbt is None:
+        tol_vbt = dt0 / 2.0
 
     if debug:
         # run hand-written Euler and/or Euler-Maruyama using a for loop with fixed step size dt0
