@@ -1,442 +1,367 @@
-# Imports
 import jax
 import jax.numpy as jnp
 import jax.random as jr
+import pytest
 
-from cd_dynamax import ContDiscreteLinearGaussianSSM, LinearGaussianSSM
-from cd_dynamax.src.utils.test_utils import compare, compare_structs
-from cd_dynamax.dynamax.linear_gaussian_ssm.inference import lgssm_filter
-from cd_dynamax.src.continuous_discrete_linear_gaussian_ssm.models import (
-    cdlgssm_filter,
+from cd_dynamax import (
+    ContDiscreteLinearGaussianSSM,
+    KFHyperParams,
+    LinearGaussianSSM,
+    cdlgssm_emissions,
+    cdlgssm_forecast,
 )
+from cd_dynamax.dynamax.linear_gaussian_ssm.inference import lgssm_filter
 from cd_dynamax.dynamax.parameters import ParameterProperties
 from cd_dynamax.dynamax.utils.bijectors import RealToPSDBijector
-from cd_dynamax import KFHyperParams
-from cd_dynamax import cdlgssm_forecast, cdlgssm_emissions
+from cd_dynamax.src.continuous_discrete_linear_gaussian_ssm.models import cdlgssm_filter
+from cd_dynamax.src.utils.test_utils import compare, compare_structs
 from tensorflow_probability.substrates.jax.distributions import (
     MultivariateNormalFullCovariance as MVN,
 )
 
-# Whether to plot test results or not
+# Whether to plot test results or not - can be helpful for debugging but should be False for regular test runs
 PLOT_TEST_RESULTS = False
 
-# JAX device check
-print("************* Checking JAX device *************")
+# Use a fixed random seed for reproducibility in tests
+@pytest.fixture
+def rng_keys():
+    return jr.split(jr.PRNGKey(0))
 
-print("Running on jax device:{}".format(jax.devices()))
-print("Running on jax device platform:{}".format(jax.devices()[0].platform))
-print("***********************************************")
+# Testing the filter and forecast functions together in a single test
+# to check whether continuous-discrete model can recover discrete model (dynamax)
+# filtering and forecasting results
+def test_cdlgssm_filter_and_forecast_tregular(rng_keys):
+    # Simple print statement to confirm test is running and show JAX device info
+    print("Running on jax device:", jax.devices())
 
-# The idea of this test is as following (uses regular time intervals ONLY):
-# First, establish equivalent linear systems in discrete and continuous time
-# Show that samples from each are similar
-# Show that discrete KF == continuous-discrete KF for that linear system
+    # Unpack RNG keys
+    key_init, key_sample = rng_keys
 
-#### Randomness
-key_init, key_sample = jr.split(jr.PRNGKey(0))
+    # Model definition parameters: shared
+    state_dim = 2
+    emission_dim = 6
+    num_timesteps = 100
+    inputs = None
 
-#### General state and emission dimensionalities
-STATE_DIM = 2
-EMISSION_DIM = 6
-
-print("************* Discrete LGSSM *************")
-# Discrete sampling
-NUM_TIMESTEPS = 100
-
-# Model def
-inputs = None  # Not interested in inputs for now
-d_model = LinearGaussianSSM(
-    state_dim=STATE_DIM,
-    emission_dim=EMISSION_DIM,
-)
-d_params, d_param_props = d_model.initialize(
-    key_init,
-    # Hard coded parameters for tests to match
-    dynamics_weights=0.9048373699188232421875 * jnp.eye(d_model.state_dim),
-    dynamics_covariance=0.11329327523708343505859375 * jnp.eye(d_model.state_dim),
-    dynamics_bias=jnp.zeros(d_model.state_dim),
-    emission_bias=jnp.zeros(d_model.emission_dim),
-)
-
-# Simulate from discrete model
-print("Simulating in discrete time")
-d_states, d_emissions = d_model.sample(
-    d_params, key_sample, num_timesteps=NUM_TIMESTEPS, inputs=inputs
-)
-
-print("Discrete time filtering: pre-fit")
-# Define filter
-d_filtered_posterior = lgssm_filter(d_params, d_emissions, inputs)
-
-print("Fitting discrete time with SGD")
-d_sgd_fitted_params, d_sgd_lps = d_model.fit_sgd(
-    d_params, d_param_props, d_emissions, inputs=inputs, num_epochs=10
-)
-
-print("Discrete time filtering: post-fit")
-d_sgd_fitted_filtered_posterior = lgssm_filter(d_sgd_fitted_params, d_emissions, inputs)
-
-print("************* Continuous-Discrete LGSSM *************")
-# Continuous-Discrete model
-t_emissions = jnp.arange(NUM_TIMESTEPS)[:, None]
-
-# Model def
-inputs = None  # Not interested in inputs for now
-cd_model = ContDiscreteLinearGaussianSSM(
-    state_dim=STATE_DIM,
-    emission_dim=EMISSION_DIM,
-)
-
-# Initialize, controlling what is learned
-
-cd_params, cd_param_props = cd_model.initialize(
-    key_init,
-    ## Initial
-    initial_mean={
-        "params": jnp.zeros(cd_model.state_dim),
-        "props": ParameterProperties(),
-    },
-    initial_cov={
-        "params": jnp.eye(cd_model.state_dim),
-        "props": ParameterProperties(constrainer=RealToPSDBijector()),
-    },
-    ## Dynamics
-    dynamics_weights={
-        "params": -0.1 * jnp.eye(cd_model.state_dim),
-        "props": ParameterProperties(),
-    },
-    dynamics_bias={
-        "params": jnp.zeros((cd_model.state_dim,)),
-        "props": ParameterProperties(),
-    },
-    dynamics_diffusion_coefficient={
-        "params": 0.5 * jnp.eye(cd_model.state_dim),
-        "props": ParameterProperties(),
-    },
-    dynamics_diffusion_cov={
-        "params": 0.5 * jnp.eye(cd_model.state_dim),
-        "props": ParameterProperties(constrainer=RealToPSDBijector()),
-    },
-    ## Emission
-    emission_weights={
-        "params": jr.normal(key_init, (cd_model.emission_dim, cd_model.state_dim)),
-        "props": ParameterProperties(),
-    },
-    emission_bias={
-        "params": jnp.zeros((cd_model.emission_dim,)),
-        "props": ParameterProperties(),
-    },
-    emission_cov={
-        "params": 0.1 * jnp.eye(cd_model.emission_dim),
-        "props": ParameterProperties(constrainer=RealToPSDBijector()),
-    },
-)
-
-# Equivalent initialization to above
-cd_params, cd_param_props = cd_model.initialize(
-    key_init,
-    ## Initial
-    initial_mean={
-        "params": jnp.zeros(cd_model.state_dim),
-        "props": ParameterProperties(),
-    },
-    initial_cov={
-        "params": jnp.eye(cd_model.state_dim),
-        "props": ParameterProperties(constrainer=RealToPSDBijector()),
-    },
-    ## Dynamics
-    dynamics_weights={
-        "params": -0.1 * jnp.eye(cd_model.state_dim),
-        "props": ParameterProperties(),
-    },
-    dynamics_bias={
-        "params": jnp.zeros((cd_model.state_dim,)),
-        "props": ParameterProperties(),
-    },
-    dynamics_diffusion_coefficient={
-        "params": jnp.eye(cd_model.state_dim),
-        "props": ParameterProperties(),
-    },
-    dynamics_diffusion_cov={
-        "params": (0.5 * 0.5) * 0.5 * jnp.eye(cd_model.state_dim),
-        "props": ParameterProperties(constrainer=RealToPSDBijector()),
-    },
-    ## Emission
-    emission_weights={
-        "params": jr.normal(key_init, (cd_model.emission_dim, cd_model.state_dim)),
-        "props": ParameterProperties(),
-    },
-    emission_bias={
-        "params": jnp.zeros((cd_model.emission_dim,)),
-        "props": ParameterProperties(),
-    },
-    emission_cov={
-        "params": 0.1 * jnp.eye(cd_model.emission_dim),
-        "props": ParameterProperties(constrainer=RealToPSDBijector()),
-    },
-)
-
-# Simulate from continuous model
-print("Simulating in continuous-discrete time")
-cd_num_timesteps_states, cd_num_timesteps_emissions = cd_model.sample(
-    cd_params, key_sample, num_timesteps=NUM_TIMESTEPS, inputs=inputs
-)
-
-cd_states, cd_emissions = cd_model.sample(
-    cd_params,
-    key_sample,
-    num_timesteps=NUM_TIMESTEPS,
-    t_emissions=t_emissions,
-    inputs=inputs,
-)
-
-print("\tChecking states...")
-compare(cd_num_timesteps_states, cd_states)
-
-print("\tChecking emissions...")
-compare(cd_num_timesteps_emissions, cd_emissions)
-
-print("\tChecking states...")
-compare(d_states, cd_states)
-
-print("\tChecking emissions...")
-compare(d_emissions, cd_emissions)
-
-print("Continuous-Discrete time filtering: pre-fit")
-# We set dt_final=1 so that predicted mean and covariance at the end of sequence match those of discrete filtering
-kf_hyperparams = KFHyperParams(dt_final=1.0)
-# Define CD linear filter
-cd_filtered_posterior = cdlgssm_filter(
-    cd_params,
-    cd_emissions,
-    t_emissions,
-    filter_hyperparams=kf_hyperparams,
-    inputs=inputs,
-)
-
-print("Comparing filtered posteriors...")
-compare_structs(d_filtered_posterior, cd_filtered_posterior)
-
-print("Fitting continuous-discrete time linear with SGD")
-cd_sgd_fitted_params, cd_sgd_lps = cd_model.fit_sgd(
-    cd_params,
-    cd_param_props,
-    cd_emissions,
-    t_emissions,
-    filter_hyperparams=kf_hyperparams,
-    inputs=inputs,
-    num_epochs=10,
-)
-
-print("\tSGD works!")
-
-print("\tChecking SGD log-probabilities sequence...")
-compare(cd_sgd_lps, d_sgd_lps)
-
-print("WARNING: Please take the following comparisons with a grain of salt.")
-print("Check that parameters are similar...")
-compare_structs(d_sgd_fitted_params, cd_sgd_fitted_params, accept_failure=True)
-
-print("Continuous-Discrete time filtering: post-fit")
-cd_sgd_fitted_filtered_posterior = cdlgssm_filter(
-    cd_sgd_fitted_params,
-    cd_emissions,
-    t_emissions,
-    filter_hyperparams=kf_hyperparams,
-    inputs=inputs,
-)
-
-print("WARNING: Please take the following comparisons with a grain of salt.")
-compare_structs(
-    d_sgd_fitted_filtered_posterior,
-    cd_sgd_fitted_filtered_posterior,
-    accept_failure=True,
-)
-
-if PLOT_TEST_RESULTS:
-    print(
-        "WARNING: plotting filtering results for understanding impact of SGD differences."
+    # Discrete time model setup and filtering/forecasting
+    # use dynamax to get reference results
+    d_model = LinearGaussianSSM(state_dim=state_dim, emission_dim=emission_dim)
+    d_params, d_param_props = d_model.initialize(
+        key_init,
+        dynamics_weights=0.9048373699188232421875 * jnp.eye(d_model.state_dim),
+        dynamics_covariance=0.11329327523708343505859375 * jnp.eye(d_model.state_dim),
+        dynamics_bias=jnp.zeros(d_model.state_dim),
+        emission_bias=jnp.zeros(d_model.emission_dim),
     )
-    import matplotlib.pyplot as plt
 
-    for n_state in jnp.arange(STATE_DIM):
-        plt.figure()
-        plt.plot(
-            t_emissions,
-            d_states[:, n_state],
-            label="true discrete position",
-            color="black",
-        )
-        plt.plot(
-            t_emissions,
-            d_sgd_fitted_filtered_posterior.filtered_means[:, n_state],
-            label="Post-SGD fit Discrete filtered state",
-            color="orange",
-            marker="o",
-            markerfacecolor="none",
-            markeredgewidth=2,
-            markersize=8,
-        )
-        plt.plot(
-            t_emissions,
-            cd_sgd_fitted_filtered_posterior.filtered_means[:, n_state],
-            label="Post-SGD fit Continuous-Discrete filtered state",
-            color="blue",
-            marker="x",
-        )
-        plt.xlabel("time")
-        plt.ylabel("x_{}".format(n_state))
-        plt.grid()
-        plt.legend()
-        plt.title("Filtered states after SGD optimization")
-        plt.show()
+    # Sample from the discrete model to get emissions for filtering
+    d_states, d_emissions = d_model.sample(
+        d_params, key_sample, num_timesteps=num_timesteps, inputs=inputs
+    )
 
-print("All Discrete to Continous-Discrete model and filtering tests passed!")
+    # Filter the discrete model emissions to get reference filtered posterior
+    d_filtered_posterior = lgssm_filter(d_params, d_emissions, inputs)
 
-# Test forecasting
-print("************* Continuous-Discrete LGSSM Forecasting *************")
-# Define forecasting time points
-FORECAST_TIMESTEPS = 25
-t_forecast_emissions = jnp.arange(NUM_TIMESTEPS, NUM_TIMESTEPS + FORECAST_TIMESTEPS)[
-    :, None
-]
-init_time = t_emissions[-1]
+    # Fit the discrete model using SGD to get fitted parameters and log-likelihoods
+    d_sgd_fitted_params, d_sgd_lps = d_model.fit_sgd(
+        d_params, d_param_props, d_emissions, inputs=inputs, num_epochs=10
+    )
 
-# Run forecast on forecasting time points
-# Forecasting randomness
-key_forecast = jr.split(key_sample)[0]
+    # Filter the emissions with the fitted parameters to get the post-SGD fitted filtered posterior
+    d_sgd_fitted_filtered_posterior = lgssm_filter(
+        d_sgd_fitted_params, d_emissions, inputs
+    )
 
-# Initialize forecast with last filtered state, as fixed point estimate
-cd_point_init_forecast = cd_filtered_posterior.filtered_means[-1, :]
-cd_point_forecasted = cdlgssm_forecast(
-    params=cd_params,
-    init_forecast=cd_point_init_forecast,
-    t_init=init_time,
-    t_forecast=t_forecast_emissions,
-    filter_hyperparams=kf_hyperparams,
-    inputs=inputs,
-    key=key_forecast,
-    diffeqsolve_settings={},
-)
+    # Continuous-discrete model setup and filtering/forecasting
+    t_emissions = jnp.arange(num_timesteps)[:, None]
 
-# Initialize forecast with last filtered state distribution
-cd_dist_init_forecast = MVN(
-    cd_filtered_posterior.filtered_means[-1, :],
-    cd_filtered_posterior.filtered_covariances[-1, :],
-)
-cd_dist_forecasted = cdlgssm_forecast(
-    params=cd_params,
-    init_forecast=cd_dist_init_forecast,
-    t_init=init_time,
-    t_forecast=t_forecast_emissions,
-    filter_hyperparams=kf_hyperparams,
-    inputs=inputs,
-    key=key_forecast,
-    diffeqsolve_settings={},
-)
+    # cd-dynamax equivalence test: initialize cd model with parameters that should closely match the discrete model dynamics and emissions, then check that filtering and forecasting results are close to the discrete model results. This is a strong test of whether the continuous-discrete model can recover the discrete model behavior when initialized appropriately.
+    cd_model = ContDiscreteLinearGaussianSSM(
+        state_dim=state_dim, emission_dim=emission_dim
+    )
 
-if PLOT_TEST_RESULTS:
-    print("Plotting forecasted state path and distributions.")
-    import matplotlib.pyplot as plt
+    cd_params, cd_param_props = cd_model.initialize(
+        key_init,
+        initial_mean={
+            "params": jnp.zeros(cd_model.state_dim),
+            "props": ParameterProperties(),
+        },
+        initial_cov={
+            "params": jnp.eye(cd_model.state_dim),
+            "props": ParameterProperties(constrainer=RealToPSDBijector()),
+        },
+        dynamics_weights={
+            "params": -0.1 * jnp.eye(cd_model.state_dim),
+            "props": ParameterProperties(),
+        },
+        dynamics_bias={
+            "params": jnp.zeros((cd_model.state_dim,)),
+            "props": ParameterProperties(),
+        },
+        dynamics_diffusion_coefficient={
+            "params": jnp.eye(cd_model.state_dim),
+            "props": ParameterProperties(),
+        },
+        dynamics_diffusion_cov={
+            "params": (0.5 * 0.5) * 0.5 * jnp.eye(cd_model.state_dim),
+            "props": ParameterProperties(constrainer=RealToPSDBijector()),
+        },
+        emission_weights={
+            "params": jr.normal(key_init, (cd_model.emission_dim, cd_model.state_dim)),
+            "props": ParameterProperties(),
+        },
+        emission_bias={
+            "params": jnp.zeros((cd_model.emission_dim,)),
+            "props": ParameterProperties(),
+        },
+        emission_cov={
+            "params": 0.1 * jnp.eye(cd_model.emission_dim),
+            "props": ParameterProperties(constrainer=RealToPSDBijector()),
+        },
+    )
 
-    for n_state in jnp.arange(STATE_DIM):
-        plt.figure()
-        plt.plot(
-            t_forecast_emissions,
-            cd_point_forecasted.forecasted_state_path[:, n_state],
-            label="Forecasted path (point estimate)",
-            color="black",
-        )
-        plt.plot(
-            t_forecast_emissions,
-            cd_dist_forecasted.forecasted_state_means[:, n_state],
-            label="Forecasted state means (distribution)",
-            color="orange",
-            marker="o",
-            markerfacecolor="none",
-            markeredgewidth=2,
-            markersize=8,
-        )
-        plt.fill_between(
-            t_forecast_emissions[:, 0],
-            cd_dist_forecasted.forecasted_state_means[:, n_state]
-            - jnp.sqrt(
-                cd_dist_forecasted.forecasted_state_covariances[:, n_state, n_state]
-            ),
-            cd_dist_forecasted.forecasted_state_means[:, n_state]
-            + jnp.sqrt(
-                cd_dist_forecasted.forecasted_state_covariances[:, n_state, n_state]
-            ),
-            color="orange",
-            alpha=0.2,
-            label="Forecasted state uncertainty (1 std)",
-        )
-        plt.xlabel("Forecasted time")
-        plt.ylabel("x_{}".format(n_state))
-        plt.grid()
-        plt.legend()
-        plt.title("Forecasted states")
-        plt.show()
-
-# Compute emissions from forecasted states
-cd_point_emissions_forecasted_means, cd_point_emissions_forecasted_covariances = (
-    cdlgssm_emissions(
-        params=cd_params,
-        t_states=t_forecast_emissions,
-        state_means=cd_point_forecasted.forecasted_state_path,
+    # Sample from the continuous-discrete model using the same key
+    # Based on the number of timesteps
+    cd_num_timesteps_states, cd_num_timesteps_emissions = cd_model.sample(
+        cd_params, key_sample, num_timesteps=num_timesteps, inputs=inputs
+    )
+    # Based on the emission timestamps
+    cd_states, cd_emissions = cd_model.sample(
+        cd_params,
+        key_sample,
+        num_timesteps=num_timesteps,
+        t_emissions=t_emissions,
         inputs=inputs,
     )
-)
 
-cd_dist_emissions_forecasted_means, cd_dist_emissions_forecasted_covariances = (
-    cdlgssm_emissions(
-        params=cd_params,
-        t_states=t_forecast_emissions,
-        state_means=cd_dist_forecasted.forecasted_state_means,
-        state_covs=cd_dist_forecasted.forecasted_state_covariances,
+    # Compare and check
+    compare(cd_num_timesteps_states, cd_states)
+    compare(cd_num_timesteps_emissions, cd_emissions)
+    compare(d_states, cd_states)
+    compare(d_emissions, cd_emissions)
+
+    # Filter the continuous-discrete model emissions to get filtered posterior
+    kf_hyperparams = KFHyperParams(dt_final=1.0)
+    cd_filtered_posterior = cdlgssm_filter(
+        cd_params,
+        cd_emissions,
+        t_emissions,
+        filter_hyperparams=kf_hyperparams,
         inputs=inputs,
     )
-)
 
-if PLOT_TEST_RESULTS:
-    print("Plotting forecasted emission path and distributions.")
-    import matplotlib.pyplot as plt
+    # Compare the filtered posterior from the continuous-discrete model to the discrete model's filtered posterior
+    compare_structs(d_filtered_posterior, cd_filtered_posterior)
 
-    for n_emission in jnp.arange(EMISSION_DIM):
-        plt.figure()
-        plt.plot(
-            t_forecast_emissions,
-            cd_point_emissions_forecasted_means[:, n_emission],
-            label="Forecasted emission path (point estimate)",
-            color="black",
+    # Fit the continuous-discrete model using SGD to get fitted parameters and log-likelihoods, then filter again with the fitted parameters to get the post-SGD fitted filtered posterior
+    cd_sgd_fitted_params, cd_sgd_lps = cd_model.fit_sgd(
+        cd_params,
+        cd_param_props,
+        cd_emissions,
+        t_emissions,
+        filter_hyperparams=kf_hyperparams,
+        inputs=inputs,
+        num_epochs=10,
+    )
+
+    # Compare the SGD-fitted parameters and log-likelihoods between the discrete and continuous-discrete models.
+    # We use accept_failure=True since we don't necessarily expect exact matches 
+    compare(cd_sgd_lps, d_sgd_lps)
+    compare_structs(d_sgd_fitted_params, cd_sgd_fitted_params, accept_failure=True)
+
+    # Filter with the SGD-fitted parameters to get the post-SGD fitted filtered posterior for the continuous-discrete model, and compare to the discrete model's post-SGD fitted filtered posterior
+    cd_sgd_fitted_filtered_posterior = cdlgssm_filter(
+        cd_sgd_fitted_params,
+        cd_emissions,
+        t_emissions,
+        filter_hyperparams=kf_hyperparams,
+        inputs=inputs,
+    )
+
+    # Compare the post-SGD fitted filtered posterior from the continuous-discrete model to the discrete model's post-SGD fitted filtered posterior.
+    ## We use accept_failure=True since we don't necessarily expect exact matches 
+    compare_structs(
+        d_sgd_fitted_filtered_posterior,
+        cd_sgd_fitted_filtered_posterior,
+        accept_failure=True,
+    )
+
+    # Forecasting with the continuous-discrete model using both point and distribution initial conditions from the filtered posterior, and compare to the discrete model's forecasting results. This tests whether the continuous-discrete model can produce similar forecasts to the discrete model when initialized with the same filtered state estimates.
+    forecast_timesteps = 25
+    t_forecast_emissions = jnp.arange(
+        num_timesteps, num_timesteps + forecast_timesteps
+    )[:, None]
+    # For the forecast, we start from the last time point of the emissions,
+    # so we use the last timestamp from t_emissions as the initial time for the forecast
+    init_time = t_emissions[-1]
+
+    # New key for forecasting to ensure independence from sampling and filtering steps
+    key_forecast = jr.split(key_sample)[0]
+
+    # For the point forecast, we use the last filtered mean as the initial condition.
+    cd_point_init_forecast = cd_filtered_posterior.filtered_means[-1, :]
+    cd_point_forecasted = cdlgssm_forecast(
+        params=cd_params,
+        init_forecast=cd_point_init_forecast,
+        t_init=init_time,
+        t_forecast=t_forecast_emissions,
+        filter_hyperparams=kf_hyperparams,
+        inputs=inputs,
+        key=key_forecast,
+        diffeqsolve_settings={},
+    )
+
+    # For the distribution forecast,
+    # we use the last filtered mean and covariance to define a Gaussian initial condition
+    cd_dist_init_forecast = MVN(
+        cd_filtered_posterior.filtered_means[-1, :],
+        cd_filtered_posterior.filtered_covariances[-1, :],
+    )
+    cd_dist_forecasted = cdlgssm_forecast(
+        params=cd_params,
+        init_forecast=cd_dist_init_forecast,
+        t_init=init_time,
+        t_forecast=t_forecast_emissions,
+        filter_hyperparams=kf_hyperparams,
+        inputs=inputs,
+        key=key_forecast,
+        diffeqsolve_settings={},
+    )
+
+    # Emissions forecasts from the continuous-discrete model using the forecasted states
+    # Use point forecasts
+    cd_point_emissions_forecasted_means, cd_point_emissions_forecasted_covariances = (
+        cdlgssm_emissions(
+            params=cd_params,
+            t_states=t_forecast_emissions,
+            state_means=cd_point_forecasted.forecasted_state_path,
+            inputs=inputs,
         )
-        plt.plot(
-            t_forecast_emissions,
-            cd_dist_emissions_forecasted_means[:, n_emission],
-            label="Forecasted emission means (distribution)",
-            color="orange",
-            marker="o",
-            markerfacecolor="none",
-            markeredgewidth=2,
-            markersize=8,
+    )
+
+    # Use distribution forecasts (means and covariances)
+    cd_dist_emissions_forecasted_means, cd_dist_emissions_forecasted_covariances = (
+        cdlgssm_emissions(
+            params=cd_params,
+            t_states=t_forecast_emissions,
+            state_means=cd_dist_forecasted.forecasted_state_means,
+            state_covs=cd_dist_forecasted.forecasted_state_covariances,
+            inputs=inputs,
         )
-        plt.fill_between(
-            t_forecast_emissions[:, 0],
-            cd_dist_emissions_forecasted_means[:, n_emission]
-            - jnp.sqrt(
-                cd_dist_emissions_forecasted_covariances[:, n_emission, n_emission]
-            ),
-            cd_dist_emissions_forecasted_means[:, n_emission]
-            + jnp.sqrt(
-                cd_dist_emissions_forecasted_covariances[:, n_emission, n_emission]
-            ),
-            color="orange",
-            alpha=0.2,
-            label="Forecasted emission uncertainty (1 std)",
-        )
-        plt.xlabel("Forecasted time")
-        plt.ylabel("x_{}".format(n_state))
-        plt.grid()
-        plt.legend()
-        plt.title("Forecasted emissions")
-        plt.show()
+    )
+
+    # Checks
+    assert cd_point_forecasted.forecasted_state_path.shape[0] == forecast_timesteps
+    assert cd_dist_forecasted.forecasted_state_means.shape[0] == forecast_timesteps
+    assert cd_point_emissions_forecasted_means.shape[0] == forecast_timesteps
+    assert cd_dist_emissions_forecasted_means.shape[0] == forecast_timesteps
+
+    # If intersted, plot the results to visually inspect the filtering and forecasting performance
+    if PLOT_TEST_RESULTS:
+        import matplotlib.pyplot as plt
+
+        for n_state in jnp.arange(state_dim):
+            plt.figure()
+            plt.plot(
+                t_emissions,
+                d_states[:, n_state],
+                label="true discrete position",
+                color="black",
+            )
+            plt.plot(
+                t_emissions,
+                d_sgd_fitted_filtered_posterior.filtered_means[:, n_state],
+                label="Post-SGD fit Discrete filtered state",
+                color="orange",
+                marker="o",
+                markerfacecolor="none",
+                markeredgewidth=2,
+                markersize=8,
+            )
+            plt.plot(
+                t_emissions,
+                cd_sgd_fitted_filtered_posterior.filtered_means[:, n_state],
+                label="Post-SGD fit Continuous-Discrete filtered state",
+                color="blue",
+                marker="x",
+            )
+            plt.xlabel("time")
+            plt.ylabel(f"x_{n_state}")
+            plt.grid()
+            plt.legend()
+            plt.title("Filtered states after SGD optimization")
+            plt.show()
+
+        for n_state in jnp.arange(state_dim):
+            plt.figure()
+            plt.plot(
+                t_forecast_emissions,
+                cd_point_forecasted.forecasted_state_path[:, n_state],
+                label="Forecasted path (point estimate)",
+                color="black",
+            )
+            plt.plot(
+                t_forecast_emissions,
+                cd_dist_forecasted.forecasted_state_means[:, n_state],
+                label="Forecasted state means (distribution)",
+                color="orange",
+                marker="o",
+                markerfacecolor="none",
+                markeredgewidth=2,
+                markersize=8,
+            )
+            plt.fill_between(
+                t_forecast_emissions[:, 0],
+                cd_dist_forecasted.forecasted_state_means[:, n_state]
+                - jnp.sqrt(cd_dist_forecasted.forecasted_state_covariances[:, n_state, n_state]),
+                cd_dist_forecasted.forecasted_state_means[:, n_state]
+                + jnp.sqrt(cd_dist_forecasted.forecasted_state_covariances[:, n_state, n_state]),
+                color="orange",
+                alpha=0.2,
+                label="Forecasted state uncertainty (1 std)",
+            )
+            plt.xlabel("Forecasted time")
+            plt.ylabel(f"x_{n_state}")
+            plt.grid()
+            plt.legend()
+            plt.title("Forecasted states")
+            plt.show()
+
+        for n_emission in jnp.arange(emission_dim):
+            plt.figure()
+            plt.plot(
+                t_forecast_emissions,
+                cd_point_emissions_forecasted_means[:, n_emission],
+                label="Forecasted emission path (point estimate)",
+                color="black",
+            )
+            plt.plot(
+                t_forecast_emissions,
+                cd_dist_emissions_forecasted_means[:, n_emission],
+                label="Forecasted emission means (distribution)",
+                color="orange",
+                marker="o",
+                markerfacecolor="none",
+                markeredgewidth=2,
+                markersize=8,
+            )
+            plt.fill_between(
+                t_forecast_emissions[:, 0],
+                cd_dist_emissions_forecasted_means[:, n_emission]
+                - jnp.sqrt(
+                    cd_dist_emissions_forecasted_covariances[:, n_emission, n_emission]
+                ),
+                cd_dist_emissions_forecasted_means[:, n_emission]
+                + jnp.sqrt(
+                    cd_dist_emissions_forecasted_covariances[:, n_emission, n_emission]
+                ),
+                color="orange",
+                alpha=0.2,
+                label="Forecasted emission uncertainty (1 std)",
+            )
+            plt.xlabel("Forecasted time")
+            plt.ylabel(f"y_{n_emission}")
+            plt.grid()
+            plt.legend()
+            plt.title("Forecasted emissions")
+            plt.show()
