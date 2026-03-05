@@ -16,6 +16,12 @@ nav:
   - Welcome: index.md
   - Examples:
     - Overview: examples/index.md
+    - CD-LGSSM SGD fit to data: examples/notebooks/cdlgssm_sgd_fit_to_data_tutorial.ipynb
+    - Lorenz63 SGD fit to data: examples/notebooks/lorenz63_sgd_fit_to_data_tutorial.ipynb
+    - Lorenz63 neural drift SGD fit: examples/notebooks/lorenz63_nndrift_sgd_fit_to_data_tutorial.ipynb
+    - Lorenz63 MCMC fit to data: examples/notebooks/lorenz63_mcmc_fit_to_data_tutorial.ipynb
+    - Lorenz63 filtering: examples/notebooks/lorenz63_filtering_tutorial.ipynb
+    - Lorenz63 filter-based likelihood: examples/notebooks/lorenz63_filter_based_likelihood_tutorial.ipynb
   - API Reference: 
     - Overview: api_reference/index.md
     - Base State-Space Model Class : api_reference/src/ssm_temissions.md
