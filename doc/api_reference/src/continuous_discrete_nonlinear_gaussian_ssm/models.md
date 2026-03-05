@@ -1,5 +1,3 @@
-## Models
-
 Continuous-discrete nonlinear Gaussian SSM model definitions.
 
 ::: cd_dynamax.src.continuous_discrete_nonlinear_gaussian_ssm.models

@@ -1,5 +1,3 @@
-## Simulation Utilities
-
 Simulation-related helper functions.
 
 ::: cd_dynamax.src.utils.simulation_utils

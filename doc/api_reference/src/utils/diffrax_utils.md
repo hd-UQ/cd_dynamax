@@ -1,5 +1,3 @@
-## Diffrax Utilities
-
 Diffrax-related helper functions.
 
 ::: cd_dynamax.src.utils.diffrax_utils

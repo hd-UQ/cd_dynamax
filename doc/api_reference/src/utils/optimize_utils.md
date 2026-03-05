@@ -1,5 +1,3 @@
-## Optimization Utilities
-
 Optimization helper functions.
 
 ::: cd_dynamax.src.utils.optimize_utils

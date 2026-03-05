@@ -1,5 +1,3 @@
-## Utilities
-
 Utility classes and functions for continuous-discrete nonlinear Gaussian SSMs.
 
 ::: cd_dynamax.src.continuous_discrete_nonlinear_gaussian_ssm.cdnlgssm_utils

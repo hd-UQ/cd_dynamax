@@ -1,5 +1,3 @@
-## Unscented Kalman Filter
-
 Unscented Kalman filter inference for continuous-discrete nonlinear Gaussian SSMs.
 
 ::: cd_dynamax.src.continuous_discrete_nonlinear_gaussian_ssm.inference_ukf
