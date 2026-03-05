@@ -48,8 +48,8 @@ DEBUG = False  # By default, debugging is off, e.g., no extra checks in lax_scan
 class Prior(ABC):
     r"""cd-dynamax priors: these prior should have
 
-    * :meth:`sample` returns a tensor of samples from this prior
-    * :meth:`log_prob` returns the log_probability of the prior, for a given Parameter set
+    * `sample` returns a tensor of samples from this prior
+    * `log_prob` returns the log probability of the prior, for a given parameter set
     """
 
     # Method definitions
@@ -81,13 +81,13 @@ class Prior(ABC):
 
 class Posterior(Protocol):
     r"""
-    A :class:`NamedTuple` with parameters stored as :class:`jax.DeviceArray` in the leaf nodes."""
+    A `NamedTuple` with parameters stored as `jax.Array` in the leaf nodes."""
 
     pass
 
 
 class SuffStatsSSM(Protocol):
-    r"""A :class:`NamedTuple` with sufficient statics stored as :class:`jax.DeviceArray` in the leaf nodes."""
+    r"""A `NamedTuple` with sufficient statistics stored as `jax.Array` in the leaf nodes."""
 
     pass
 
@@ -104,12 +104,12 @@ class SSM(ABC):
 
     Models that inherit from `SSM` must implement a few key functions and properties:
 
-    * :meth:`initial_distribution` returns the distribution over the initial state given parameters
-    * :meth:`transition_distribution` returns the conditional distribution over the next state given the current state and parameters
-    * :meth:`emission_distribution` returns the conditional distribution over the emission given the current state and parameters
-    * :meth:`log_prior` (optional) returns the log prior probability of the parameters
-    * :attr:`emission_shape` returns a tuple specification of the emission shape
-    * :attr:`inputs_shape` returns a tuple specification of the input shape, or `None` if there are no inputs.
+    * `initial_distribution` returns the distribution over the initial state given parameters
+    * `transition_distribution` returns the conditional distribution over the next state given the current state and parameters
+    * `emission_distribution` returns the conditional distribution over the emission given the current state and parameters
+    * `log_prior` (optional) returns the log prior probability of the parameters
+    * `emission_shape` returns a tuple specification of the emission shape
+    * `inputs_shape` returns a tuple specification of the input shape, or `None` if there are no inputs.
 
     The shape properties are required for properly handling batches of data.
 
@@ -118,16 +118,16 @@ class SSM(ABC):
     Once these have been implemented, subclasses will inherit the ability
     to sample from these models and to compute log joint probabilities from the base class functions:
 
-    * :meth:`sample` draws samples of the states and emissions for given parameters
-    * :meth:`log_prob` computes the log joint probability of the states and emissions for given parameters
+    * `sample` draws samples of the states and emissions for given parameters
+    * `log_prob` computes the log joint probability of the states and emissions for given parameters
 
     **Inference**
 
     Many subclasses of SSMs expose basic functions for performing state inference.
 
-    * :meth:`marginal_log_prob` computes the marginal log probability of the emissions, summing over latent states
-    * :meth:`filter` computes the filtered posteriors
-    * :meth:`smoother` computes the smoothed posteriors
+    * `marginal_log_prob` computes the marginal log probability of the emissions, summing over latent states
+    * `filter` computes the filtered posteriors
+    * `smoother` computes the smoothed posteriors
 
     **Learning**
 
@@ -135,17 +135,17 @@ class SSM(ABC):
 
     The generic SSM class allows to fit the model with the preferred learning algorithm
 
-    For SGD, any subclass that implements :meth:`marginal_log_prob` inherits the base class fitting function
+    For SGD, any subclass that implements `marginal_log_prob` inherits the base class fitting function
 
-    * :meth:`fit_sgd` run SGD to minimize the *negative* marginal log probability.
+    * `fit_sgd` run SGD to minimize the *negative* marginal log probability.
 
-    For black-box optimization, any subclass that implements :meth:`marginal_log_prob` inherits the base class fitting function
+    For black-box optimization, any subclass that implements `marginal_log_prob` inherits the base class fitting function
 
-    * :meth:`fit_scipy` run SciPy-based optimization to minimize the *negative* marginal log probability.
-    * :meth:`fit_scipy_jaxopt` run jaxopt SciPyMinimize optimization to minimize the *negative* marginal log probability.
+    * `fit_scipy` run SciPy-based optimization to minimize the *negative* marginal log probability.
+    * `fit_scipy_jaxopt` run jaxopt SciPyMinimize optimization to minimize the *negative* marginal log probability.
 
-    For MCMC, any subclass that implements :meth:`marginal_log_prob` inherits the base class fitting function
-    * :meth:`fit_mcmc` run BlackJAX HMC to sample from the posterior over parameters given data.
+    For MCMC, any subclass that implements `marginal_log_prob` inherits the base class fitting function
+    * `fit_mcmc` run BlackJAX HMC to sample from the posterior over parameters given data.
 
     """
 

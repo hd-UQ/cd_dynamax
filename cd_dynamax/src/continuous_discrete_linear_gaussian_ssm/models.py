@@ -48,7 +48,7 @@ from ..utils.debug_utils import psd
 
 
 class SuffStatsCDLGSSM(Protocol):
-    """A :class:`NamedTuple` with sufficient statistics for CDLGSSM parameter estimation."""
+    """A `NamedTuple` with sufficient statistics for CDLGSSM parameter estimation."""
 
     pass
 
@@ -91,17 +91,17 @@ class ContDiscreteLinearGaussianSSM(SSM):
     * $D$ = (optional) input-to-emission weight matrix
     * $d$ = (optional) emission bias vector
 
-    The parameters of the model are stored in a :class:`ParamsCDLGSSM`.
-    You can create the parameters manually, or by calling :meth:`initialize`.
+    The parameters of the model are stored in a `ParamsCDLGSSM`.
+    You can create the parameters manually, or by calling `initialize`.
 
-    :param state_dim: Dimensionality of latent state.
-    :param emission_dim: Dimensionality of observation vector.
-    :param input_dim: Dimensionality of input vector. Defaults to 0.
-    :param has_dynamics_bias: Whether model contains an offset term $b$. Defaults to True.
-    :param has_emissions_bias:  Whether model contains an offset term $d$. Defaults to True.
-    :param diffeqsolve_settings: settings to pass to the differential equation solver when computing the
-        pushforward of the continuous-time dynamics. Defaults to {}.
-
+    Args:
+        state_dim: Dimensionality of latent state.
+        emission_dim: Dimensionality of observation vector.
+        input_dim: Dimensionality of input vector. Defaults to 0.
+        has_dynamics_bias: Whether model contains an offset term $b$. Defaults to True.
+        has_emissions_bias: Whether model contains an offset term $d$. Defaults to True.
+        diffeqsolve_settings: Settings to pass to the differential equation solver when
+            computing the pushforward of the continuous-time dynamics. Defaults to {}.
     """
 
     # Default constructor
@@ -375,14 +375,14 @@ class ContDiscreteLinearGaussianSSM(SSM):
         r"""Sample from the prior distribution over CD-LGSSM model parameters.
 
         Args:
-            :param prior: prior distribution
-            :param M: number of samples to draw
-            :param init_params: dictionary of parameters to use as initialization
-                if not provided, default parameters are used
-            :param key: random number generator
+            prior: Prior distribution.
+            M: Number of samples to draw.
+            init_params: Dictionary of parameters to use as initialization; if not
+                provided, default parameters are used.
+            key: Random number generator key.
 
         Returns:
-            :return: Tuple with sampled CD-LGSSM parameters and properties objects
+            Tuple of sampled CD-LGSSM parameters and properties objects.
         """
         if init_params is None:
             # Initialize with default parameters

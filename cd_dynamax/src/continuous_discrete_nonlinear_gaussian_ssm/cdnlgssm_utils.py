@@ -204,11 +204,11 @@ class ParamsCDNLGSSMDynamics(NamedTuple):
             (note there are cases where that is indeed the case)
         we here approximate the solution at each time step with a Gaussian distribution.
 
-    :param drift_function: $f$
-    :param diffusion_coefficient: $L_t$
-    :param diffusion_cov: $Q$
-    :param dynamics_approx: 'zeroth', 'first' or 'second'
-
+    Args:
+        drift_function: Drift $f$.
+        diffusion_coefficient: Diffusion coefficient $L_t$.
+        diffusion_cov: Diffusion covariance $Q$.
+        dynamics_approx: One of 'zeroth', 'first', or 'second'.
     """
 
     # CD-NLGSSM dynamics are all defined in terms of learnable functions to be initialized
@@ -232,9 +232,9 @@ class ParamsCDNLGSSMEmissions(NamedTuple):
         $p(y_k | z_k) = N(y_k | h(z_k), R)$
     where h is the emission function and R the observation noise covariance.
 
-    :param emission_function: emission function h
-    :param emission_cov: observation noise covariance R
-
+    Args:
+        emission_function: Emission function h.
+        emission_cov: Observation noise covariance R.
     """
 
     # These are all learnable functions to be initialized
@@ -246,10 +246,10 @@ class ParamsCDNLGSSMEmissions(NamedTuple):
 class ParamsCDNLGSSM(NamedTuple):
     r"""Parameters of a nonlinear Gaussian CD-NLGSSM.
 
-    :param initial: initial distribution parameters, same as in LGSSM
-    :param dynamics: dynamics distribution parameters
-    :param emissions: emission distribution parameters, same as in LGSSM
-
+    Args:
+        initial: Initial distribution parameters, same as in LGSSM.
+        dynamics: Dynamics distribution parameters.
+        emissions: Emission distribution parameters, same as in LGSSM.
     """
 
     initial: ParamsLGSSMInitial
@@ -261,13 +261,13 @@ class ParamsCDNLGSSM(NamedTuple):
 def create_cdnlgssm_params_and_props(
     params: dict,
 ) -> Tuple[ParamsCDNLGSSM, ParameterProperties]:
-    r"""Create CD-NLGSSM parameters and properties, based on provided dictionaries
+    r"""Create CD-NLGSSM parameters and properties, based on provided dictionaries.
 
     Args:
-        :param params: dictionary of parameters
+        params: Dictionary of parameters.
 
     Returns:
-        :return: Tuple of parameters and properties objects
+        Tuple of parameters and properties objects.
     """
     ## Create nested dictionary of params
     params_and_props = {"params": {}, "props": {}}
@@ -301,17 +301,16 @@ def init_cdnlgssm_params(
     init_prior=None,
     key=jr.PRNGKey(0),
 ) -> Tuple[ParamsCDNLGSSM, ParamsCDNLGSSM]:
-    r"""Initialize CD-NLGSSM parameters and properties,
-        based on the provided prior, init_values or defaults
+    r"""Initialize CD-NLGSSM parameters and properties from prior, init_values, or defaults.
 
     Args:
-        :param default_params: dictionary of default parameters: we at least need some default values
-        :param init_params: dictionary of all parameters
-        :param init_prior: prior distribution for the initialization. Defaults to None.
-        :param key: random key for sampling. Defaults to jr.PRNGKey(0).
+        default_params: Dictionary of default parameters; at least some default values are required.
+        init_params: Dictionary of all parameters.
+        init_prior: Prior distribution for the initialization. Defaults to None.
+        key: Random key for sampling. Defaults to jr.PRNGKey(0).
 
     Returns:
-        :return: Tuple of CD-NLGSSM parameters and properties objects
+        Tuple of CD-NLGSSM parameters and properties objects.
     """
     # First, make sure we have all the necessary default parameters
     params = default_params
@@ -364,17 +363,16 @@ def sample_cdnlgssm_params(
     init_params,
     key=jr.PRNGKey(0),
 ) -> Tuple[ParamsCDNLGSSM, ParamsCDNLGSSM]:
-    r"""Sample CD-NLGSSM parameters from the provided prior,
-        with init_params used for non-sampled parameters
+    r"""Sample CD-NLGSSM parameters from the provided prior; init_params used for non-sampled parameters.
 
     Args:
-        :param prior: prior distribution for the initialization.
-        :param M: number of samples to draw
-        :param init_params: dictionary of all parameters
-        :param key: random key for sampling from the prior. Defaults to jr.PRNGKey(0).
+        prior: Prior distribution for the initialization.
+        M: Number of samples to draw.
+        init_params: Dictionary of all parameters.
+        key: Random key for sampling from the prior. Defaults to jr.PRNGKey(0).
 
     Returns:
-        :return: Tuple of CD-NLGSSM parameters and properties
+        Tuple of CD-NLGSSM parameters and properties objects.
     """
 
     # First, make sure we have all the necessary parameters

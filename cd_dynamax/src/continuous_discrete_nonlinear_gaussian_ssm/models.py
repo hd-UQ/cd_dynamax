@@ -191,7 +191,7 @@ class ContDiscreteNonlinearGaussianSSM(SSM):
     * $h$ = emission (observation) function
     * $R$ = covariance matrix for emission (observation) noise
 
-    These parameters of the model are stored in a separate object of type :class:`ParamsCDNLGSSM`.
+    These parameters of the model are stored in a separate object of type `ParamsCDNLGSSM`.
     """
 
     # Default constructor
@@ -462,14 +462,14 @@ class ContDiscreteNonlinearGaussianSSM(SSM):
         r"""Sample from the prior distribution over CD-NLGSSM model parameters.
 
         Args:
-            :param prior: prior distribution
-            :param M: number of samples to draw
-            :param init_params: dictionary of parameters to use as initialization
-                if not provided, default parameters are used
-            :param key: random number generator
+            prior: Prior distribution.
+            M: Number of samples to draw.
+            init_params: Dictionary of parameters to use as initialization; if not
+                provided, default parameters are used.
+            key: Random number generator key.
 
         Returns:
-            :return: Tuple with sampled CD-NLGSSM parameters and properties objects
+            Tuple of sampled CD-NLGSSM parameters and properties objects.
         """
         if init_params is None:
             # Initialize with default parameters
