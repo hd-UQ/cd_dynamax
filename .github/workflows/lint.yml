@@ -30,3 +30,6 @@ jobs:
 
       - name: Ruff check
         run: make lint
+      
+      - name: Mkdocs build
+        run: make build_docs

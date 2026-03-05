@@ -19,10 +19,12 @@ from cd_dynamax.src.continuous_discrete_linear_gaussian_ssm.inference import (
 # Whether to plot test results or not - can be helpful for debugging but should be False for regular test runs
 PLOT_TEST_RESULTS = False
 
+
 # Use a fixed random seed for reproducibility in tests
 @pytest.fixture
 def rng_keys():
     return jr.split(jr.PRNGKey(0))
+
 
 # Testing smoother behavior under regular time intervals.
 # First, establish equivalent linear systems in discrete and continuous time.
@@ -152,7 +154,6 @@ def test_cdlgssm_smoother_tregular(rng_keys):
     print("\tChecking emissions...")
     compare(d_emissions, cd_emissions)
 
-
     # We set dt_final=1 so that predicted mean and covariance at the end of the sequence
     # match those of discrete filtering.
     kf_hyperparams = KFHyperParams(dt_final=1.0)
@@ -170,7 +171,9 @@ def test_cdlgssm_smoother_tregular(rng_keys):
         )
 
         print(f"Comparing {smoother_type} smoothed posteriors...")
-        compare_structs(d_smoother_posterior, cd_smoother_posterior, accept_failure=True)
+        compare_structs(
+            d_smoother_posterior, cd_smoother_posterior, accept_failure=True
+        )
 
         print(
             f"All Discrete to Continuous-Discrete {smoother_type} smoothed posterior tests passed!"

@@ -22,10 +22,12 @@ from tensorflow_probability.substrates.jax.distributions import (
 # Whether to plot test results or not - can be helpful for debugging but should be False for regular test runs
 PLOT_TEST_RESULTS = False
 
+
 # Use a fixed random seed for reproducibility in tests
 @pytest.fixture
 def rng_keys():
     return jr.split(jr.PRNGKey(0))
+
 
 # Testing the filter and forecast functions together in a single test
 # to check whether continuous-discrete model can recover discrete model (dynamax)
@@ -165,7 +167,7 @@ def test_cdlgssm_filter_and_forecast_tregular(rng_keys):
     )
 
     # Compare the SGD-fitted parameters and log-likelihoods between the discrete and continuous-discrete models.
-    # We use accept_failure=True since we don't necessarily expect exact matches 
+    # We use accept_failure=True since we don't necessarily expect exact matches
     compare(cd_sgd_lps, d_sgd_lps)
     compare_structs(d_sgd_fitted_params, cd_sgd_fitted_params, accept_failure=True)
 
@@ -179,7 +181,7 @@ def test_cdlgssm_filter_and_forecast_tregular(rng_keys):
     )
 
     # Compare the post-SGD fitted filtered posterior from the continuous-discrete model to the discrete model's post-SGD fitted filtered posterior.
-    ## We use accept_failure=True since we don't necessarily expect exact matches 
+    ## We use accept_failure=True since we don't necessarily expect exact matches
     compare_structs(
         d_sgd_fitted_filtered_posterior,
         cd_sgd_fitted_filtered_posterior,
@@ -313,9 +315,13 @@ def test_cdlgssm_filter_and_forecast_tregular(rng_keys):
             plt.fill_between(
                 t_forecast_emissions[:, 0],
                 cd_dist_forecasted.forecasted_state_means[:, n_state]
-                - jnp.sqrt(cd_dist_forecasted.forecasted_state_covariances[:, n_state, n_state]),
+                - jnp.sqrt(
+                    cd_dist_forecasted.forecasted_state_covariances[:, n_state, n_state]
+                ),
                 cd_dist_forecasted.forecasted_state_means[:, n_state]
-                + jnp.sqrt(cd_dist_forecasted.forecasted_state_covariances[:, n_state, n_state]),
+                + jnp.sqrt(
+                    cd_dist_forecasted.forecasted_state_covariances[:, n_state, n_state]
+                ),
                 color="orange",
                 alpha=0.2,
                 label="Forecasted state uncertainty (1 std)",
