@@ -115,9 +115,14 @@ make test
 make lint
 ```
 
-- We can also clean up build artifacts and temporary files:
+- We can also format files using `ruff`:
 ```bashbash
 make clean
+```
+
+- The docs can be built using `mkdocs` as:
+```bashbash
+make build_docs
 ```
 
 # Installation
