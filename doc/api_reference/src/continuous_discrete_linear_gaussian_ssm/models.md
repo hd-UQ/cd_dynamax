@@ -1,5 +1,3 @@
-## Models
-
 Continuous-discrete linear Gaussian SSM model definitions.
 
 ::: cd_dynamax.src.continuous_discrete_linear_gaussian_ssm.models

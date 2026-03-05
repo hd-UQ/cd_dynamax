@@ -61,11 +61,14 @@ class ContDiscreteLinearGaussianSSM(SSM):
     The CD-LGSSM model is defined in the following way, according to equation (3.134) in Sarkka (2019):
 
     $$p(z_0) = \mathcal{N}(z_0 \mid m, S)$$
-    $$dz = F_t z_t dt + B_t u_t dt + b_t dt + L_t d\beta_t$$
-        with $\beta_t$ a standard Brownian motion, implying
 
-        $$p(z_{t_k} \mid z_{t_{k-1}}, u_t) = \mathcal{N}(z_{t_k} \mid A_{t_k} z_{t_{k-1}} + B_{t_k} u_{t_k} + b_{t_k}, Q_{t_k})$$
-            where $A_{t_k}$ and $Q_{t_k}$ are computed as the solution to the SDE above over the interval $[t_{t_{k-1}}, t_{t_k}]$,
+    $$dz = F_t z_t dt + B_t u_t dt + b_t dt + L_t d\beta_t$$
+
+    with $\beta_t$ a standard Brownian motion, implying
+
+    $$p(z_{t_k} \mid z_{t_{k-1}}, u_t) = \mathcal{N}(z_{t_k} \mid A_{t_k} z_{t_{k-1}} + B_{t_k} u_{t_k} + b_{t_k}, Q_{t_k})$$
+
+    where $A_{t_k}$ and $Q_{t_k}$ are computed as the solution to the SDE above over the interval $[t_{t_{k-1}}, t_{t_k}]$,
     and emissions defined as
 
     $$p(y_{t_k} \mid z_{t_k}) = \mathcal{N}(y_{t_k} \mid H_{t_k} z_{t_k} + D_{t_k} u_{t_k} + d_{t_k}, R_{t_k})$$

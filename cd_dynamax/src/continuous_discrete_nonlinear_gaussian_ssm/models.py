@@ -164,16 +164,19 @@ def compute_pushforward(
 
 # CD-NLGSSM model definition
 class ContDiscreteNonlinearGaussianSSM(SSM):
-    """
+    r"""
     Definition of a Continuous-Discrete Nonlinear Gaussian State Space Model.
 
     We assume a model of the form
-    $$ dz=f(z,u_t,t)dt  $$
-    $$ dP=L(t) Q_c L(t) $$ or $$ dP = F_t @ P + P @ F.T + L(t) Q_c_t @ L_t.T $$
 
-    The resulting transition and emission distributions are
+    $$ dz=f(z,u_t,t)dt + L(t) Q^{1/2}_c dW_t$$
+
+    We assume an initial state distribution of the form
+
     $$p(z_0) = N(z_0 | m, S)$$
-    $$p(z_{t_k} | z_{t_{k-1}}, u_t) = N(z_{t_k} | z_{t_{k-1}}, P_{t_k})$$
+
+    and observations are obtained by
+
     $$p(y_{t_k} | z_{t_k}) = N(y_{t_k} | h(z_{t_k}, u_{t_k}), R_{t_k})$$
 
     where the model parameters are
@@ -183,6 +186,7 @@ class ContDiscreteNonlinearGaussianSSM(SSM):
     * $S$ = covariance matrix of initial state
 
     * $f$ = dynamics deterministic function (RHS), used to compute transition function
+    * $F$ = the Jacobian of the dynamics function evaluated at the mean
     * $L$ = dynamics coefficient multiplying brownian motion
     * $Q$ = dynamics brownian motion's covariance (system) noise
     * $u_t$ = input covariates of size `input_dim` (defaults to 0).
