@@ -11,7 +11,6 @@ from .models import(
 from .inference_dpf import (
     DPFHyperParams,
     diff_particle_filter,
-    dpf_moments
 )
 
 __all__ = [
