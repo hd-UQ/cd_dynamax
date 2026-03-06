@@ -18,7 +18,6 @@ from cd_dynamax.dynamax.parameters import ParameterProperties, ParameterSet
 from ..continuous_discrete_nonlinear_gaussian_ssm.cdnlgssm_utils import (
     _get_params,
     LearnableFunction,
-    LearnableVector,
     LearnableMatrix,
     ParamsCDNLGSSMDynamics,
 )

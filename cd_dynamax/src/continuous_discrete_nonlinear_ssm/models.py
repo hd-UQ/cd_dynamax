@@ -25,7 +25,6 @@ from .inference_dpf import DPFHyperParams, build_dpf_hyperparams, diff_particle_
 # CDNLSSM pushforward, which currently just calls the CDNLGSSM pushforward
 # as only Brownian motion-driven SDEs are supported
 from ..continuous_discrete_nonlinear_gaussian_ssm.models import (
-    cdnlgssm_filter,
     compute_pushforward as compute_pushforward_cdnlgssm,
 )
 # Learnable distributions and several utilities
