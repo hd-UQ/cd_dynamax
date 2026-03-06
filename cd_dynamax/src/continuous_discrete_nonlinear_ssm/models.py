@@ -385,7 +385,7 @@ class ContDiscreteNonlinearSSM(SSM):
             )
 
             return state, (state, emission)
-
+        
         _, (next_states, next_emissions) = lax.scan(
             _step,
             init_state,
