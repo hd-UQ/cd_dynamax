@@ -1,6 +1,7 @@
 # This file contains utility functions for simulation of cd dynamax models
 
 # Imports
+from cd_dynamax.src.continuous_discrete_nonlinear_ssm.cdnlssm_utils import ParamsCDNLSSM
 import jax.numpy as jnp
 import jax.random as jr
 
@@ -28,6 +29,11 @@ from cd_dynamax.src.continuous_discrete_nonlinear_gaussian_ssm import (
     cdnlgssm_filter,
     cdnlgssm_forecast,
     ParamsCDNLGSSM,
+)
+
+from cd_dynamax.src.continuous_discrete_nonlinear_ssm import (
+    diff_particle_filter,
+    ParamsCDNLSSM
 )
 
 
@@ -138,11 +144,14 @@ def filter_and_forecast(
         extra_args_filter = {}
         extra_args_forecast = {}
     elif isinstance(model_params, ParamsCDNLGSSM):
-        # Nonlinear case
+        # Nonlinear Gaussian case
         filtering_function = cdnlgssm_filter
         forecasting_function = cdnlgssm_forecast
         extra_args_filter = {"key": next(keys)}
         extra_args_forecast = {"key": next(keys)}
+    elif isinstance(model_params, ParamsCDNLSSM):
+        # Nonlinear case
+        raise NotImplementedError("Filtering and forecasting not yet implemented for CDNLSSM.")
 
     # Run filter on filtering time points
     filtered = filtering_function(

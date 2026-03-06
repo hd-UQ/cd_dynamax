@@ -27,11 +27,15 @@ from .inference_dpf import DPFHyperParams, build_dpf_hyperparams, diff_particle_
 from ..continuous_discrete_nonlinear_gaussian_ssm.models import (
     compute_pushforward as compute_pushforward_cdnlgssm,
 )
+
+# Imports from cdnlgssm, including learnable functions and parameters
+from ..continuous_discrete_nonlinear_gaussian_ssm.cdnlgssm_utils import (
+    LearnableVector,
+    LearnableMatrix,
+)
 # Learnable distributions and several utilities
 from .cdnlssm_utils import (
     ParamsCDNLSSM,
-    LearnableVector,
-    LearnableMatrix,
     LearnableGaussianEmission,
     init_cdnlssm_params,
     sample_cdnlssm_params,

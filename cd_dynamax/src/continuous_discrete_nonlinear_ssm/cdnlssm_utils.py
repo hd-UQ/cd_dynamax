@@ -13,7 +13,6 @@ import abc
 # Imports from dynamax
 from cd_dynamax.dynamax.parameters import ParameterProperties, ParameterSet
 
-
 # Imports from cdnlgssm, including learnable functions and parameters, to avoid redefining them here (as the dynamics are the same, just with different distributions)
 from ..continuous_discrete_nonlinear_gaussian_ssm.cdnlgssm_utils import (
     _get_params,
@@ -48,8 +47,8 @@ class LearnableDistribution(NamedTuple):
 
 # Multivariate normal distribution with learnable mean and covariance
 class StaticGaussianDistribution(NamedTuple):
-    mean: Union[Float[Array, "dim"], ParameterProperties]
-    cov: Union[Float[Array, "dim dim"], ParameterProperties]
+    mean: Union[Float[Array, " dim"], ParameterProperties]
+    cov: Union[Float[Array, " dim dim"], ParameterProperties]
 
     def log_prob(self, y):
         return MVN(self.mean, self.cov).log_prob(y)
@@ -84,7 +83,7 @@ class LearnablePoissonEmission(NamedTuple):
     """
     # Learnable parameters
     dt: Union[Float[Array, "1"], ParameterProperties]
-    bias: Union[Float[Array, "dim"], ParameterProperties]
+    bias: Union[Float[Array, " dim"], ParameterProperties]
     
     def log_prob(self, y, x=None, u=None, t=None):
         log_rate = x[..., 0] + self.bias + jnp.log(self.dt)
