@@ -1,0 +1,14 @@
+[DPF]
+dt_final: 1e-4
+N_particles: 500
+proposal_method: bootstrap
+resample_method: stop_gradient
+state_order: first
+cov_rescaling: 1.0
+diffeqsolve_settings_file: solver/dt1e-2_maxSteps1e5
+
+[filter_info]
+name=DPF (Bootstrap with stop-gradient resampling)
+# Plotting styles
+filtered_style = {'color': '#ff0ecf', 'linestyle': '-', 'linewidth': 1.5, 'alpha': 0.7}
+forecasted_style = {'color': '#ff0ecf', 'linestyle': '--', 'linewidth': 1.5, 'alpha': 0.7}

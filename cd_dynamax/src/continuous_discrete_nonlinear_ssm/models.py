@@ -2,6 +2,7 @@
 import jax.numpy as jnp
 import jax.random as jr
 from jax import vmap, lax
+from jax.tree_util import tree_map
 
 # Type annotations
 from jaxtyping import Array, Float, PRNGKeyArray
@@ -21,7 +22,12 @@ from cd_dynamax.dynamax.utils.bijectors import RealToPSDBijector
 from ..ssm_temissions import SSM, Prior
 
 # CDNLSSM filtering
-from .inference_dpf import DPFHyperParams, build_dpf_hyperparams, diff_particle_filter
+from .inference_dpf import (
+    DPFHyperParams,
+    build_dpf_hyperparams,
+    diff_particle_filter,
+    dpf_moments
+)
 # CDNLSSM pushforward, which currently just calls the CDNLGSSM pushforward
 # as only Brownian motion-driven SDEs are supported
 from ..continuous_discrete_nonlinear_gaussian_ssm.models import (
@@ -43,6 +49,13 @@ from .cdnlssm_utils import (
 
 # Diffrax based diff-eq solver
 from ..utils.diffrax_utils import diffeqsolve
+
+# Debugging utilities
+from ..utils.debug_utils import lax_scan
+DEBUG = False  # By default, debugging is off, e.g., no extra checks in lax_scan
+
+# Auxiliary function to process inputs ---from dynamax
+_process_input = lambda x, y: jnp.zeros((y, 1)) if x is None else x
 
 # CD-NLSSM push-forward: compute the pushforward of particles through the CD-NLSSM dynamics.
 def compute_pushforward(
@@ -206,7 +219,7 @@ class ContDiscreteNonlinearSSM(SSM):
             dynamics_approx_order: Dynamics approximation order.
             emission_distribution: Emission distribution.
 
-        Returns:
+        rns:
             Tuple[ParamsCDNLSSM, ParamsCDNLSSM]: Parameters and their properties.
         """
         params_values, params_props = init_cdnlssm_params(
@@ -626,13 +639,7 @@ def cdnlssm_filter(
     weights = jnp.exp(log_weights)
     weights = weights / jnp.sum(weights, axis=1, keepdims=True)
 
-    def _moment(p, w):
-        mean = jnp.sum(w[:, None] * p, axis=0)
-        centered = p - mean
-        cov = jnp.einsum("n,ni,nj->ij", w, centered, centered)
-        return mean, cov
-
-    filtered_means, filtered_covariances = vmap(_moment)(particles, weights)
+    filtered_means, filtered_covariances = vmap(dpf_moments)(particles, weights)
 
     return PosteriorCDNLSSMFiltered(
         filtered_means=filtered_means,
@@ -641,3 +648,183 @@ def cdnlssm_filter(
         log_weights=log_weights,
         marginal_loglik=log_evidence,
     )
+
+# CDNLSSM forecasting function
+def cdnlssm_forecast(
+    params: ParamsCDNLSSM,
+    init_forecast: Float[Array, "state_dim M"],
+    t_init: Float[Array, "1 1"],
+    t_forecast: Optional[Float[Array, "num_timesteps 1"]] = None,
+    filter_hyperparams: Optional[DPFHyperParams] = DPFHyperParams(),
+    inputs: Optional[Float[Array, "ntime input_dim"]] = None,
+    key: PRNGKey = jr.PRNGKey(0),
+    diffeqsolve_settings: dict = {},
+    warn: bool = True,
+) -> Float[Array, "num_timesteps state_dim M"]:
+    """ Run an continuous-discrete nonlinear model
+        to produce the forecasted state estimates.
+
+        It supports two modes of forecasting:
+        1) Forecasting through nonlinear distributions, based on DPF: in this case, the initial condition of the forecast is a distribution (e.g., the filtering distribution at the last observation), and we forecast the evolution of such distribution based on DPF with no resampling.
+        2) Forecasting paths, based on solving the SDE: in this case, the initial condition of the forecast is a point estimate of state, and we
+
+    Args:
+        params: CD-NLSSM parameters.
+        init_forecast: initial condition to start forecasting with, which we push forward starting at that state
+        t_init: time-instant of the initial condition of forecast
+        t_forecast: continuous-time specific time instants of observations: if not None, it is an array
+        filter_hyperparams: hyper-parameters of the filter
+        inputs: optional array of inputs, of shape (1 + num_timesteps) \times input_dim
+            - The extra input is needed for the initial emission, i.e., it should be at time t_init
+        key: random key (e.g., for sampling).
+        diffeqsolve_settings: settings for the SDE solver
+        warn: whether to issue warnings during forecasting (e.g., PSD issues).
+
+    Returns:
+        post: forecasted states over time of shape num_timesteps state_dim M.
+
+    """
+
+    # Point-estimate forecasting, based on pushing forward the initial condition through the model dynamics, via numerical SDE solving
+    def _cdnlssm_forecast(this_init_forecast)-> Float[Array, "num_timesteps state_dim"]:
+        # Forecasting point estimates, based on pushing forward the model
+
+        # Figure out timestamps, as vectors to scan over
+        # t_forecast is of shape num_timesteps \times 1
+        # t0 and t1 are num_timesteps \times 0
+        if t_forecast is not None:
+            num_timesteps = t_forecast.shape[0]
+            t0 = tree_map(
+                lambda x: jnp.concatenate((t_init, t_forecast[:-1, 0])),
+                t_forecast,
+            )
+            t1 = tree_map(lambda x: x[:, 0], t_forecast)
+        else:
+            raise ValueError("t_forecast must be provided for forecasting")
+
+        # Set-up indexing and inputs
+        t0_idx = jnp.arange(num_timesteps)
+        # Avoid shadowing the outer-scope `inputs` captured by this closure.
+        forecast_inputs = _process_input(inputs, num_timesteps + 1)
+
+        # Define the function to scan over
+        def _step(prev_state, args):
+            # Unpack arguments
+            key, t0, t1, t0_idx = args
+
+            # Define the drift and diffusion functions
+            def drift(t, y, args):
+                return params.dynamics.drift.f(y, forecast_inputs[t0_idx], t)
+
+            def diffusion(t, y, args):
+                Qc_t = params.dynamics.diffusion_cov.f(None, forecast_inputs[t0_idx], t)
+                Q_sqrt = jnp.linalg.cholesky(Qc_t)
+                L_t = params.dynamics.diffusion_coefficient.f(None, forecast_inputs[t0_idx], t)
+                combined_diffusion = L_t @ Q_sqrt
+                return combined_diffusion
+
+            # Solve the SDE numerically, from t0 to t1
+            state = diffeqsolve(
+                key=key,
+                drift=drift,
+                diffusion=diffusion,
+                t0=t0,
+                t1=t1,
+                y0=prev_state,
+                **diffeqsolve_settings,
+            )[0]
+
+            # Return the state
+            return state, (state)
+
+        # Split keys for each time step
+        next_keys = jr.split(key, num_timesteps)
+
+        # Forecast states over time, via scan
+        _, (next_states) = lax_scan(
+            _step, this_init_forecast, (next_keys, t0, t1, t0_idx), debug=DEBUG
+        )  # type: ignore
+
+        # Return the forecasted object
+        return next_states
+    
+    # Vmap or not, depending on whether we have multiple particles in the initial condition of the forecast
+    if init_forecast.ndim == 1:
+        return _cdnlssm_forecast(init_forecast)
+    else:
+        # vmap over the initial conditions of the forecast, to produce a forecast for each particle in the initial condition
+        # input axis is 0, as init_forecast is of shape M \times state_dim,
+        # and output axis is 1, as we want to keep the particle axis in the output, so we get num_timesteps \times M \times state_dim
+        return vmap(_cdnlssm_forecast, in_axes=0, out_axes=1)(init_forecast)
+
+# CDNLSSM emissions function
+def cdnlssm_emissions(
+    params: ParamsCDNLSSM,
+    t_states: Float[Array, "num_timesteps 1"],
+    states: Float[Array, "num_timesteps state_dim M"],
+    inputs: Optional[Float[Array, "num_timesteps input_dim"]] = None,
+    filter_hyperparams: Optional[DPFHyperParams] = DPFHyperParams(),
+    key: PRNGKey = jr.PRNGKey(0),
+) -> Float[Array, "num_timesteps emission_dim M"]:
+    r"""Compute the emissions corresponding to
+        - a continuous-discrete nonlinear model, as specified by params
+
+    Args:
+        params: model parameters.
+        t_states: continuous-time specific time instants of states
+        states: states at time instants t_states, always required
+            it may handle multiple particles, in which case states is of shape num_timesteps \times state_dim \times M
+        inputs: optional array of inputs, of shape (1 + num_timesteps) \times input_dim
+            - The extra input is needed for the initial emission, i.e., it should be at time t_init
+        filter_hyperparams: hyper-parameters of the filter, optional, actually ignored
+        key: random key for sampling
+
+    Returns:
+        emissions: emissions at time instants t_states, of shape num_timesteps \times emission_dim \times M
+    """
+
+    # Point-estimate emissions
+    def _cdnlssm_emissions(this_states)-> Float[Array, "num_timesteps state_dim"]:
+        # Emissions, based on pushing the state through the model emission function
+
+        # Figure out timestamps, as vectors to scan over
+        # t_states is of shape num_timesteps \times 1
+        # t0 and t1 are num_timesteps \times 0
+        if t_states is not None:
+            num_timesteps = t_states.shape[0]
+            t0 = tree_map(lambda x: x[:, 0], t_states)
+        else:
+            raise ValueError("t_states must be provided for forecasting")
+
+        # Set-up indexing and inputs
+        t0_idx = jnp.arange(num_timesteps)
+        emission_inputs = _process_input(inputs, num_timesteps)
+        key_emissions = jr.split(key, num_timesteps)
+
+        # Define the function to scan over
+        def _step(state, args):
+            # Unpack arguments
+            this_state, this_input, t0, t0_idx, this_key = args
+
+            # Push the state through the emission distribution to get observation samples
+            emissions  = params.emissions.emission_distribution.sample(
+                x=this_state, u=this_input, t=t0, seed=this_key
+            )
+            
+            # Return the state and the emissions'
+            return this_state, (emissions)
+
+        # Compute emissions, over time, via scan
+        _, (emissions) = lax_scan(
+            _step, this_states[0], (this_states, emission_inputs, t0, t0_idx, key_emissions), debug=DEBUG
+        )  # type: ignore
+
+        # Return the emissions
+        return emissions
+
+    # vmap over particles, if we have multiple particles in the states
+    if states.ndim == 3:
+        # States is of shape num_timesteps \times M \times state_dim, so we vmap over axis 1 (particles)
+        return vmap(_cdnlssm_emissions, in_axes=1, out_axes=1)(states)
+    else:
+        return _cdnlssm_emissions(states)

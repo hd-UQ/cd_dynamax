@@ -16,7 +16,12 @@ from .cdnlssm_utils import ParamsCDNLSSM
 from ..utils.diffrax_utils import diffeqsolve
 
 #### CD-NLSSM filtering: Differentiable Particle Filter (DPF)
-
+# compute mean and covariance of DPF particles and weights
+def dpf_moments(p, w):
+    mean = jnp.sum(w[:, None] * p, axis=0)
+    centered = p - mean
+    cov = jnp.einsum("n,ni,nj->ij", w, centered, centered)
+    return mean, cov
 
 # Default DPF filtering hyperparameters, as clas
 class DPFHyperParams(NamedTuple):

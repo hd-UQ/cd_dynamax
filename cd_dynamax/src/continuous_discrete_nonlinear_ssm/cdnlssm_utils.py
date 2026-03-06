@@ -91,8 +91,6 @@ class LearnablePoissonEmission(NamedTuple):
         return y0 * log_rate - jnp.exp(log_rate) - gammaln(y0 + 1.0)
 
     def sample(self, x=None, u=None, t=None, *args, **kwargs):
-        #log_rate = x[..., 0] + self.bias + jnp.log(self.dt)
-        # iurteaga: why do we need to take x[..., 0] here?
         log_rate = x + self.bias + jnp.log(self.dt)
         return tfd.Poisson(log_rate=log_rate).sample(*args, **kwargs)
     

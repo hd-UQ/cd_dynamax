@@ -23,10 +23,14 @@ from .simulation_utils import *  # noqa: F403, F405
 from .physics_based_models import *  # noqa: F403, F405
 from .data_driven_models import *  # noqa: F403, F405
 
-from cd_dynamax.src.continuous_discrete_nonlinear_gaussian_ssm.cdnlgssm_utils import *  # noqa: F403
+# Import the models and utils from the continuous-discrete nonlinear SSM codebase, which may be needed for creating the model or filter from config files
+from cd_dynamax.src.continuous_discrete_linear_gaussian_ssm.models import *  # noqa: F403
 from cd_dynamax.src.continuous_discrete_nonlinear_gaussian_ssm.models import *  # noqa: F403
 from cd_dynamax.src.continuous_discrete_nonlinear_ssm.models import *  # noqa: F403
-from cd_dynamax.src.continuous_discrete_linear_gaussian_ssm.models import *  # noqa: F403
+from cd_dynamax.src.continuous_discrete_linear_gaussian_ssm.cdlgssm_utils import *  # noqa: F403
+from cd_dynamax.src.continuous_discrete_nonlinear_gaussian_ssm.cdnlgssm_utils import *  # noqa: F403
+from cd_dynamax.src.continuous_discrete_nonlinear_ssm.cdnlssm_utils import *  # noqa: F403
+
 from cd_dynamax.dynamax.utils.bijectors import *  # noqa: F403
 import diffrax as dfx  # noqa: F401
 import optax  # noqa: F401
@@ -178,12 +182,12 @@ def create_cddynamax_model_from_config(
     true_model_config_file: str = None,
     overrides=None,
 ) -> Tuple[
-    Union[ContDiscreteLinearGaussianSSM, ContDiscreteNonlinearGaussianSSM],
-    Union[ParamsCDLGSSM, ParamsCDNLGSSM],
+    Union[ContDiscreteLinearGaussianSSM, ContDiscreteNonlinearGaussianSSM, ContDiscreteNonlinearSSM],
+    Union[ParamsCDLGSSM, ParamsCDNLGSSM, ParamsCDNLSSM],
     ParameterProperties,
-]:  # Either CD-LGSSM or CD-NLGSSM
+]:  # Either CD-LGSSM or CD-NLGSSM or CD-NLSSM
     r"""Create a cd-dynamax model from configuration files
-        The model can be either CD-LGSSM or CD-NLGSSM, depending on the class_name specified in the config file.
+        The model can be either CD-LGSSM or CD-NLGSSM or CD-NLSSM, depending on the class_name specified in the config file.
 
     Args:
         :param config_path: path to the configuration directory
@@ -191,7 +195,7 @@ def create_cddynamax_model_from_config(
         :param overrides: dictionary of overrides to apply to the configuration file
 
     Returns:
-        :return: Tuple of CD-LGSSM or CD-NLGSSM model, its parameters and properties
+        :return: Tuple of CD-LGSSM or CD-NLGSSM or CD-NLSSM model, its parameters and properties
     """
 
     # Full path to the config file
@@ -209,7 +213,7 @@ def create_cddynamax_model_from_config(
 
     # The model section contains
     cddynamax_model_class_name = config.get("model", "class_name")
-    if cddynamax_model_class_name not in ["CDLGSSM", "CDNLGSSM"]:
+    if cddynamax_model_class_name not in ["CDLGSSM", "CDNLGSSM", "CDNLSSM"]:
         raise ValueError(f"Unknown model class name: {cddynamax_model_class_name}")
 
     # Apply overrides if provided.
