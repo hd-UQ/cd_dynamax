@@ -1,5 +1,5 @@
 from .cdnlssm_utils import ParamsCDNLSSM
-from .cdnlssm_utils import ParamsCDNLSSMDynamics, ParamsCDNLSSMEmissions
+from .cdnlssm_utils import ParamsCDNLSSMInitial, ParamsCDNLSSMDynamics, ParamsCDNLSSMEmissions
 
 from .models import ContDiscreteNonlinearSSM
 from .models import(
@@ -15,6 +15,7 @@ from .inference_dpf import (
 
 __all__ = [
     "ParamsCDNLSSM",
+    "ParamsCDNLSSMInitial",
     "ParamsCDNLSSMDynamics",
     "ParamsCDNLSSMEmissions",
     "ContDiscreteNonlinearSSM",
