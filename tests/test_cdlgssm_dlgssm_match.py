@@ -3,21 +3,20 @@ import jax.numpy as jnp
 import jax.random as jr
 import pytest
 
+# Dynamax Discrete-Discrete Linear Gaussian SSM (lgssm) model, filter and smoother
+from cd_dynamax.dynamax.linear_gaussian_ssm import LinearGaussianSSM
+from cd_dynamax.dynamax.linear_gaussian_ssm.inference import lgssm_filter, lgssm_smoother
+
+# CD-Dynamax cdlgssm model, filter and smoother
 from cd_dynamax import (
     ContDiscreteLinearGaussianSSM,
     KFHyperParams,
-    LinearGaussianSSM,
-    cdlgssm_emissions,
-    cdlgssm_forecast,
+    cdlgssm_filter,
+    cdlgssm_smoother
 )
-from cd_dynamax.dynamax.linear_gaussian_ssm.inference import lgssm_filter
-from cd_dynamax.dynamax.parameters import ParameterProperties
-from cd_dynamax.dynamax.utils.bijectors import RealToPSDBijector
-from cd_dynamax.src.continuous_discrete_linear_gaussian_ssm.models import cdlgssm_filter
+
+# Utilities for testing and comparing results
 from cd_dynamax.src.utils.test_utils import compare, compare_structs
-from tensorflow_probability.substrates.jax.distributions import (
-    MultivariateNormalFullCovariance as MVN,
-)
 
 # Set this to True to plot the results of the tests for visual inspection
 PLOT_TEST_RESULTS = False
@@ -28,6 +27,8 @@ def rng_keys():
     return jr.split(jr.PRNGKey(0))
 
 # Useful initialization of equivalent models
+from cd_dynamax.dynamax.parameters import ParameterProperties
+from cd_dynamax.dynamax.utils.bijectors import RealToPSDBijector
 def init_cdlgssm_lgssm_models(key_init):
     """Helper function to initialize equivalent discrete LGSSM and a continuous-discrete LGSSM for testing.
         This equivalence is hardcoded for a single example, other equivalences are possible
@@ -37,7 +38,10 @@ def init_cdlgssm_lgssm_models(key_init):
     emission_dim = 6
 
     # Discrete time model setup
-    d_model = LinearGaussianSSM(state_dim=state_dim, emission_dim=emission_dim)
+    d_model = LinearGaussianSSM(
+        state_dim=state_dim,
+        emission_dim=emission_dim
+    )
     d_params, d_param_props = d_model.initialize(
         key_init,
         dynamics_weights=0.9048373699188232421875 * jnp.eye(d_model.state_dim),
@@ -48,7 +52,8 @@ def init_cdlgssm_lgssm_models(key_init):
 
     # Continuous-discrete model setup with parameters that should closely match the discrete model dynamics and emissions
     cd_model = ContDiscreteLinearGaussianSSM(
-        state_dim=state_dim, emission_dim=emission_dim
+        state_dim=state_dim,
+        emission_dim=emission_dim
     )
     cd_params, cd_param_props = cd_model.initialize(
         key_init,
@@ -129,7 +134,7 @@ def test_cdlgssm_lgssm_model_equivalence(rng_keys):
     compare(cd_emissions, d_emissions)
 
 # Check whether continuous-discrete model filtering can recover discrete model's (dynamax) filtering
-def test_cdlgssm_filter_and_forecast_tregular(rng_keys):
+def test_cdlgssm_lgssm_filter_equivalence(rng_keys):
     # Unpack RNG keys
     key_init, key_sample = rng_keys
 
@@ -164,21 +169,11 @@ def test_cdlgssm_filter_and_forecast_tregular(rng_keys):
     )
 
     ## Continous-discrete model: check filtering, and fitting
-    # Sample from the continuous-discrete model using the same key
-    # Based on the emission timestamps
-    cd_states, cd_emissions = cd_model.sample(
-        cd_params,
-        key_sample,
-        num_timesteps=num_timesteps,
-        t_emissions=t_emissions,
-        inputs=inputs,
-    )
-
-    # Filter the continuous-discrete model emissions to get filtered posterior
+    # Filter the discrete model emissions to get filtered posterior
     kf_hyperparams = KFHyperParams(dt_final=1.0)
     cd_filtered_posterior = cdlgssm_filter(
         cd_params,
-        cd_emissions,
+        d_emissions,
         t_emissions,
         filter_hyperparams=kf_hyperparams,
         inputs=inputs,
@@ -191,7 +186,7 @@ def test_cdlgssm_filter_and_forecast_tregular(rng_keys):
     cd_sgd_fitted_params, cd_sgd_lps = cd_model.fit_sgd(
         cd_params,
         cd_param_props,
-        cd_emissions,
+        d_emissions,
         t_emissions,
         filter_hyperparams=kf_hyperparams,
         inputs=inputs,
@@ -206,7 +201,7 @@ def test_cdlgssm_filter_and_forecast_tregular(rng_keys):
     # Filter with the SGD-fitted parameters to get the post-SGD fitted filtered posterior for the continuous-discrete model,
     cd_sgd_fitted_filtered_posterior = cdlgssm_filter(
         cd_sgd_fitted_params,
-        cd_emissions,
+        d_emissions,
         t_emissions,
         filter_hyperparams=kf_hyperparams,
         inputs=inputs,
@@ -254,4 +249,114 @@ def test_cdlgssm_filter_and_forecast_tregular(rng_keys):
             plt.grid()
             plt.legend()
             plt.title("Filtered states after SGD optimization")
+            plt.show()
+
+
+# Check whether continuous-discrete model smoothing can recover discrete model's (dynamax) smoothing
+def test_cdlgssm_lgssm_smoother_equivalence(rng_keys):
+    # Unpack RNG keys
+    key_init, key_sample = rng_keys
+
+    # Define discrete and continous-discrete models
+    d_model, d_params, d_param_props, cd_model, cd_params, cd_param_props = init_cdlgssm_lgssm_models(key_init)
+
+    # Simulation params
+    num_timesteps = 100
+    # Continuous-discrete model's t_emissions
+    t_emissions = jnp.arange(num_timesteps)[:, None]
+    
+    # No inputs for now
+    inputs = None
+
+    # Sample from the discrete model
+    d_states, d_emissions = d_model.sample(
+        d_params, key_sample, num_timesteps=num_timesteps, inputs=inputs
+    )
+
+    # Discrete time smoothing
+    print("Discrete time smoothing")
+    d_smoother_posterior = lgssm_smoother(d_params, d_emissions, inputs)
+
+    # Continuous-discrete smoothing
+    # We set dt_final=1 so that predicted mean and covariance at the end of the sequence
+    # match those of discrete filtering.
+    kf_hyperparams = KFHyperParams(dt_final=1.0)
+
+    # Iterate over both smoother types and compare results to discrete smoother
+    for smoother_type in ["cd_smoother_1", "cd_smoother_2"]:
+        print(f"Continuous-Discrete time KF smoothing {smoother_type}")
+        cd_smoother_posterior = cdlgssm_smoother(
+            cd_params,
+            d_emissions,
+            t_emissions,
+            filter_hyperparams=kf_hyperparams,
+            inputs=inputs,
+            smoother_type=smoother_type,
+        )
+
+        print(f"Comparing {smoother_type} smoothed posteriors...")
+        compare_structs(
+            d_smoother_posterior,
+            cd_smoother_posterior,
+            accept_failure=True
+        )
+
+        print(
+            f"All Discrete to Continuous-Discrete {smoother_type} smoothed posterior tests passed!"
+        )
+
+    # If interested, plot the results to visually inspect the impact of smoothing algorithm differences.
+    if PLOT_TEST_RESULTS:
+        print(
+            "WARNING: plotting filtering results for understanding impact of smoothing algorithm differences."
+        )
+        import matplotlib.pyplot as plt
+
+        for n_state in jnp.arange(d_model.state_dim):
+            plt.figure()
+            plt.plot(
+                t_emissions,
+                d_states[:, n_state],
+                label="true discrete position",
+                color="black",
+            )
+            plt.plot(
+                t_emissions,
+                d_smoother_posterior.filtered_means[:, n_state],
+                label="Post-SGD fit Discrete filtered state",
+                color="orange",
+                marker="o",
+                markerfacecolor="none",
+                markeredgewidth=2,
+                markersize=8,
+            )
+            plt.plot(
+                t_emissions,
+                d_smoother_posterior.smoothed_means[:, n_state],
+                label="Post-SGD fit Discrete smoothed state",
+                color="red",
+                marker="o",
+                markerfacecolor="none",
+                markeredgewidth=2,
+                markersize=8,
+            )
+            plt.plot(
+                t_emissions,
+                cd_smoother_posterior.filtered_means[:, n_state],
+                label="Post-SGD fit Continuous-Discrete filtered state",
+                color="blue",
+                marker="x",
+            )
+            plt.plot(
+                t_emissions,
+                cd_smoother_posterior.smoothed_means[:, n_state],
+                label="Post-SGD fit Continuous-Discrete smoothed state",
+                color="green",
+                marker="x",
+            )
+            plt.xlabel("time")
+            plt.ylabel("x_{}".format(n_state))
+            plt.grid()
+            plt.legend()
+            plt.title("Filtered and smoothed states")
             plt.show()
