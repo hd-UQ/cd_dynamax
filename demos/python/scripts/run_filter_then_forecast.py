@@ -8,11 +8,10 @@ from cd_dynamax.src.utils.experiment_utils import (
     create_cddynamax_model_from_config,
     create_cddynamax_filter_from_config,
 )
-from cd_dynamax.src.utils.simulation_utils import filter_and_forecast, tree_to_dict
-from cd_dynamax import (
-    ContDiscreteLinearGaussianSSM,
-    ContDiscreteNonlinearGaussianSSM,
-    ContDiscreteNonlinearSSM,
+from cd_dynamax.src.utils.simulation_utils import (
+    filter_and_forecast,
+    cddynamax_emissions,
+    tree_to_dict,
 )
 
 
@@ -127,85 +126,26 @@ def run_filter_then_forecast(
             filter_spec=filter_spec
         )
 
-        # TODO: check emissions_covariance computations
-        # Emission generation function based on model type
-        if isinstance(model, ContDiscreteLinearGaussianSSM):
-            from cd_dynamax.src.continuous_discrete_linear_gaussian_ssm.inference import (
-                cdlgssm_emissions,
-            )
-
-            cddynamax_emissions = cdlgssm_emissions
-        elif isinstance(model, ContDiscreteNonlinearGaussianSSM):
-            from cd_dynamax.src.continuous_discrete_nonlinear_gaussian_ssm.models import (
-                cdnlgssm_emissions,
-            )
-
-            cddynamax_emissions = cdnlgssm_emissions
-        elif isinstance(model, ContDiscreteNonlinearSSM):
-            from cd_dynamax.src.continuous_discrete_nonlinear_ssm.models import (
-                cdnlssm_emissions,
-            )
-
-            cddynamax_emissions = cdnlssm_emissions
-        else:
-            raise ValueError(
-                "Model type not supported for emissions generation in filter-then-forecast."
-            )
-        
-        # For Gaussian-based emissions, we can compute the emissions means and covariances directly from the filtered and forecasted states.
-        if isinstance(model, (ContDiscreteLinearGaussianSSM, ContDiscreteNonlinearGaussianSSM)):
-            # Generate emissions means/covs from filtered states
-            f_emissions_mean, f_emissions_cov = cddynamax_emissions(
-                params=params,
-                t_states=data["t_emissions"][:stop_idx_filter],
-                state_means=filtered.filtered_means,
-                state_covs=filtered.filtered_covariances,
-                inputs=None,
-            )
-
-            # Generate emissions means/covs from forecasted states
-            fc_emissions_mean, fc_emissions_cov = cddynamax_emissions(
-                params=params,
-                t_states=data["t_emissions"][start_idx_forecast:stop_idx_forecast],
-                state_means=forecasted.forecasted_state_means,
-                state_covs=forecasted.forecasted_state_covariances,
-                inputs=None,
-            )
-        elif isinstance(model, ContDiscreteNonlinearSSM):
-            # For the more general nonlinear case, we can only compute the emissions by pushing the filtered and forecasted particles through the model's emission function.
-            f_emissions = cddynamax_emissions(
-                params=params,
-                t_states=data["t_emissions"][:stop_idx_filter],
-                states=filtered.particles,
-                inputs=None,
-            )
-            
-            fc_emissions = cddynamax_emissions(
-                params=params,
-                t_states=data["t_emissions"][start_idx_forecast:stop_idx_forecast],
-                states=forecasted.forecasted_state_path, # We expect particles to be saved here
-                inputs=None,
-            )
-
-            # Just for evaluation purposes, compute mean and covariance
-            import jax.numpy as jnp
-            # TODO incorporate particle weights if using a weighted particle filter
-            f_emissions_mean = jnp.mean(f_emissions, axis=1)  # mean over particles
-            f_centered = f_emissions - f_emissions_mean[:, None, :]
-            f_emissions_cov = jnp.einsum('tmi, tmj -> tij', f_centered, f_centered) / (f_emissions.shape[1] - 1)
-
-            fc_emissions_mean = jnp.mean(fc_emissions, axis=1)
-            fc_centered = fc_emissions - fc_emissions_mean[:, None, :]
-            fc_emissions_cov = jnp.einsum('tmi, tmj -> tij', fc_centered, fc_centered) / (fc_emissions.shape[1] - 1)
+        # Compute emissions for filtered and forecasted states
+        filtered_emissions, forecasted_emissions = cddynamax_emissions(
+            model=model,
+            model_params=params,
+            t_emissions_filter=data["t_emissions"][:stop_idx_filter],
+            filtered_state=filtered,
+            t_emissions_forecast=data["t_emissions"][start_idx_forecast:stop_idx_forecast],
+            forecasted_state=forecasted,
+            inputs_state=None,
+            inputs_forecast=None
+        ):
 
 
         # Convert the filtered and forecasted results to dictionaries, and add additional fields.
         filtered_dict = tree_to_dict(filtered)
-        filtered_dict["filtered_emissions_means"] = f_emissions_mean
-        filtered_dict["filtered_emissions_covariances"] = f_emissions_cov
+        filtered_dict["filtered_emissions_means"] = filtered_emissions.mean
+        filtered_dict["filtered_emissions_covariances"] = filtered_emissions.cov
         forecasted_dict = tree_to_dict(forecasted)
-        forecasted_dict["forecasted_emissions_means"] = fc_emissions_mean
-        forecasted_dict["forecasted_emissions_covariances"] = fc_emissions_cov
+        forecasted_dict["forecasted_emissions_means"] = forecasted_emissions.mean
+        forecasted_dict["forecasted_emissions_covariances"] = forecasted_emissions.cov
 
         # Save the results as a dictionary
         results = {
