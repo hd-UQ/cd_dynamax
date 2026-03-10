@@ -458,8 +458,6 @@ class ContDiscreteNonlinearSSM(SSM):
         inputs: Optional[Array] = None,
         filter_type: str = "DPF",
         filter_state_order: str = "first",
-        filter_emission_order: str = "first",
-        filter_num_iter: int = 1,
         filter_state_cov_rescaling: float = 1.0,
         filter_dt_average: float = 0.1,
         N_particles: int = 1_000,
@@ -520,6 +518,101 @@ class ContDiscreteNonlinearSSM(SSM):
             warn=warn,
         )
 
+    # High-level, user-friendly interface combining filtering and forecasting steps
+    def filter_and_forecast(
+        self,
+        params: ParamsCDNLSSM,
+        emissions_filter: Array,
+        t_emissions_filter: Array,
+        t_emissions_forecast: Array,
+        inputs_filter: Optional[Array] = None,
+        inputs_forecast: Optional[Array] = None,
+        filter_type: str = "DPF",
+        filter_state_order: str = "first",
+        filter_state_cov_rescaling: float = 1.0,
+        filter_dt_average: float = 0.1,
+        N_particles: int = 1_000,
+        diffeqsolve_max_steps: int = 100,
+        diffeqsolve_dt0: float = 1e-2,
+        output_fields=None,
+        key: PRNGKeyArray = jr.PRNGKey(0),
+        diffeqsolve_kwargs: Optional[dict] = None,
+        extra_filter_kwargs: Optional[dict] = None,
+        warn: bool = True,
+    ):
+        """Filters a CD-NLSSM; by default, this runs a bootstrap differentiable particle filter (DPF).
+
+        Depending on the filter_type, certain arguments are ignored.
+
+        Args:
+            params: Parameters of the CDNLSSM.
+            emissions_filter: Emission sequence for filtering.
+            t_emissions_filter: Time instants of observations for filtering.
+            t_emissions_forecast: Time instants for forecasting.
+            inputs_filter: Inputs for filtering.
+            inputs_forecast: Inputs for forecasting.
+            filter_state_order: Order of Taylor expansion for dynamics used in the filter.
+            filter_state_cov_rescaling: Rescale state covariance by this factor after each update (inflation delta is better for accurate likelihoods)
+            filter_dt_average: [Only for state_order="Discrete"] Average step size to determine constant state noise cov in filter.
+            N_particles: Number of particles (for DPF only).
+            diffeqsolve_max_steps: Max steps for ODE solver between observations.
+            diffeqsolve_dt0: Initial step size for ODE/SDE solver (default is fixed step size).
+            output_fields: Which fields to return from the filter.
+            key: Random key.
+            diffeqsolve_kwargs: Extra kwargs for the ODE solver
+                (e.g., {"solver": diffrax.Heun(), "dt0": 1e-2}).
+            filter_kwargs: Extra kwargs specific to the chosen filter
+                (e.g., {"emission_order": "zeroth"} for EKF).
+            warn: whether to issue warnings (e.g., about PSD issues)
+
+        Returns:
+            filtered_posterior: PosteriorCDNLSSMFiltered, posterior distribution of the CDNLSSM.
+            forecasted: Float[Array, "num_timesteps state_dim M"], forecasted states over time.
+        """
+
+        # Split key for filtering and forecasting steps
+        key_filter, key_forecast = jr.split(key)
+        filter_hyperparams = build_dpf_hyperparams(
+            filter_state_order=filter_state_order,
+            filter_state_cov_rescaling=filter_state_cov_rescaling,
+            filter_dt_average=filter_dt_average,
+            N_particles=N_particles,
+            diffeqsolve_dt0=diffeqsolve_dt0,
+            diffeqsolve_max_steps=diffeqsolve_max_steps,
+            diffeqsolve_kwargs=diffeqsolve_kwargs,
+            extra_filter_kwargs=extra_filter_kwargs,
+        )
+
+        # Run filter on filtering time-points
+        filtered = cdnlssm_filter(
+            params=params,
+            emissions=emissions_filter,
+            t_emissions=t_emissions_filter,
+            filter_hyperparams=filter_hyperparams,
+            inputs=inputs_filter,
+            output_fields=output_fields,
+            key=key,
+            warn=warn,
+        )
+
+        # Initialize forecast with last filtered state's particles
+        init_time = t_emissions_filter[-1]
+        init_forecast = filtered.particles[-1, ...] # shape M \times state_dim
+
+        # Run forecast on forecasting time-points, using the initialized particles as initial condition for the forecast
+        forecasted = cdnlssm_forecast(
+            params=params,
+            init_forecast=init_forecast,
+            t_init=init_time,
+            t_forecast=t_emissions_forecast,
+            filter_hyperparams=filter_hyperparams,
+            inputs=inputs_forecast,
+            key=key_forecast,
+            diffeqsolve_settings=filter_hyperparams.diffeqsolve_settings,
+            warn=warn,
+        )
+
+        return filtered, forecasted
 
 
 def cdnlssm_joint_sample(
