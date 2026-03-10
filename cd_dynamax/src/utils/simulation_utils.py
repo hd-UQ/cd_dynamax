@@ -179,11 +179,8 @@ def cddynamax_filter(
 def cddynamax_forecast(
     model_params,
     filter_hyperparams,
-    t_emissions,
-    t_init,
+    t_forecast,
     init_forecast, # This can be a distribution or a fixed state
-    start_idx_forecast,
-    stop_idx_forecast,
     keys,
     filter_spec="model"
 ):
@@ -225,8 +222,8 @@ def cddynamax_forecast(
     forecasted = forecasting_function(
         params=model_params,
         init_forecast=init_forecast,
-        t_init=t,
-        t_forecast=t_emissions[start_idx_forecast:stop_idx_forecast],
+        t_init=t_forecast[0],
+        t_forecast=t_forecast,
         filter_hyperparams=filter_hyperparams,
         **extra_args_forecast,
     )
@@ -430,11 +427,8 @@ def filter_and_forecast(
     forecasted = cddynamax_forecast(
         model_params=model_params,
         filter_hyperparams=filter_hyperparams,
-        t_emissions=t_emissions,
-        t_init=init_time,
+        t_forecast=t_emissions[start_idx_forecast:stop_idx_forecast],
         init_forecast=init_forecast,
-        start_idx_forecast=start_idx_forecast,
-        stop_idx_forecast=stop_idx_forecast,
         keys=keys,
         filter_spec=filter_spec
     )

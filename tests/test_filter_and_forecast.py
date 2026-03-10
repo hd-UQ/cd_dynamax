@@ -7,13 +7,36 @@ import pytest
 from cd_dynamax.dynamax.linear_gaussian_ssm import LinearGaussianSSM
 from cd_dynamax.dynamax.linear_gaussian_ssm.inference import lgssm_filter, lgssm_smoother
 
-# CD-Dynamax cdlgssm model, filter and smoother
+# Our own custom src codebase
 from cd_dynamax import (
     ContDiscreteLinearGaussianSSM,
-    KFHyperParams,
+    ContDiscreteNonlinearGaussianSSM,
+    ContDiscreteNonlinearSSM,
+)
+# continuous-discrete nonlinear Gaussian SSM codebase
+from cd_dynamax.src.continuous_discrete_linear_gaussian_ssm import (
     cdlgssm_filter,
     cdlgssm_forecast,
-    cdlgssm_emissions
+    ParamsCDLGSSM,
+    KFHyperParams
+)
+from cd_dynamax.src.continuous_discrete_nonlinear_gaussian_ssm import (
+    ParamsCDNLGSSM,
+    EKFHyperParams,
+    UKFHyperParams,
+    EnKFHyperParams,
+)
+
+from cd_dynamax.src.continuous_discrete_nonlinear_ssm import (
+    ParamsCDNLSSM,
+    DPFHyperParams,
+)
+
+# Cd-dynamax utilities
+from cd_dynamax.src.utils.simulation_utils import (
+    cddynamax_filter,
+    cddynamax_forecast,
+    cddynamax_emissions
 )
 
 # Utilities for testing and comparing results
@@ -199,7 +222,7 @@ def test_cdlgssm_filter_and_forecast(rng_keys):
     assert jnp.all(jnp.isfinite(cd_point_forecasted.forecasted_state_path)), \
         "Forecasted state path contains non-finite values"
 
-    # Emissions forecasts:
+    # Emissions forecasts from the point forecasted states - this is just applying the emission function to the forecasted states
     # Use forecasted paths
     cd_point_emissions_forecasted_means, cd_point_emissions_forecasted_covariances = (
         cdlgssm_emissions(
@@ -366,5 +389,95 @@ def test_cdlgssm_filter_and_forecast(rng_keys):
             plt.title("Forecasted emissions")
             plt.show()
 
+# Check whether continuous-discrete model filtering and forecasting run
+def test_filter_and_forecast(rng_keys):
+    # Unpack RNG keys
+    key_init, key = rng_keys
+
+    # Sampling and forecasting keys
+    key_sample, key_forecast = jr.split(key)
+
+    # Define discrete and continous-discrete models
+    cd_model, cd_params, cd_param_props = init_cdlgssm_model(key_init)
+
+    # Simulation params
+    num_timesteps = 100
+    forecast_timesteps = 25
+    # Continuous-discrete model's t_emissions
+    t_emissions = jnp.arange(num_timesteps)[:, None]
+    t_forecast_emissions = jnp.arange(
+        num_timesteps, num_timesteps + forecast_timesteps
+    )[:, None]
+    
+    # No inputs for now
+    inputs = None
+
+    # Sample from the continuous-discrete model
+    cd_states, cd_emissions = cd_model.sample(
+        params=cd_params,
+        key=key_sample,
+        num_timesteps=num_timesteps,
+        t_emissions=t_emissions,
+        inputs=inputs,
+    )
+
+    ## Filtering
+    # To decide what filtering algorithm to use
+    if isinstance(cd_params, ParamsCDLGSSM):
+        # Linear case with Kalman filter
+        filter_hyperparams_list = [KFHyperParams(dt_final=1.0)]
+    elif isinstance(cd_params, ParamsCDNLGSSM):
+        # Nonlinear Gaussian case
+        # EKF, UKF and EnKF
+        filter_hyperparams_list = [
+            EKFHyperParams(dt_final=1.0),
+            UKFHyperParams(dt_final=1.0, alpha=1e-3, beta=2.0, kappa=0.0),
+            EnKFHyperParams(dt_final=1.0, num_ensemble_members=1000, resampling_threshold=0.5)
+        ]
+    elif isinstance(cd_params, ParamsCDNLSSM):
+        # Nonlinear case with DPF
+        filter_hyperparams_list =[
+            DPFHyperParams(num_particles=1000, resampling_threshold=0.5)
+        ]
+    else:
+        raise ValueError(f"Unknown model parameters type {type(cd_params)}")
+    
+    # Iterate over filters
+    for filter_hyperparams in filter_hyperparams_list:
+        # Filter  the emissions to get filtered posterior
+        filtered = cddynamax_filter(
+            model_params=cd_params,
+            filter_hyperparams=filter_hyperparams,
+            t_emissions=t_emissions,
+            emissions=cd_emissions,
+            start_idx_filter=0,
+            stop_idx_filter=num_timesteps-1,
+            keys=key_sample,
+            filter_spec='model'
+        )  
+
+        # Initialize forecast with last filtered state
+        init_time = t_emissions[num_timesteps - 1]
+        if isinstance(cd_params, (ParamsCDLGSSM, ParamsCDNLGSSM)):
+            from tensorflow_probability.substrates.jax.distributions import MultivariateNormalFullCovariance as MVN
+            init_forecast = MVN(
+                filtered.filtered_means[-1, :], filtered.filtered_covariances[-1, :]
+            )
+        elif isinstance(cd_params, ParamsCDNLSSM):
+            init_forecast = filtered.particles[-1, ...]
+
+        # Forecast
+        forecasted = cddynamax_forecast(
+            model_params=cd_params,
+            filter_hyperparams=filter_hyperparams,
+            t_forecast=t_forecast_emissions,
+            init_forecast=init_forecast,
+            keys=key_forecast,
+            filter_spec='model'
+        )
+
+
+
 if __name__ == "__main__":
-    test_cdlgssm_filter_and_forecast(jr.split(jr.PRNGKey(0)))
+    #test_cdlgssm_filter_and_forecast(jr.split(jr.PRNGKey(0)))
+    test_filter_and_forecast(jr.split(jr.PRNGKey(0)))
