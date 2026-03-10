@@ -116,12 +116,12 @@ make lint
 ```
 
 - We can also format files using `ruff`:
-```bashbash
+```bash
 make clean
 ```
 
 - The docs can be built using `mkdocs` as:
-```bashbash
+```bash
 make build_docs
 ```
 
