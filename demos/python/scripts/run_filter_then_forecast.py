@@ -70,7 +70,7 @@ def run_filter_then_forecast(
         overrides=overrides,
     )
 
-    # Create and initialize the CD-NLGSSM model from the model config file
+    # Create and initialize the cd-dynamax model from the model config file
     model, params, props = create_cddynamax_model_from_config(
         config_path=config_path,
         true_model_config_file=model_config_file,

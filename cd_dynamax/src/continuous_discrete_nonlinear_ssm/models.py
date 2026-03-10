@@ -642,7 +642,7 @@ def cdnlssm_joint_sample(
         u_prev = None
         u0 = None
 
-    init_state = params.initial.initial_distribution.distribution.sample(
+    init_state = params.initial.initial_distribution.sample(
         seed=key_state0
     )
     init_emission = params.emissions.emission_distribution.sample(

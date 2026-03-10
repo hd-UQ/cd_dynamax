@@ -1180,7 +1180,7 @@ def cdnlgssm_forecast(
             - if init_forecast is a distribution, then we forecast such distribution based on different filtering methods
             - if init_forecast is a point estimate of state, then we forecast a forward path starting at that state
         t_init: time-instant of the initial condition of forecast
-        t_forecast: continuous-time specific time instants of observations: if not None, it is an array
+        t_forecast: continuous-time specific time instants for forecasting: if not None, it is an array
         filter_hyperparams: hyper-parameters of the filter
         inputs: optional array of inputs, of shape (1 + num_timesteps) \times input_dim
             - The extra input is needed for the initial emission, i.e., it should be at time t_init

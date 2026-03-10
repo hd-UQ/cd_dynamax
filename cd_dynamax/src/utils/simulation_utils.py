@@ -126,7 +126,7 @@ def cddynamax_filter(
     emissions,
     start_idx_filter,
     stop_idx_filter,
-    keys,
+    key=jr.PRNGKey(0),
     filter_spec="model"
 ):
     if filter_spec == "model":
@@ -139,12 +139,12 @@ def cddynamax_filter(
         elif isinstance(model_params, ParamsCDNLGSSM):
             # Nonlinear Gaussian case
             filtering_function = cdnlgssm_filter
-            extra_args_filter = {"key": next(keys)}
+            extra_args_filter = {"key": key}
         elif isinstance(model_params, ParamsCDNLSSM):
             # Nonlinear case
             filtering_function = cdnlssm_filter
             forecasting_function = cdnlssm_forecast
-            extra_args_filter = {"key": next(keys)}
+            extra_args_filter = {"key": key}
     
     elif filter_spec == "filter":
         # Check filter_hyperarams type, based on class type
@@ -158,11 +158,11 @@ def cddynamax_filter(
         elif isinstance(filter_hyperparams, (EKFHyperParams, UKFHyperParams, EnKFHyperParams)):
             # Nonlinear Gaussian case
             filtering_function = cdnlgssm_filter
-            extra_args_filter = {"key": next(keys)}
+            extra_args_filter = {"key": key}
         elif isinstance(filter_hyperparams, DPFHyperParams):
             # Nonlinear case
             filtering_function = cdnlssm_filter
-            extra_args_filter = {"key": next(keys)}
+            extra_args_filter = {"key": key}
 
     # Run filter on filtering time points
     filtered = filtering_function(
@@ -179,9 +179,10 @@ def cddynamax_filter(
 def cddynamax_forecast(
     model_params,
     filter_hyperparams,
+    init_forecast, # This can be a distribution or a fixed state depending on the model and filter type
+    t_init,
     t_forecast,
-    init_forecast, # This can be a distribution or a fixed state
-    keys,
+    key,
     filter_spec="model"
 ):
 
@@ -195,11 +196,11 @@ def cddynamax_forecast(
         elif isinstance(model_params, ParamsCDNLGSSM):
             # Nonlinear Gaussian case
             forecasting_function = cdnlgssm_forecast
-            extra_args_forecast = {"key": next(keys)}
+            extra_args_forecast = {"key": key}
         elif isinstance(model_params, ParamsCDNLSSM):
             # Nonlinear case
             forecasting_function = cdnlssm_forecast
-            extra_args_forecast = {"key": next(keys)}
+            extra_args_forecast = {"key": key}
     
     elif filter_spec == "filter":
         # Check filter_hyperarams type, based on class type
@@ -212,17 +213,17 @@ def cddynamax_forecast(
         elif isinstance(filter_hyperparams, (EKFHyperParams, UKFHyperParams, EnKFHyperParams)):
             # Nonlinear Gaussian case
             forecasting_function = cdnlgssm_forecast
-            extra_args_forecast = {"key": next(keys)}
+            extra_args_forecast = {"key": key}
         elif isinstance(filter_hyperparams, DPFHyperParams):
             # Nonlinear case
             forecasting_function = cdnlssm_forecast
-            extra_args_forecast = {"key": next(keys)}
+            extra_args_forecast = {"key": key}
 
     # Run forecast on forecasting time points
     forecasted = forecasting_function(
         params=model_params,
         init_forecast=init_forecast,
-        t_init=t_forecast[0],
+        t_init=t_init,
         t_forecast=t_forecast,
         filter_hyperparams=filter_hyperparams,
         **extra_args_forecast,
@@ -255,7 +256,8 @@ def cddynamax_emissions(
         t_emissions_forecast=None,
         forecasted_state=None,
         filtering_inputs=None,
-        forecasting_inputs=None
+        forecasting_inputs=None,
+        key=None,
     ):
 
     # TODO: check emissions_covariance computations
@@ -323,6 +325,7 @@ def cddynamax_emissions(
             t_states=t_emissions_filter,
             states=filtered_state.particles,
             inputs=filtering_inputs,
+            key=key
         )
 
         # Just for evaluation purposes, compute mean and covariance
@@ -401,7 +404,7 @@ def filter_and_forecast(
         emissions=emissions,
         start_idx_filter=start_idx_filter,
         stop_idx_filter=stop_idx_filter,
-        keys=keys,
+        keys=next(keys),
         filter_spec=filter_spec
     )    
 
@@ -427,9 +430,10 @@ def filter_and_forecast(
     forecasted = cddynamax_forecast(
         model_params=model_params,
         filter_hyperparams=filter_hyperparams,
-        t_forecast=t_emissions[start_idx_forecast:stop_idx_forecast],
         init_forecast=init_forecast,
-        keys=keys,
+        t_init=t_emissions[-1],
+        t_forecast=t_emissions[start_idx_forecast:stop_idx_forecast],
+        keys=next(keys),
         filter_spec=filter_spec
     )
 
