@@ -180,13 +180,13 @@ def init_cdnlssm_params(
     """Create CD-NLSSM parameters and properties using provided prior, init_values or defaults.
     
     Args:
-        :param default_params: dictionary of default parameters: we at least need some default values
-        :param init_params: dictionary of all parameters
-        :param init_prior: prior distribution for the initialization. Defaults to None.
-        :param key: random key for sampling. Defaults to jr.PRNGKey(0).
+        default_params: dictionary of default parameters: we at least need some default values
+        init_params: dictionary of all parameters
+        init_prior: prior distribution for the initialization. Defaults to None.
+        key: random key for sampling. Defaults to jr.PRNGKey(0).
 
     Returns:
-        :return: Tuple of CD-NLSSM parameters and properties objects
+        Tuple of CD-NLSSM parameters and properties objects
     """
     # First, make sure we have all the necessary default parameters
     params = default_params
