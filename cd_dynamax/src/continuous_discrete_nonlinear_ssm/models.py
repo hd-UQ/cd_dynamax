@@ -97,8 +97,10 @@ class ContDiscreteNonlinearSSM(SSM):
     r"""Continuous-discrete nonlinear SSM with generic (possibly non-Gaussian) initial and emission distributions.
 
     We assume a model of the form
-    $$ dz=f(z,u_t,t)dt  $$
-    $$ dP=L(t) Q_c L(t) $$ or $$ dP = F_t @ P + P @ F.T + L(t) Q_c_t @ L_t.T $$
+
+    $$ dz=f(z,u_t,t)dt + L(z, u, t) db(t)$$
+    
+    with diffusion covariance $Q_c$.
 
     We allow for arbitrary initial and emission distributions,
     $$p(z_0) = p(z_0)$$
