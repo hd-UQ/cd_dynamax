@@ -2,6 +2,11 @@
 import jax.random as jr
 import jax.numpy as jnp
 
+# cd-dynamax models
+from cd_dynamax.src.continuous_discrete_linear_gaussian_ssm.models import ContDiscreteLinearGaussianSSM
+from cd_dynamax.src.continuous_discrete_nonlinear_gaussian_ssm.models import ContDiscreteNonlinearGaussianSSM
+from cd_dynamax.src.continuous_discrete_nonlinear_ssm.models import ContDiscreteNonlinearSSM
+
 # Useful auxiliary function to sample from model with num_timesteps and t_emissions
 # and check states and emissions match
 from cd_dynamax.src.utils.test_utils import compare
@@ -22,7 +27,6 @@ def check_cddynamax_model_sample_match(model, params, key, T):
     compare(emissions, emissions_t)
 
 # CD-LGSSM basic tests
-from cd_dynamax.src.continuous_discrete_linear_gaussian_ssm.models import ContDiscreteLinearGaussianSSM
 def test_cdlgssm_basic_init():
     """Test that a model can be created and has correct dimensions."""
     model = ContDiscreteLinearGaussianSSM(state_dim=3, emission_dim=2)
@@ -60,7 +64,6 @@ def test_cdlgssm_initialize_defaults():
     assert isinstance(params.emissions, ParamsLGSSMEmissions)
     assert props is not None
 
-
 def test_cdlgssm_sample_path():
     """Run a short forward sample to check integration with diffrax."""
     model = ContDiscreteLinearGaussianSSM(state_dim=3, emission_dim=2)
@@ -71,7 +74,6 @@ def test_cdlgssm_sample_path():
 
 
 # CD-NLGSSM basic tests
-from cd_dynamax.src.continuous_discrete_nonlinear_gaussian_ssm.models import ContDiscreteNonlinearGaussianSSM
 def test_cdnlgssm_basic_init():
     """Test that a model can be created and has correct dimensions."""
     model = ContDiscreteNonlinearGaussianSSM(state_dim=3, emission_dim=2)
@@ -117,7 +119,6 @@ def test_cdnlgssm_sample_path():
     check_cddynamax_model_sample_match(model=model, params=params, key=jr.PRNGKey(0), T=10)
 
 # CD-NLSSM basic tests
-from cd_dynamax.src.continuous_discrete_nonlinear_ssm.models import ContDiscreteNonlinearSSM
 def test_cdnlssm_basic_init():
     """Test that a model can be created and has correct dimensions."""
     model = ContDiscreteNonlinearSSM(state_dim=3, emission_dim=2)

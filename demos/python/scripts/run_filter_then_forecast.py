@@ -136,9 +136,8 @@ def run_filter_then_forecast(
             forecasted_state=forecasted,
             inputs_state=None,
             inputs_forecast=None
-        ):
-
-
+        )
+        
         # Convert the filtered and forecasted results to dictionaries, and add additional fields.
         filtered_dict = tree_to_dict(filtered)
         filtered_dict["filtered_emissions_means"] = filtered_emissions.mean

@@ -1,12 +1,9 @@
-import jax
+# Jax numpy import
 import jax.numpy as jnp
-import jax.random as jr
 import pytest
 
 # continuous-discrete nonlinear Gaussian SSM codebase
 from cd_dynamax.src.continuous_discrete_linear_gaussian_ssm import (
-    cdlgssm_filter,
-    cdlgssm_forecast,
     ParamsCDLGSSM,
     KFHyperParams
 )
@@ -78,12 +75,16 @@ def check_model_filter_forecast_emissions(
         overrides=None,
     )
 
-    # Simulation
+    # Simulation from cd-dynamax model
+    t0=0
+    t1=1
+    num_samples=100
+
     # Regularly sampled in [0,1]
     num_timesteps, t_all=generate_t_emissions(
-        t0=0,
-        t1=1,
-        num_samples=100,
+        t0=t0,
+        t1=t1,
+        num_samples=num_samples,
         irregular_samples = False,
         key=next(keys),
     )
@@ -189,7 +190,6 @@ def check_model_filter_forecast_emissions(
 
     ### Forecasting
     # Initialize forecast with last filtered state
-    init_time = t_emissions[num_timesteps - 1]
     if isinstance(cd_params, (ParamsCDLGSSM, ParamsCDNLGSSM)):
         from tensorflow_probability.substrates.jax.distributions import MultivariateNormalFullCovariance as MVN
         init_forecast = MVN(
@@ -202,7 +202,7 @@ def check_model_filter_forecast_emissions(
     forecasted = cddynamax_forecast(
         model_params=cd_params,
         filter_hyperparams=filter_hyperparams,
-        t_init=t_emissions[-1],
+        t_init=t_emissions[num_timesteps - 1],
         init_forecast=init_forecast,
         t_forecast=t_forecast_emissions,
         key=next(keys),

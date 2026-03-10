@@ -143,7 +143,6 @@ def cddynamax_filter(
         elif isinstance(model_params, ParamsCDNLSSM):
             # Nonlinear case
             filtering_function = cdnlssm_filter
-            forecasting_function = cdnlssm_forecast
             extra_args_filter = {"key": key}
     
     elif filter_spec == "filter":
@@ -153,7 +152,6 @@ def cddynamax_filter(
             # Linear case
             filtering_function = cdlgssm_filter
             extra_args_filter = {}
-            extra_args_forecast = {}
         # EKF, UKF or EnKF
         elif isinstance(filter_hyperparams, (EKFHyperParams, UKFHyperParams, EnKFHyperParams)):
             # Nonlinear Gaussian case
@@ -409,7 +407,6 @@ def filter_and_forecast(
     )    
 
     # Initialize forecast with last filtered state
-    init_time = t_emissions[stop_idx_filter - 1]
     if filter_spec == "model":
         if isinstance(model_params, (ParamsCDLGSSM, ParamsCDNLGSSM)):
             init_forecast = MVN(
@@ -431,7 +428,7 @@ def filter_and_forecast(
         model_params=model_params,
         filter_hyperparams=filter_hyperparams,
         init_forecast=init_forecast,
-        t_init=t_emissions[-1],
+        t_init=t_emissions[stop_idx_filter - 1],
         t_forecast=t_emissions[start_idx_forecast:stop_idx_forecast],
         keys=next(keys),
         filter_spec=filter_spec

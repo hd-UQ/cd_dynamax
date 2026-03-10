@@ -1,4 +1,4 @@
-import jax
+# Basic jax imports
 import jax.numpy as jnp
 import jax.random as jr
 import pytest
@@ -6,6 +6,9 @@ import pytest
 # Dynamax Discrete-Discrete Linear Gaussian SSM (lgssm) model, filter and smoother
 from cd_dynamax.dynamax.linear_gaussian_ssm import LinearGaussianSSM
 from cd_dynamax.dynamax.linear_gaussian_ssm.inference import lgssm_filter, lgssm_smoother
+# and additional utilities
+from cd_dynamax.dynamax.parameters import ParameterProperties
+from cd_dynamax.dynamax.utils.bijectors import RealToPSDBijector
 
 # CD-Dynamax cdlgssm model, filter and smoother
 from cd_dynamax import (
@@ -27,8 +30,6 @@ def rng_keys():
     return jr.split(jr.PRNGKey(0))
 
 # Useful initialization of equivalent models
-from cd_dynamax.dynamax.parameters import ParameterProperties
-from cd_dynamax.dynamax.utils.bijectors import RealToPSDBijector
 def init_cdlgssm_lgssm_models(key_init):
     """Helper function to initialize equivalent discrete LGSSM and a continuous-discrete LGSSM for testing.
         This equivalence is hardcoded for a single example, other equivalences are possible
