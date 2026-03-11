@@ -3,6 +3,7 @@
 # Imports
 import jax.numpy as jnp
 import jax.random as jr
+from jax import vmap
 
 from itertools import count
 
@@ -23,11 +24,23 @@ from cd_dynamax.src.continuous_discrete_linear_gaussian_ssm import (
     cdlgssm_filter,
     cdlgssm_forecast,
     ParamsCDLGSSM,
+    KFHyperParams
 )
 from cd_dynamax.src.continuous_discrete_nonlinear_gaussian_ssm import (
     cdnlgssm_filter,
     cdnlgssm_forecast,
     ParamsCDNLGSSM,
+    EKFHyperParams,
+    UKFHyperParams,
+    EnKFHyperParams,
+)
+
+from cd_dynamax.src.continuous_discrete_nonlinear_ssm import (
+    cdnlssm_filter,
+    cdnlssm_forecast,
+    ParamsCDNLSSM,
+    DPFHyperParams,
+    dpf_moments
 )
 
 
@@ -113,6 +126,7 @@ def filter_and_forecast(
     T_filter_end=70,
     T_forecast_end=100,
     key=0,
+    filter_spec="model"
 ):
     # Create a sequence of keys
     keys = make_key_sequence(key)
@@ -130,19 +144,50 @@ def filter_and_forecast(
         "Forecasting time points are invalid."
     )
 
-    # Check whether model_params are linear or nonlinear, based on class type
-    if isinstance(model_params, ParamsCDLGSSM):
-        # Linear case
-        filtering_function = cdlgssm_filter
-        forecasting_function = cdlgssm_forecast
-        extra_args_filter = {}
-        extra_args_forecast = {}
-    elif isinstance(model_params, ParamsCDNLGSSM):
-        # Nonlinear case
-        filtering_function = cdnlgssm_filter
-        forecasting_function = cdnlgssm_forecast
-        extra_args_filter = {"key": next(keys)}
-        extra_args_forecast = {"key": next(keys)}
+    if filter_spec == "model":
+        # Check whether model_params are linear or nonlinear, based on class type
+        # To decide what filtering to use
+        if isinstance(model_params, ParamsCDLGSSM):
+            # Linear case
+            filtering_function = cdlgssm_filter
+            forecasting_function = cdlgssm_forecast
+            extra_args_filter = {}
+            extra_args_forecast = {}
+        elif isinstance(model_params, ParamsCDNLGSSM):
+            # Nonlinear Gaussian case
+            filtering_function = cdnlgssm_filter
+            forecasting_function = cdnlgssm_forecast
+            extra_args_filter = {"key": next(keys)}
+            extra_args_forecast = {"key": next(keys)}
+        elif isinstance(model_params, ParamsCDNLSSM):
+            # Nonlinear case
+            filtering_function = cdnlssm_filter
+            forecasting_function = cdnlssm_forecast
+            extra_args_filter = {"key": next(keys)}
+            extra_args_forecast = {"key": next(keys)}
+    
+    elif filter_spec == "filter":
+        # Check filter_hyperarams type, based on class type
+        # To decide what filtering to use
+        if isinstance(filter_hyperparams, KFHyperParams):
+            # Linear case
+            filtering_function = cdlgssm_filter
+            forecasting_function = cdlgssm_forecast
+            extra_args_filter = {}
+            extra_args_forecast = {}
+        # EKF, UKF or EnKF
+        elif isinstance(filter_hyperparams, EKFHyperParams) or isinstance(filter_hyperparams, UKFHyperParams) or isinstance(filter_hyperparams, EnKFHyperParams):
+            # Nonlinear Gaussian case
+            filtering_function = cdnlgssm_filter
+            forecasting_function = cdnlgssm_forecast
+            extra_args_filter = {"key": next(keys)}
+            extra_args_forecast = {"key": next(keys)}
+        elif isinstance(filter_hyperparams, DPFHyperParams):
+            # Nonlinear case
+            filtering_function = cdnlssm_filter
+            forecasting_function = cdnlssm_forecast
+            extra_args_filter = {"key": next(keys)}
+            extra_args_forecast = {"key": next(keys)}
 
     # Run filter on filtering time points
     filtered = filtering_function(
@@ -155,9 +200,21 @@ def filter_and_forecast(
 
     # Initialize forecast with last filtered state
     init_time = t_emissions[stop_idx_filter - 1]
-    init_forecast = MVN(
-        filtered.filtered_means[-1, :], filtered.filtered_covariances[-1, :]
-    )
+    if filter_spec == "model":
+        if isinstance(model_params, (ParamsCDLGSSM, ParamsCDNLGSSM)):
+            init_forecast = MVN(
+                filtered.filtered_means[-1, :], filtered.filtered_covariances[-1, :]
+            )
+        elif isinstance(model_params, ParamsCDNLSSM):
+            init_forecast = filtered.particles[-1, ...]
+    elif filter_spec == 'filter':
+        # Non-Gaussian filters, use empirical distribution of particles as initial condition for forecasting
+        if isinstance(filter_hyperparams, DPFHyperParams):
+            init_forecast = filtered.particles[-1, ...]
+        else:
+            init_forecast = MVN(
+                filtered.filtered_means[-1, :], filtered.filtered_covariances[-1, :]
+            )
 
     # Run forecast on forecasting time points
     forecasted = forecasting_function(
@@ -168,6 +225,28 @@ def filter_and_forecast(
         filter_hyperparams=filter_hyperparams,
         **extra_args_forecast,
     )
+
+    # For DPF, we compute mean and covariance of forecasted particles for evaluation purposes
+    if isinstance(filter_hyperparams, DPFHyperParams):
+        # Make a copy of the forecasted object, and add mean and covariance to it
+        particles = forecasted # shape num_timesteps_forecast \times M \times state_dim
+
+        # Weight the particles by the particle weights from the last filtering step, and compute weighted mean and covariance
+        # first axis is time, second axis is particles, third axis is state dimension
+        forecasted_means, forecasted_covariances = vmap(
+            dpf_moments,
+            in_axes=(0, None)
+        )(
+            particles,
+            jnp.exp(filtered.log_weights[-1, ...])
+        )
+        # CDLGSSM forecasting definition
+        from cd_dynamax.src.continuous_discrete_linear_gaussian_ssm.cdlgssm_utils import GSSMForecast
+        forecasted = GSSMForecast(
+            forecasted_state_means=forecasted_means,
+            forecasted_state_covariances=forecasted_covariances,
+            forecasted_state_path=particles
+        )
 
     return (
         filtered,

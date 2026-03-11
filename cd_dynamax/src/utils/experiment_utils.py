@@ -12,9 +12,10 @@ from typing import Tuple, NamedTuple, Union
 from jaxtyping import Array
 
 # CD-dynamax imports
-from cd_dynamax import ContDiscreteLinearGaussianSSM, ContDiscreteNonlinearGaussianSSM
+from cd_dynamax import ContDiscreteLinearGaussianSSM, ContDiscreteNonlinearGaussianSSM, ContDiscreteNonlinearSSM
 from cd_dynamax.src.continuous_discrete_linear_gaussian_ssm import ParamsCDLGSSM
 from cd_dynamax.src.continuous_discrete_nonlinear_gaussian_ssm import ParamsCDNLGSSM
+from cd_dynamax.src.continuous_discrete_nonlinear_ssm import ParamsCDNLSSM
 from cd_dynamax.dynamax.parameters import ParameterProperties
 
 # Useful utility functions
@@ -22,9 +23,14 @@ from .simulation_utils import *  # noqa: F403, F405
 from .physics_based_models import *  # noqa: F403, F405
 from .data_driven_models import *  # noqa: F403, F405
 
-from cd_dynamax.src.continuous_discrete_nonlinear_gaussian_ssm.cdnlgssm_utils import *  # noqa: F403
-from cd_dynamax.src.continuous_discrete_nonlinear_gaussian_ssm.models import *  # noqa: F403
+# Import the models and utils from the continuous-discrete nonlinear SSM codebase, which may be needed for creating the model or filter from config files
 from cd_dynamax.src.continuous_discrete_linear_gaussian_ssm.models import *  # noqa: F403
+from cd_dynamax.src.continuous_discrete_nonlinear_gaussian_ssm.models import *  # noqa: F403
+from cd_dynamax.src.continuous_discrete_nonlinear_ssm.models import *  # noqa: F403
+from cd_dynamax.src.continuous_discrete_linear_gaussian_ssm.cdlgssm_utils import *  # noqa: F403
+from cd_dynamax.src.continuous_discrete_nonlinear_gaussian_ssm.cdnlgssm_utils import *  # noqa: F403
+from cd_dynamax.src.continuous_discrete_nonlinear_ssm.cdnlssm_utils import *  # noqa: F403
+
 from cd_dynamax.dynamax.utils.bijectors import *  # noqa: F403
 import diffrax as dfx  # noqa: F401
 import optax  # noqa: F401
@@ -176,12 +182,12 @@ def create_cddynamax_model_from_config(
     true_model_config_file: str = None,
     overrides=None,
 ) -> Tuple[
-    Union[ContDiscreteLinearGaussianSSM, ContDiscreteNonlinearGaussianSSM],
-    Union[ParamsCDLGSSM, ParamsCDNLGSSM],
+    Union[ContDiscreteLinearGaussianSSM, ContDiscreteNonlinearGaussianSSM, ContDiscreteNonlinearSSM],
+    Union[ParamsCDLGSSM, ParamsCDNLGSSM, ParamsCDNLSSM],
     ParameterProperties,
-]:  # Either CD-LGSSM or CD-NLGSSM
+]:  # Either CD-LGSSM or CD-NLGSSM or CD-NLSSM
     r"""Create a cd-dynamax model from configuration files
-        The model can be either CD-LGSSM or CD-NLGSSM, depending on the class_name specified in the config file.
+        The model can be either CD-LGSSM or CD-NLGSSM or CD-NLSSM, depending on the class_name specified in the config file.
 
     Args:
         :param config_path: path to the configuration directory
@@ -189,7 +195,7 @@ def create_cddynamax_model_from_config(
         :param overrides: dictionary of overrides to apply to the configuration file
 
     Returns:
-        :return: Tuple of CD-LGSSM or CD-NLGSSM model, its parameters and properties
+        :return: Tuple of CD-LGSSM or CD-NLGSSM or CD-NLSSM model, its parameters and properties
     """
 
     # Full path to the config file
@@ -207,7 +213,7 @@ def create_cddynamax_model_from_config(
 
     # The model section contains
     cddynamax_model_class_name = config.get("model", "class_name")
-    if cddynamax_model_class_name not in ["CDLGSSM", "CDNLGSSM"]:
+    if cddynamax_model_class_name not in ["CDLGSSM", "CDNLGSSM", "CDNLSSM"]:
         raise ValueError(f"Unknown model class name: {cddynamax_model_class_name}")
 
     # Apply overrides if provided.
@@ -231,6 +237,9 @@ def create_cddynamax_model_from_config(
     elif cddynamax_model_class_name == "CDNLGSSM":
         # CDNLGSSM
         cddynamax_model_class = ContDiscreteNonlinearGaussianSSM
+    elif cddynamax_model_class_name == "CDNLSSM":
+        # CDNLSSM
+        cddynamax_model_class = ContDiscreteNonlinearSSM
     else:
         raise ValueError(f"Unknown model class name: {cddynamax_model_class_name}")
     # Dimensions
@@ -419,7 +428,7 @@ def create_cddynamax_filter_from_config(
     section = filter_config.sections()[0] if filter_config.sections() else None
 
     # Get the section name and check if it is a valid filter type
-    if section not in ["KF", "EKF", "UKF", "EnKF"]:
+    if section not in ["KF", "EKF", "UKF", "EnKF", "DPF"]:
         raise ValueError(f"Unknown filter type: {section}")
 
     # Build the filter class string
@@ -438,7 +447,7 @@ def create_cddynamax_filter_from_config(
 
     # Process specific hyperparameters based on cd-dynamax filter type
     # Actually, these only apply to nonlinear filters
-    if section in ["EKF", "UKF", "EnKF"]:
+    if section in ["EKF", "UKF", "EnKF", "DPF"]:
         hyperparam_dict["cov_rescaling"] = float(
             hyperparam_dict.get("cov_rescaling", 1.0)
         )
@@ -454,6 +463,17 @@ def create_cddynamax_filter_from_config(
             hyperparam_dict["N_particles"] = int(hyperparam_dict.get("N_particles", 30))
             hyperparam_dict["perturb_measurements"] = eval(
                 hyperparam_dict.get("perturb_measurements", "True")
+            )
+        elif section == "DPF":
+            hyperparam_dict["N_particles"] = int(hyperparam_dict.get("N_particles", 30))
+            hyperparam_dict["proposal_method"] = hyperparam_dict.get(
+                "proposal_method", "bootstrap"  # Currently, only bootstrap proposals are supported.
+            )
+            hyperparam_dict["resample_method"] = hyperparam_dict.get(
+                "resample_method", "multinomial"
+            )
+            hyperparam_dict["ess_threshold_ratio"] = float(
+                hyperparam_dict.get("ess_threshold_ratio", 0.5)
             )
 
     # Create the filter hyperparameters NamedTuple
