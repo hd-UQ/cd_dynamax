@@ -170,7 +170,12 @@ class LearnableLinear(NamedTuple):
 
     # Function definition
     def f(self, x, u=None, t=None):
-        return self.weights @ x + self.bias
+        if len(x.shape) == 1:
+            out = self.weights @ x + self.bias
+        else:
+            # If x has shape (batch_size, input_dim), we need to do a batch matrix multiplication
+            out = jnp.einsum("oi,bi->bo", self.weights, x) + self.bias
+        return out
 
     # Method to get parameters
     def get_params(self):

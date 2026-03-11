@@ -159,7 +159,7 @@ class ContDiscreteNonlinearSSM(SSM):
         emission_distribution = {
             "params": LearnableGaussianEmission(
                 emission_function=LearnableVector(params=zero_emission),
-                emission_covariance=LearnableMatrix(params=eye_emission),
+                emission_cov=LearnableMatrix(params=eye_emission),
             ),
             "props": ParameterProperties(
                 trainable=False, constrainer=RealToPSDBijector()

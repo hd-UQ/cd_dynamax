@@ -41,6 +41,12 @@ from cd_dynamax.src.continuous_discrete_nonlinear_ssm import (
     DPFHyperParams,
 )
 
+# Gaussian initial and emimission distributions for CD-NLSSM
+from cd_dynamax.src.continuous_discrete_nonlinear_ssm.cdnlssm_utils import (
+    StaticGaussianDistribution,
+    LearnableGaussianEmission,
+)
+
 # Cd-dynamax utilities
 from cd_dynamax.src.utils.simulation_utils import (
     make_key_sequence,
@@ -125,7 +131,7 @@ def init_cdlgssm_model(key):
     # Return the initialized models and parameters for use in tests
     return cd_model, cd_params, cd_param_props, key_init
 
-# Initialization of cdlgssm equivalent cdnlgssm model
+# Initialization of a cdlgssm equivalent cdnlgssm model
 def init_cdnlgssm_equivalent_model(cdlgssm_model, cdlgssm_key, cdlgssm_params, dynamics_approx_order):
     cdnlgssm_model = ContDiscreteNonlinearGaussianSSM(
         state_dim=cdlgssm_model.state_dim,
@@ -183,6 +189,60 @@ def init_cdnlgssm_equivalent_model(cdlgssm_model, cdlgssm_key, cdlgssm_params, d
     )
 
     return cdnlgssm_model, cdnlgssm_params, cdnlgssm_props
+
+# Initialization of a cdlgssm equivalent cdlgssm model
+def init_cdnlssm_equivalent_model(cdlgssm_model, cdlgssm_key, cdlgssm_params):
+    cdnlgssm_model = ContDiscreteNonlinearSSM(
+        state_dim=cdlgssm_model.state_dim,
+        emission_dim=cdlgssm_model.emission_dim
+    )
+    
+    # Initialize the CD-NLSSM with the specified initial distribution, dynamics, and emission
+    cdnlgssm_params, cdnlgssm_props= cdnlgssm_model.initialize(
+        # Define the initial distribution as a StaticGaussianDistribution with the specified mean and covariance
+        initial_distribution={
+            "params": StaticGaussianDistribution(
+                mean=jnp.zeros(cdlgssm_model.state_dim),
+                cov=jnp.eye(cdlgssm_model.state_dim)
+            ),
+            "props": None,
+        },
+        # Define the dynamics with a linear drift and constant diffusion, matching the CD-LGSSM parameters
+        dynamics_drift={
+            "params": LearnableLinear(
+                weights=cdlgssm_params.dynamics.weights,
+                bias=cdlgssm_params.dynamics.bias
+            ),
+            "props": LearnableLinear(
+                weights=ParameterProperties(),
+                bias=ParameterProperties(trainable=False),  # We do not learn bias term!
+            ),
+        },
+        dynamics_diffusion_coefficient={
+            "params": LearnableMatrix(params=cdlgssm_params.dynamics.diffusion_coefficient),
+            "props": LearnableMatrix(params=ParameterProperties()),
+        },
+        dynamics_diffusion_cov={
+            "params": LearnableMatrix(params=cdlgssm_params.dynamics.diffusion_cov),
+            "props": LearnableMatrix(
+                params=ParameterProperties(constrainer=RealToPSDBijector())
+            ),
+        },
+        # The emission distribution is a Learnable Gaussian emission
+        # with mean given by a linear function of the state and covariance matching the CD-LGSSM parameters
+        emission_distribution={
+            "params": LearnableGaussianEmission(
+                emission_function=LearnableLinear(
+                    weights=cdlgssm_params.emissions.weights, bias=cdlgssm_params.emissions.bias
+                ),
+                emission_cov=LearnableMatrix(params=0.1 * jnp.eye(cdlgssm_model.emission_dim))
+            ),
+            "props": None,  # Let us use the default parameter properties
+        },
+    )
+
+    return cdnlgssm_model, cdnlgssm_params, cdnlgssm_props
+
 
 # Check whether continuous-discrete model filtering (with forecasting and emissions) execute successfully
 def test_cdnonlinear_filter_cdlinear_kf_match(seed):
@@ -280,6 +340,7 @@ def test_cdnonlinear_filter_cdlinear_kf_match(seed):
         )
 
         # Sample from the continuous-discrete nonlinear-gaussian model
+        print("Sampling from CD-NLGSSM model...")
         cdnlgssm_states, cdnlgssm_emissions = cdnlgssm_model.sample(
             params=cdnlgssm_params,
             key=sampling_key,
@@ -309,6 +370,46 @@ def test_cdnonlinear_filter_cdlinear_kf_match(seed):
             keys=(forecasting_key, emissions_key, keys),
         )
         print(f"... all filtering (with forecasting and emissions) tests passed for CD-NLGSSM model with dynamics_approx_order={dynamics_approx_order}")
+    
+    # CD-NLSSM
+    # Define equivalent cdnlssm model
+    cdnlssm_model, cdnlssm_params, cdnlssm_props = init_cdnlssm_equivalent_model(
+        cdlgssm_model,
+        cdlgssm_key,
+        cdlgssm_params,
+    )
+
+    # Sample from the continuous-discrete nonlinear-gaussian model
+    print("Sampling from CD-NLSSM model...")
+    cdnlssm_states, cdnlssm_emissions = cdnlssm_model.sample(
+        params=cdnlssm_params,
+        key=sampling_key,
+        num_timesteps=len(t_emissions),
+        t_emissions=t_emissions,
+        inputs=inputs,
+    )
+
+    # Check that these are similar to samples from the cdlgssm model
+    print("\tChecking states...")
+    compare(cdnlssm_states, cdlgssm_states)
+
+    print("\tChecking emissions...")
+    compare(cdnlssm_emissions, cdlgssm_emissions)
+
+    # Check match
+    check_nonlinear_linear_filter_match(
+        cddynamax_model=cdnlssm_model,
+        cddynamax_params=cdnlssm_params,
+        t_emissions=t_emissions,
+        cdlgssm_emissions=cdlgssm_emissions,
+        cdlgssm_filtered=cdlgssm_filtered,
+        t_forecast_emissions=t_forecast_emissions,
+        cdlgssm_forecasted=cdlgssm_forecasted,
+        cdlgssm_filtered_emissions=cdlgssm_filtered_emissions,
+        cdlgssm_forecasted_emissions=cdlgssm_forecasted_emissions,
+        keys=(forecasting_key, emissions_key, keys),
+    )
+    print(f"... all filtering (with forecasting and emissions) tests passed for CD-NLSSM model")
     
 # Check whether continuous-discrete model filtering and forecasting run
 def check_nonlinear_linear_filter_match(
@@ -340,7 +441,7 @@ def check_nonlinear_linear_filter_match(
     elif isinstance(cddynamax_params, ParamsCDNLSSM):
         # Nonlinear case with DPF
         filter_hyperparams_list =[
-            DPFHyperParams()
+            DPFHyperParams(N_particles=1000)
         ]
     else:
         raise ValueError(f"Unknown model parameters type {type(cddynamax_params)}")
@@ -649,6 +750,6 @@ def check_nonlinear_linear_smoother_match(
                 plt.show()
         
 if __name__ == "__main__":
-    #test_cdnonlinear_filter_cdlinear_kf_match(0)
+    test_cdnonlinear_filter_cdlinear_kf_match(0)
     #test_cdnonlinear_smoother_cdlinear_ks_match(0)
     pass
