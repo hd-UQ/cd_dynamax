@@ -134,17 +134,17 @@ def run_filter_then_forecast(
             filtered_state=filtered,
             t_emissions_forecast=data["t_emissions"][start_idx_forecast:stop_idx_forecast],
             forecasted_state=forecasted,
-            inputs_state=None,
-            inputs_forecast=None
+            filtering_inputs=None,
+            forecasting_inputs=None
         )
         
         # Convert the filtered and forecasted results to dictionaries, and add additional fields.
         filtered_dict = tree_to_dict(filtered)
-        filtered_dict["filtered_emissions_means"] = filtered_emissions.mean
-        filtered_dict["filtered_emissions_covariances"] = filtered_emissions.cov
+        filtered_dict["filtered_emissions_means"] = filtered_emissions['mean']
+        filtered_dict["filtered_emissions_covariances"] = filtered_emissions['cov']
         forecasted_dict = tree_to_dict(forecasted)
-        forecasted_dict["forecasted_emissions_means"] = forecasted_emissions.mean
-        forecasted_dict["forecasted_emissions_covariances"] = forecasted_emissions.cov
+        forecasted_dict["forecasted_emissions_means"] = forecasted_emissions['mean']
+        forecasted_dict["forecasted_emissions_covariances"] = forecasted_emissions['cov']
 
         # Save the results as a dictionary
         results = {

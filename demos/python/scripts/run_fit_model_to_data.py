@@ -94,6 +94,8 @@ def fit_model_to_data(
             )
 
             # SGD MAP estimation via cd-dynamax model
+            # Import optax here to avoid unnecessary dependency if not using SGD
+            import optax  # noqa: F401
             return_param_history = sgd_config.getboolean("return_param_history", False)
             return_grad_history = sgd_config.getboolean("return_grad_history", False)
             fit_results = model.fit_sgd(

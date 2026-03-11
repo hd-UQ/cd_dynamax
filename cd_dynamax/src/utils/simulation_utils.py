@@ -273,7 +273,7 @@ def cddynamax_emissions(
         forecasted_state=None,
         filtering_inputs=None,
         forecasting_inputs=None,
-        key=None,
+        key=jr.PRNGKey(0),
         warn=True
     ):
 
@@ -311,6 +311,7 @@ def cddynamax_emissions(
             state_means=filtered_state.filtered_means,
             state_covs=filtered_state.filtered_covariances,
             inputs=filtering_inputs,
+            key=key,
             warn=warn
         )
 
@@ -328,6 +329,7 @@ def cddynamax_emissions(
                 state_means=forecasted_state.forecasted_state_means,
                 state_covs=forecasted_state.forecasted_state_covariances,
                 inputs=forecasting_inputs,
+                key=key,
                 warn=warn
             )
 
@@ -379,6 +381,7 @@ def cddynamax_emissions(
                 t_states=t_emissions_forecast,
                 states=forecasted_state.forecasted_state_path, # We expect particles to be saved here
                 inputs=forecasting_inputs,
+                key=key,
                 warn=warn
             )
 
@@ -440,7 +443,7 @@ def filter_and_forecast(
         emissions=emissions,
         start_idx_filter=start_idx_filter,
         stop_idx_filter=stop_idx_filter,
-        keys=next(keys),
+        key=next(keys),
         filter_spec=filter_spec,
         warn=warn
     )    
@@ -469,32 +472,10 @@ def filter_and_forecast(
         init_forecast=init_forecast,
         t_init=t_emissions[stop_idx_filter - 1],
         t_forecast=t_emissions[start_idx_forecast:stop_idx_forecast],
-        keys=next(keys),
+        key=next(keys),
         filter_spec=filter_spec,
         warn=warn
     )
-
-    # For DPF, we compute mean and covariance of forecasted particles for evaluation purposes
-    if isinstance(filter_hyperparams, DPFHyperParams):
-        # Make a copy of the forecasted object, and add mean and covariance to it
-        particles = forecasted # shape num_timesteps_forecast \times M \times state_dim
-
-        # Weight the particles by the particle weights from the last filtering step, and compute weighted mean and covariance
-        # first axis is time, second axis is particles, third axis is state dimension
-        forecasted_means, forecasted_covariances = vmap(
-            dpf_moments,
-            in_axes=(0, None)
-        )(
-            particles,
-            jnp.exp(filtered.log_weights[-1, ...])
-        )
-        # CDLGSSM forecasting definition
-        from cd_dynamax.src.continuous_discrete_linear_gaussian_ssm.cdlgssm_utils import GSSMForecast
-        forecasted = GSSMForecast(
-            forecasted_state_means=forecasted_means,
-            forecasted_state_covariances=forecasted_covariances,
-            forecasted_state_path=particles
-        )
 
     return (
         filtered,

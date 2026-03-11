@@ -395,7 +395,7 @@ def test_cdnonlinear_filter_cdlinear_kf_match(seed):
 
     print("\tChecking emissions...")
     compare(cdnlssm_emissions, cdlgssm_emissions)
-
+    
     # Check match
     check_nonlinear_linear_filter_match(
         cddynamax_model=cdnlssm_model,
