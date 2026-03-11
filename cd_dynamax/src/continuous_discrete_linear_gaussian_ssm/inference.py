@@ -816,6 +816,7 @@ def cdlgssm_path_sample(
     t_emissions: Optional[Float[Array, "num_timesteps 1"]] = None,
     inputs: Optional[Float[Array, "num_timesteps input_dim"]] = None,
     diffeqsolve_settings={},
+    warn: bool = True,
 ) -> Tuple[
     Float[Array, "num_timesteps state_dim"], Float[Array, "num_timesteps emission_dim"]
 ]:

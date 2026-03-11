@@ -62,7 +62,7 @@ def test_filter_forecast_emissions(seed):
 def check_model_filter_forecast_emissions(
         model_config_file,
         key,
-        config_path='../demos/python/configs/'
+        config_path='./demos/python/configs/' # Absolute path from project root to the config files
     ):
 
     # Sequence of keys

@@ -860,6 +860,7 @@ def cdnlssm_emissions(
     inputs: Optional[Float[Array, "num_timesteps input_dim"]] = None,
     filter_hyperparams: Optional[DPFHyperParams] = DPFHyperParams(),
     key: PRNGKey = jr.PRNGKey(0),
+    warn: bool = True,
 ) -> Float[Array, "num_timesteps emission_dim M"]:
     r"""Compute the emissions corresponding to
         - a continuous-discrete nonlinear model, as specified by params

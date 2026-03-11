@@ -624,9 +624,15 @@ def check_nonlinear_linear_smoother_match(
                 plt.figure()
                 plt.plot(
                     t_emissions,
-                    cdlgssm_smoothed.smoothed_means[:, n_state],
-                    label="KF-smoothed state",
+                    cdlgssm_smoothed_1.smoothed_means[:, n_state],
+                    label="KF-smoothed Type 1 state",
                     color="black",
+                )
+                plt.plot(
+                    t_emissions,
+                    cdlgssm_smoothed_2.smoothed_means[:, n_state],
+                    label="KF-smoothed Type 2 state",
+                    color="gray",
                 )
                 plt.plot(
                     t_emissions,
@@ -644,5 +650,5 @@ def check_nonlinear_linear_smoother_match(
         
 if __name__ == "__main__":
     #test_cdnonlinear_filter_cdlinear_kf_match(0)
-    test_cdnonlinear_smoother_cdlinear_ks_match(0)
+    #test_cdnonlinear_smoother_cdlinear_ks_match(0)
     pass
