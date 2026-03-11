@@ -52,6 +52,11 @@ include = ["cd_dynamax*"]
 dev = [
     "pytest>=8.0",
     "ruff",
+    "mkdocs-material>=9.7.1",
+    "mkdocs>=1.6.1,<2",
+    "mypy>=1.19.1",
+    "mkdocs-jupyter>=0.25.1",
+    "mkdocstrings-python"
 ]
 
 [tool.ruff.lint]

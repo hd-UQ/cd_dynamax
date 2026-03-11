@@ -9,3 +9,6 @@ lint:
 
 test:
 	pytest --ignore cd_dynamax/dynamax
+
+build_docs:
+	mkdocs build
