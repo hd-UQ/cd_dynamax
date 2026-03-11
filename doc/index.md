@@ -1,4 +1,4 @@
-# Overview of cd-dynamax
+# Welcome to cd-dynamax!
 
 The primary goal of this codebase is to extend [dynamax](https://github.com/probml/dynamax) to a continuous-discrete (CD) state-space-modeling setting, that is, to problems where 
 
@@ -116,12 +116,12 @@ make lint
 ```
 
 - We can also format files using `ruff`:
-```bash
+```bashbash
 make clean
 ```
 
 - The docs can be built using `mkdocs` as:
-```bash
+```bashbash
 make build_docs
 ```
 

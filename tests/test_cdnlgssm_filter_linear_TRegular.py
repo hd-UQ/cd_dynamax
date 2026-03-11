@@ -28,10 +28,12 @@ from tensorflow_probability.substrates.jax.distributions import (
 # Whether to plot test results or not - can be helpful for debugging but should be False for regular test runs
 PLOT_TEST_RESULTS = False
 
+
 # Use a fixed random seed for reproducibility in tests
 @pytest.fixture
 def rng_keys():
     return jr.split(jr.PRNGKey(0))
+
 
 # Testing nonlinear filter variants against linear-equivalent dynamics under regular time intervals.
 # First, establish equivalent linear systems in cd-dynamax:
@@ -118,7 +120,11 @@ def test_cdnlgssm_filter_linear_tregular(rng_keys):
 
     # Based on the emission timestamps
     cd_states, cd_emissions = cd_model.sample(
-        cd_params, key2, num_timesteps=NUM_TIMESTEPS, t_emissions=t_emissions, inputs=inputs
+        cd_params,
+        key2,
+        num_timesteps=NUM_TIMESTEPS,
+        t_emissions=t_emissions,
+        inputs=inputs,
     )
 
     # sample via transition_type=path
@@ -269,11 +275,15 @@ def test_cdnlgssm_filter_linear_tregular(rng_keys):
                 ),
                 "props": LearnableLinear(
                     weights=ParameterProperties(),
-                    bias=ParameterProperties(trainable=False),  # We do not learn bias term!
+                    bias=ParameterProperties(
+                        trainable=False
+                    ),  # We do not learn bias term!
                 ),
             },
             dynamics_diffusion_coefficient={
-                "params": LearnableMatrix(params=cd_params.dynamics.diffusion_coefficient),
+                "params": LearnableMatrix(
+                    params=cd_params.dynamics.diffusion_coefficient
+                ),
                 "props": LearnableMatrix(params=ParameterProperties()),
             },
             dynamics_diffusion_cov={
@@ -289,11 +299,15 @@ def test_cdnlgssm_filter_linear_tregular(rng_keys):
                 ),
                 "props": LearnableLinear(
                     weights=ParameterProperties(),
-                    bias=ParameterProperties(trainable=False),  # We do not learn bias term!
+                    bias=ParameterProperties(
+                        trainable=False
+                    ),  # We do not learn bias term!
                 ),
             },
             emission_cov={
-                "params": LearnableMatrix(params=0.1 * jnp.eye(cdnl_model.emission_dim)),
+                "params": LearnableMatrix(
+                    params=0.1 * jnp.eye(cdnl_model.emission_dim)
+                ),
                 "props": LearnableMatrix(
                     params=ParameterProperties(constrainer=RealToPSDBijector())
                 ),
@@ -345,7 +359,7 @@ def test_cdnlgssm_filter_linear_tregular(rng_keys):
             print(
                 f"Fitting continuous-discrete nonlinear model with SGD + {state_order}-order EKF"
             )
-            
+
             # Note: no bias terms are learned here
             cdnl_sgd_fitted_params, cdnl_sgd_lps = cdnl_model.fit_sgd(
                 cdnl_params,
@@ -433,13 +447,14 @@ def test_cdnlgssm_filter_linear_tregular(rng_keys):
                 inputs=inputs,
             )
 
-            print(f"\tComparing post-SGD fit {state_order}-order EKF filtered posterior...")
+            print(
+                f"\tComparing post-SGD fit {state_order}-order EKF filtered posterior..."
+            )
             compare_structs(
                 cd_sgd_fitted_filtered_posterior,
                 cdnl_sgd_fitted_filtered_posterior,
                 accept_failure=False,
             )
-
 
     print("All EKF and CDNLGSSM model tests passed!")
 
@@ -493,7 +508,9 @@ def test_cdnlgssm_filter_linear_tregular(rng_keys):
             # check that results in cd_enkf_1_post are similar to results from applying cd_kf (cd_filtered_posterior)
             print("\tComparing filtered means...")
             try:
-                compare(cd_enkf_post.filtered_means, cd_filtered_posterior.filtered_means)
+                compare(
+                    cd_enkf_post.filtered_means, cd_filtered_posterior.filtered_means
+                )
             except AssertionError:
                 if N_particles < 1e5 or not perturb_measurements:
                     print(
@@ -502,7 +519,8 @@ def test_cdnlgssm_filter_linear_tregular(rng_keys):
                     pass
                 else:
                     compare(
-                        cd_enkf_post.filtered_means, cd_filtered_posterior.filtered_means
+                        cd_enkf_post.filtered_means,
+                        cd_filtered_posterior.filtered_means,
                     )
 
             print("\tComparing filtered covariances...")
@@ -525,7 +543,6 @@ def test_cdnlgssm_filter_linear_tregular(rng_keys):
                         do_det=True,
                     )
 
-
     print(
         "All EnKF tests passed---note that these are randomized approximations, so we don't expect to perfectly replicate EKF and KF (which are both exact in linear test cases shown here)! We want to see convergence to truth (hence checking the final filtered state)."
     )
@@ -534,9 +551,9 @@ def test_cdnlgssm_filter_linear_tregular(rng_keys):
     print("************* Continuous-Discrete LGSSM Forecasting *************")
     # Define forecasting time points
     FORECAST_TIMESTEPS = 25
-    t_forecast_emissions = jnp.arange(NUM_TIMESTEPS, NUM_TIMESTEPS + FORECAST_TIMESTEPS)[
-        :, None
-    ]
+    t_forecast_emissions = jnp.arange(
+        NUM_TIMESTEPS, NUM_TIMESTEPS + FORECAST_TIMESTEPS
+    )[:, None]
     init_time = t_emissions[-1]
 
     # Run forecast on forecasting time points
@@ -544,7 +561,9 @@ def test_cdnlgssm_filter_linear_tregular(rng_keys):
     key_past, key_forecast = jr.split(jr.PRNGKey(0))
 
     # EKF-based forecast
-    ekf_params = EKFHyperParams(dt_final=1.0, state_order="first", emission_order="first")
+    ekf_params = EKFHyperParams(
+        dt_final=1.0, state_order="first", emission_order="first"
+    )
     print("Forecasting with EKF-based forecast")
     # Initialize forecast with last filtered state, as fixed point estimate
     cd_ekf_point_init_forecast = cd_ekf_post.filtered_means[-1, :]
@@ -601,11 +620,15 @@ def test_cdnlgssm_filter_linear_tregular(rng_keys):
                 t_forecast_emissions[:, 0],
                 cd_ekf_dist_forecasted.forecasted_state_means[:, n_state]
                 - jnp.sqrt(
-                    cd_ekf_dist_forecasted.forecasted_state_covariances[:, n_state, n_state]
+                    cd_ekf_dist_forecasted.forecasted_state_covariances[
+                        :, n_state, n_state
+                    ]
                 ),
                 cd_ekf_dist_forecasted.forecasted_state_means[:, n_state]
                 + jnp.sqrt(
-                    cd_ekf_dist_forecasted.forecasted_state_covariances[:, n_state, n_state]
+                    cd_ekf_dist_forecasted.forecasted_state_covariances[
+                        :, n_state, n_state
+                    ]
                 ),
                 color="orange",
                 alpha=0.2,
@@ -629,14 +652,15 @@ def test_cdnlgssm_filter_linear_tregular(rng_keys):
         inputs=inputs,
     )
 
-    cd_ekf_dist_emissions_forecasted_means, cd_ekf_dist_emissions_forecasted_covariances = (
-        cdnlgssm_emissions(
-            params=cdnl_params,
-            t_states=t_forecast_emissions,
-            state_means=cd_ekf_dist_forecasted.forecasted_state_means,
-            state_covs=cd_ekf_dist_forecasted.forecasted_state_covariances,
-            inputs=inputs,
-        )
+    (
+        cd_ekf_dist_emissions_forecasted_means,
+        cd_ekf_dist_emissions_forecasted_covariances,
+    ) = cdnlgssm_emissions(
+        params=cdnl_params,
+        t_states=t_forecast_emissions,
+        state_means=cd_ekf_dist_forecasted.forecasted_state_means,
+        state_covs=cd_ekf_dist_forecasted.forecasted_state_covariances,
+        inputs=inputs,
     )
 
     # if interested, plot the results to visually inspect the forecasted emission paths and distributions.
@@ -666,11 +690,15 @@ def test_cdnlgssm_filter_linear_tregular(rng_keys):
                 t_forecast_emissions[:, 0],
                 cd_ekf_dist_emissions_forecasted_means[:, n_emission]
                 - jnp.sqrt(
-                    cd_ekf_dist_emissions_forecasted_covariances[:, n_emission, n_emission]
+                    cd_ekf_dist_emissions_forecasted_covariances[
+                        :, n_emission, n_emission
+                    ]
                 ),
                 cd_ekf_dist_emissions_forecasted_means[:, n_emission]
                 + jnp.sqrt(
-                    cd_ekf_dist_emissions_forecasted_covariances[:, n_emission, n_emission]
+                    cd_ekf_dist_emissions_forecasted_covariances[
+                        :, n_emission, n_emission
+                    ]
                 ),
                 color="orange",
                 alpha=0.2,
@@ -741,11 +769,15 @@ def test_cdnlgssm_filter_linear_tregular(rng_keys):
                 t_forecast_emissions[:, 0],
                 cd_ukf_dist_forecasted.forecasted_state_means[:, n_state]
                 - jnp.sqrt(
-                    cd_ukf_dist_forecasted.forecasted_state_covariances[:, n_state, n_state]
+                    cd_ukf_dist_forecasted.forecasted_state_covariances[
+                        :, n_state, n_state
+                    ]
                 ),
                 cd_ukf_dist_forecasted.forecasted_state_means[:, n_state]
                 + jnp.sqrt(
-                    cd_ukf_dist_forecasted.forecasted_state_covariances[:, n_state, n_state]
+                    cd_ukf_dist_forecasted.forecasted_state_covariances[
+                        :, n_state, n_state
+                    ]
                 ),
                 color="orange",
                 alpha=0.2,
@@ -769,14 +801,15 @@ def test_cdnlgssm_filter_linear_tregular(rng_keys):
         inputs=inputs,
     )
 
-    cd_ukf_dist_emissions_forecasted_means, cd_ukf_dist_emissions_forecasted_covariances = (
-        cdnlgssm_emissions(
-            params=cdnl_params,
-            t_states=t_forecast_emissions,
-            state_means=cd_ukf_dist_forecasted.forecasted_state_means,
-            state_covs=cd_ukf_dist_forecasted.forecasted_state_covariances,
-            inputs=inputs,
-        )
+    (
+        cd_ukf_dist_emissions_forecasted_means,
+        cd_ukf_dist_emissions_forecasted_covariances,
+    ) = cdnlgssm_emissions(
+        params=cdnl_params,
+        t_states=t_forecast_emissions,
+        state_means=cd_ukf_dist_forecasted.forecasted_state_means,
+        state_covs=cd_ukf_dist_forecasted.forecasted_state_covariances,
+        inputs=inputs,
     )
 
     # If interested, plot the results to visually inspect the forecasted emission paths and distributions.
@@ -806,11 +839,15 @@ def test_cdnlgssm_filter_linear_tregular(rng_keys):
                 t_forecast_emissions[:, 0],
                 cd_ukf_dist_emissions_forecasted_means[:, n_emission]
                 - jnp.sqrt(
-                    cd_ukf_dist_emissions_forecasted_covariances[:, n_emission, n_emission]
+                    cd_ukf_dist_emissions_forecasted_covariances[
+                        :, n_emission, n_emission
+                    ]
                 ),
                 cd_ukf_dist_emissions_forecasted_means[:, n_emission]
                 + jnp.sqrt(
-                    cd_ukf_dist_emissions_forecasted_covariances[:, n_emission, n_emission]
+                    cd_ukf_dist_emissions_forecasted_covariances[
+                        :, n_emission, n_emission
+                    ]
                 ),
                 color="orange",
                 alpha=0.2,
@@ -954,11 +991,15 @@ def test_cdnlgssm_filter_linear_tregular(rng_keys):
                 t_forecast_emissions[:, 0],
                 cd_enkf_dist_emissions_forecasted_means[:, n_emission]
                 - jnp.sqrt(
-                    cd_enkf_dist_emissions_forecasted_covariances[:, n_emission, n_emission]
+                    cd_enkf_dist_emissions_forecasted_covariances[
+                        :, n_emission, n_emission
+                    ]
                 ),
                 cd_enkf_dist_emissions_forecasted_means[:, n_emission]
                 + jnp.sqrt(
-                    cd_enkf_dist_emissions_forecasted_covariances[:, n_emission, n_emission]
+                    cd_enkf_dist_emissions_forecasted_covariances[
+                        :, n_emission, n_emission
+                    ]
                 ),
                 color="orange",
                 alpha=0.2,

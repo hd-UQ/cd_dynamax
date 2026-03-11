@@ -31,12 +31,12 @@ class ParamsCDLGSSMDynamics(NamedTuple):
         $p(z_{t1}} | z_{t0}, u_t1) = N(z_{t1} | A z_{t0} + B u_{t1} + b, P)$
     where A, B, b, P are computed based on the SDE defined by F_t, L_t and Q.
 
-    :param weights: dynamics weights $F_t$
-    :param bias: dynamics bias $b$
-    :param input_weights: dynamics input weights $B$
-    :param diffusion_coefficient: dynamics diffusion coefficient $L_t$
-    :param diffusion_cov: dynamics covariance $Q$
-
+    Args:
+        weights: Dynamics weights $F_t$.
+        bias: Dynamics bias $b$.
+        input_weights: Dynamics input weights $B$.
+        diffusion_coefficient: Dynamics diffusion coefficient $L_t$.
+        diffusion_cov: Dynamics covariance $Q$.
     """
 
     # F_t: parameters and properties
@@ -77,10 +77,10 @@ class ParamsCDLGSSMDynamics(NamedTuple):
 class ParamsCDLGSSM(NamedTuple):
     r"""Parameters of a linear Gaussian CD-LGSSM.
 
-    :param initial: initial distribution parameters, same as in LGSSM
-    :param dynamics: dynamics distribution parameters
-    :param emissions: emission distribution parameters
-
+    Args:
+        initial: Initial distribution parameters, same as in LGSSM.
+        dynamics: Dynamics distribution parameters.
+        emissions: Emission distribution parameters.
     """
 
     initial: ParamsLGSSMInitial
@@ -92,15 +92,13 @@ class ParamsCDLGSSM(NamedTuple):
 class GSSMForecast(NamedTuple):
     r"""Object definition used when forecasting.
 
-    # If we forecast Gaussian distributions, based on filtering methods
-    :param forecasted_state_means: array of forecasted state means $\mathbb{E}[z_{t+1:t+t_f} \mid y_{1:t}, u_{1:t}, u_{t+1:t+f}]$
-    :param filtered_covariances: array of forecasted state covariances $\mathrm{Cov}[z_{t+1:t+t_f} \mid y_{1:t}, u_{1:t}, u_{t+1:t+f}]$
-    :param forecasted_emission_means: array of forecasted emission means $\mathbb{E}[y_{t+1:t+t_f} \mid y_{1:t}, u_{1:t}, u_{t+1:t+f}]$
-    :param forecasted_emission_covariances: array of forecasted emission covariances $\mathrm{Cov}[y_{t+1:t+t_f} \mid y_{1:t}, u_{1:t}, u_{t+1:t+f}]$
-
-    # If we forecast paths, based on solving the SDE
-    :param forecasted_state_path: array of forecasted state path $z_{t+1:t+t_f}$
-    :param forecasted_emission_path: array of forecasted emission path $y_{t+1:t+t_f}$
+    Args:
+        forecasted_state_means: Array of forecasted state means $\mathbb{E}[z_{t+1:t+t_f} \mid y_{1:t}, u_{1:t}, u_{t+1:t+f}]$.
+        filtered_covariances: Array of forecasted state covariances $\mathrm{Cov}[z_{t+1:t+t_f} \mid y_{1:t}, u_{1:t}, u_{t+1:t+f}]$.
+        forecasted_emission_means: Array of forecasted emission means $\mathbb{E}[y_{t+1:t+t_f} \mid y_{1:t}, u_{1:t}, u_{t+1:t+f}]$.
+        forecasted_emission_covariances: Array of forecasted emission covariances $\mathrm{Cov}[y_{t+1:t+t_f} \mid y_{1:t}, u_{1:t}, u_{t+1:t+f}]$.
+        forecasted_state_path: Array of forecasted state path $z_{t+1:t+t_f}$.
+        forecasted_emission_path: Array of forecasted emission path $y_{t+1:t+t_f}$.
     """
 
     # If we forecast Gaussian distributions, based on filtering methods
@@ -126,13 +124,13 @@ _zeros_if_none = lambda x, shape: x if x is not None else jnp.zeros(shape)
 def create_cdlgssm_params_and_props(
     params: dict,
 ) -> Tuple[ParamsCDLGSSM, ParameterProperties]:
-    r"""Create CD-LGSSM parameters and properties, based on provided dictionaries
+    r"""Create CD-LGSSM parameters and properties, based on provided dictionaries.
 
     Args:
-        :param params: dictionary of parameters
+        params: Dictionary of parameters.
 
     Returns:
-        :return: Tuple of parameters and properties objects
+        Tuple of parameters and properties objects.
     """
 
     ## Create nested dictionary of params
@@ -170,17 +168,16 @@ def init_cdlgssm_params(
     init_prior=None,
     key=jr.PRNGKey(0),
 ) -> Tuple[ParamsCDLGSSM, ParamsCDLGSSM]:
-    r"""Initialize CD-LGSSM parameters and properties,
-        based on sampling from the provided prior, init_values or defaults
+    r"""Initialize CD-LGSSM parameters and properties from prior, init_values, or defaults.
 
     Args:
-        :param default_params: dictionary of default parameters: we at least need some default values
-        :param init_params: dictionary of all parameters
-        :param init_prior: prior distribution for the initialization. Defaults to None.
-        :param key: random key for sampling from the prior. Defaults to jr.PRNGKey(0).
+        default_params: Dictionary of default parameters; at least some default values are required.
+        init_params: Dictionary of all parameters.
+        init_prior: Prior distribution for the initialization. Defaults to None.
+        key: Random key for sampling from the prior. Defaults to jr.PRNGKey(0).
 
     Returns:
-        :return: Tuple of CD-LGSSM parameters and properties objects
+        Tuple of CD-LGSSM parameters and properties objects.
     """
 
     # First, make sure we have all the necessary default parameters
@@ -234,17 +231,16 @@ def sample_cdlgssm_params(
     init_params,
     key=jr.PRNGKey(0),
 ) -> Tuple[ParamsCDLGSSM, ParamsCDLGSSM]:
-    r"""Sample CD-LGSSM parameters from the provided prior,
-        with init_params used for non-sampled parameters
+    r"""Sample CD-LGSSM parameters from the provided prior; init_params used for non-sampled parameters.
 
     Args:
-        :param prior: prior distribution for the initialization.
-        :param M: number of samples to draw
-        :param init_params: dictionary of all parameters
-        :param key: random key for sampling from the prior. Defaults to jr.PRNGKey(0).
+        prior: Prior distribution for the initialization.
+        M: Number of samples to draw.
+        init_params: Dictionary of all parameters.
+        key: Random key for sampling from the prior. Defaults to jr.PRNGKey(0).
 
     Returns:
-        :return: Tuple of CD-LGSSM parameters and properties objects
+        Tuple of CD-LGSSM parameters and properties objects.
     """
 
     # First, make sure we have all the necessary parameters

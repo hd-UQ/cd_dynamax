@@ -29,12 +29,14 @@ from cd_dynamax.src.continuous_discrete_nonlinear_gaussian_ssm.cdnlgssm_utils im
 # Whether to plot test results or not - can be helpful for debugging but should be False for regular test runs
 PLOT_TEST_RESULTS = False
 
+
 # Use a fixed random seed for reproducibility in tests
 @pytest.fixture
 def rng_keys():
     return jr.split(jr.PRNGKey(0))
 
-# Testing nonlinear smoother variants against linear-equivalent dynamics 
+
+# Testing nonlinear smoother variants against linear-equivalent dynamics
 # First, establish equivalent linear systems in cd-dynamax:
 # one defined as linear, the other as nonlinear with learnable functions to be linear.
 # Then, show that samples from each are similar.
@@ -65,7 +67,7 @@ def test_cdnlgssm_smoother_linear_tregular(rng_keys):
         # has_dynamics_bias = False,
         # has_emissions_bias = False,
     )
-    
+
     # Initialize, controlling what is learned
     cd_params, cd_param_props = cd_model.initialize(
         key1,
@@ -109,7 +111,7 @@ def test_cdnlgssm_smoother_linear_tregular(rng_keys):
             "props": ParameterProperties(constrainer=RealToPSDBijector()),
         },
     )
-    
+
     # Simulate from the continuous-discrete model
     print("Simulating in continuous-discrete time")
     cd_num_timesteps_states, cd_num_timesteps_emissions = cd_model.sample(
@@ -117,7 +119,11 @@ def test_cdnlgssm_smoother_linear_tregular(rng_keys):
     )
 
     cd_states, cd_emissions = cd_model.sample(
-        cd_params, key2, num_timesteps=NUM_TIMESTEPS, t_emissions=t_emissions, inputs=inputs
+        cd_params,
+        key2,
+        num_timesteps=NUM_TIMESTEPS,
+        t_emissions=t_emissions,
+        inputs=inputs,
     )
 
     print("\tChecking states...")
@@ -156,11 +162,15 @@ def test_cdnlgssm_smoother_linear_tregular(rng_keys):
                 ),
                 "props": LearnableLinear(
                     weights=ParameterProperties(),
-                    bias=ParameterProperties(trainable=False),  # We do not learn bias term!
+                    bias=ParameterProperties(
+                        trainable=False
+                    ),  # We do not learn bias term!
                 ),
             },
             dynamics_diffusion_coefficient={
-                "params": LearnableMatrix(params=cd_params.dynamics.diffusion_coefficient),
+                "params": LearnableMatrix(
+                    params=cd_params.dynamics.diffusion_coefficient
+                ),
                 "props": LearnableMatrix(params=ParameterProperties()),
             },
             dynamics_diffusion_cov={
@@ -176,11 +186,15 @@ def test_cdnlgssm_smoother_linear_tregular(rng_keys):
                 ),
                 "props": LearnableLinear(
                     weights=ParameterProperties(),
-                    bias=ParameterProperties(trainable=False),  # We do not learn bias term!
+                    bias=ParameterProperties(
+                        trainable=False
+                    ),  # We do not learn bias term!
                 ),
             },
             emission_cov={
-                "params": LearnableMatrix(params=0.1 * jnp.eye(cdnl_model.emission_dim)),
+                "params": LearnableMatrix(
+                    params=0.1 * jnp.eye(cdnl_model.emission_dim)
+                ),
                 "props": LearnableMatrix(
                     params=ParameterProperties(constrainer=RealToPSDBijector())
                 ),
@@ -243,7 +257,9 @@ def test_cdnlgssm_smoother_linear_tregular(rng_keys):
                     f"Comparing {smoother_type} KF smoothed posteriors with {state_order}-order EKF smoother..."
                 )
                 compare_structs(
-                    cd_smoother_posterior, cd_ekf_smoother_posterior, accept_failure=True
+                    cd_smoother_posterior,
+                    cd_ekf_smoother_posterior,
+                    accept_failure=True,
                 )
 
             print(

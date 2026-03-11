@@ -188,14 +188,13 @@ def create_cddynamax_model_from_config(
 ]:  # Either CD-LGSSM or CD-NLGSSM or CD-NLSSM
     r"""Create a cd-dynamax model from configuration files
         The model can be either CD-LGSSM or CD-NLGSSM or CD-NLSSM, depending on the class_name specified in the config file.
-
     Args:
-        :param config_path: path to the configuration directory
-        :param true_model_config_file: path to the model configuration file
-        :param overrides: dictionary of overrides to apply to the configuration file
+        config_path: Path to the configuration directory.
+        true_model_config_file: Path to the model configuration file.
+        overrides: Dictionary of overrides to apply to the configuration file.
 
     Returns:
-        :return: Tuple of CD-LGSSM or CD-NLGSSM or CD-NLSSM model, its parameters and properties
+        Tuple of model (CD-LGSSM or CD-NLGSSM), its parameters, and properties.
     """
 
     # Full path to the config file
@@ -327,15 +326,15 @@ def solver_settings_from_config(
     config_file: str = None,
     overrides=None,
 ) -> dict:
-    r"""Load solver settings from a configuration file
+    r"""Load solver settings from a configuration file.
 
     Args:
-        :param config_path: path to the configuration directory
-        :param config_file: path to the configuration file
-        :param overrides: dictionary of overrides to apply to the configuration file
+        config_path: Path to the configuration directory.
+        config_file: Path to the configuration file.
+        overrides: Dictionary of overrides to apply to the configuration file.
 
     Returns:
-        :return: dictionary of solver settings
+        Dictionary of solver settings.
     """
 
     # Full path to the config file
@@ -393,15 +392,15 @@ def create_cddynamax_filter_from_config(
     filter_config_file: str = None,
     overrides=None,
 ) -> NamedTuple:
-    r"""Create CD-Dynamax filter from configuration file
+    r"""Create CD-Dynamax filter from configuration file.
 
     Args:
-        :param config_path: path to the configuration directory
-        :param filter_config_file: path to the filter configuration file
-        :param overrides: dictionary of overrides to apply to the configuration file
+        config_path: Path to the configuration directory.
+        filter_config_file: Path to the filter configuration file.
+        overrides: Dictionary of overrides to apply to the configuration file.
 
     Returns:
-        :return: NamedTuple of filter settings
+        NamedTuple of filter settings.
     """
 
     # Full path to the config file
