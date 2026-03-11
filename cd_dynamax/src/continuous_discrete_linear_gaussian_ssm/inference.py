@@ -644,13 +644,17 @@ def cdlgssm_smoother(
             smoothed_cross,
         )
 
-    # Select the smoothing step function, using jax.switch
-    def _step(carry, args):
-        return lax.switch(
-            0 if smoother_type == "cd_smoother_1" else 1,
-            [_step_1, _step_2],
-            carry,
-            args,
+    # Select the smoothing step function with a Python branch.
+    # This avoids tracing both branches (as lax.switch would do), which can
+    # trigger misleading debug prints from both smoother implementations.
+    if smoother_type == "cd_smoother_1":
+        _step = _step_1
+    elif smoother_type == "cd_smoother_2":
+        _step = _step_2
+    else:
+        raise ValueError(
+            f"Unknown smoother_type '{smoother_type}'. Expected "
+            "'cd_smoother_1' or 'cd_smoother_2'."
         )
 
     # Run smoother steps via lax scan, using reverse mode

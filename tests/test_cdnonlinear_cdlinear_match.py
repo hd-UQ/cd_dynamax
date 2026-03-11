@@ -18,7 +18,8 @@ from cd_dynamax.src.continuous_discrete_linear_gaussian_ssm import (
     ParamsCDLGSSM,
     KFHyperParams,
     cdlgssm_filter,
-    cdlgssm_forecast
+    cdlgssm_forecast,
+    cdlgssm_smoother
 )
 
 from cd_dynamax.src.continuous_discrete_nonlinear_gaussian_ssm import (
@@ -26,6 +27,7 @@ from cd_dynamax.src.continuous_discrete_nonlinear_gaussian_ssm import (
     EKFHyperParams,
     UKFHyperParams,
     EnKFHyperParams,
+    cdnlgssm_smoother,
 )
 
 from cd_dynamax.src.continuous_discrete_nonlinear_gaussian_ssm.cdnlgssm_utils import (
@@ -182,7 +184,7 @@ def init_cdnlgssm_equivalent_model(cdlgssm_model, cdlgssm_key, cdlgssm_params, d
 
     return cdnlgssm_model, cdnlgssm_params, cdnlgssm_props
 
-# Check whether continuous-discrete model filtering and forecasting run
+# Check whether continuous-discrete model filtering (with forecasting and emissions) execute successfully
 def test_cdnonlinear_filter_cdlinear_kf_match(seed):
 
     # Sequence of keys
@@ -306,7 +308,7 @@ def test_cdnonlinear_filter_cdlinear_kf_match(seed):
             cdlgssm_forecasted_emissions=cdlgssm_forecasted_emissions,
             keys=(forecasting_key, emissions_key, keys),
         )
-        print(f"... all tests passed for CD-NLGSSM model with dynamics_approx_order={dynamics_approx_order}")
+        print(f"... all filtering (with forecasting and emissions) tests passed for CD-NLGSSM model with dynamics_approx_order={dynamics_approx_order}")
     
 # Check whether continuous-discrete model filtering and forecasting run
 def check_nonlinear_linear_filter_match(
@@ -482,7 +484,165 @@ def check_nonlinear_linear_filter_match(
         compare_structs(forecasted_emissions, cdlgssm_forecasted_emissions, accept_failure=True)
 
 
+# Check whether continuous-discrete model smoothing executes successfully
+def test_cdnonlinear_smoother_cdlinear_ks_match(seed):
+
+    # Sequence of keys
+    keys = make_key_sequence(seed)
+
+    # Define discrete and continous-discrete models
+    cdlgssm_model, cdlgssm_params, cdlgssm_props, cdlgssm_key = init_cdlgssm_model(next(keys))
+
+    # Simulation from CD-LGSSM
+    t0=0
+    t1=1
+    num_samples=100
+
+    # Regularly sampled in [0,1]
+    num_timesteps, t_emissions=generate_t_emissions(
+        t0=t0,
+        t1=t1,
+        num_samples=num_samples,
+        irregular_samples = False,
+        key=next(keys),
+    )
+    
+    # No inputs for now
+    inputs = None
+
+    # Sample from the continuous-discrete model
+    sampling_key=next(keys)
+    cdlgssm_states, cdlgssm_emissions = cdlgssm_model.sample(
+        params=cdlgssm_params,
+        key=sampling_key,
+        num_timesteps=len(t_emissions),
+        t_emissions=t_emissions,
+        inputs=inputs,
+    )
+
+    # Smooth the cdlgssm emissions to get smoothed posterior
+    # There are 2 CD-LGSSM smoothers implemented, test both
+    cdlgssm_smoothed_1 = cdlgssm_smoother(
+        cdlgssm_params,
+        cdlgssm_emissions,
+        t_emissions,
+        filter_hyperparams=KFHyperParams(),
+        inputs=inputs,
+        smoother_type='cd_smoother_1'
+    )
+    cdlgssm_smoothed_2 = cdlgssm_smoother(
+        cdlgssm_params,
+        cdlgssm_emissions,
+        t_emissions,
+        filter_hyperparams=KFHyperParams(),
+        inputs=inputs,
+        smoother_type='cd_smoother_2'
+    )
+    
+    # CD-NLGSSM
+    # Define equivalent cdnlgssm model, with first and second order SDE approximation
+    # both should be correct for linear models
+    for dynamics_approx_order in [1.0, 2.0]:
+        cdnlgssm_model, cdnlgssm_params, cdnlgssm_props = init_cdnlgssm_equivalent_model(
+            cdlgssm_model,
+            cdlgssm_key,
+            cdlgssm_params,
+            dynamics_approx_order
+        )
+
+        # Check match
+        check_nonlinear_linear_smoother_match(
+            cddynamax_model=cdnlgssm_model,
+            cddynamax_params=cdnlgssm_params,
+            t_emissions=t_emissions,
+            cdlgssm_emissions=cdlgssm_emissions,
+            cdlgssm_smoothed_1=cdlgssm_smoothed_1,
+            cdlgssm_smoothed_2=cdlgssm_smoothed_2,
+            keys=keys,
+        )
+        print(f"... all smoothing tests passed for CD-NLGSSM model with dynamics_approx_order={dynamics_approx_order}")
+
+# Check whether continuous-discrete model filtering and forecasting run
+def check_nonlinear_linear_smoother_match(
+        cddynamax_model,
+        cddynamax_params,
+        t_emissions,
+        cdlgssm_emissions,
+        cdlgssm_smoothed_1,
+        cdlgssm_smoothed_2,
+        keys,
+    ):
+    
+    ### Filtering
+    # Decide what filtering algorithm to use
+    if isinstance(cddynamax_params, ParamsCDNLGSSM):
+        # Nonlinear Gaussian case
+        # EKF smoother only, 
+        # with  first and second order state SDE approximation (both should be correct for linear models)
+        filter_hyperparams_list = [
+            EKFHyperParams(state_order="first"),
+            EKFHyperParams(state_order="second"),
+        ]
+
+    else:
+        raise ValueError(f"Unknown model parameters type {type(cddynamax_params)} for smoothing check")
+    
+    # Iterate over filters
+    for filter_hyperparams in filter_hyperparams_list:
+        # Smoothed the emissions to get filtered posterior
+        print(f"Testing smoothing for nonlinear model with filter {type(filter_hyperparams)}...")
+        smoothed = cdnlgssm_smoother(
+            params=cddynamax_params,
+            emissions=cdlgssm_emissions,
+            t_emissions=t_emissions,
+            filter_hyperparams=filter_hyperparams,
+        )
+
+        # Check that the smoothed posterior has the expected structure and dimensions
+        assert smoothed.smoothed_means.shape == (len(t_emissions), cddynamax_model.state_dim), \
+            f"Expected smoothed means shape {(len(t_emissions), cddynamax_model.state_dim)}, got {smoothed.smoothed_means.shape}"
+        assert smoothed.smoothed_covariances.shape == (len(t_emissions), cddynamax_model.state_dim, cddynamax_model.state_dim), \
+            f"Expected smoothed covariances shape {(len(t_emissions), cddynamax_model.state_dim, cddynamax_model.state_dim)}, got {smoothed.smoothed_covariances.shape}"
+
+        # Check smoothed means and covariances are finite
+        assert jnp.all(jnp.isfinite(smoothed.smoothed_means)), \
+            "Smoothed means contain non-finite values"
+        assert jnp.all(jnp.isfinite(smoothed.smoothed_covariances)), \
+            "Smoothed covariances contain non-finite values"
+        
+        # Check nonlinear filter results are close to linear Kalman filter results
+        print("\tChecking smoothed CD-NLGSSM match Kalman smoother type 1 results...")
+        compare_structs(smoothed, cdlgssm_smoothed_1, accept_failure=True)
+        print("\tChecking smoothed CD-NLGSSM match Kalman smoother type 2 results...")
+        compare_structs(smoothed, cdlgssm_smoothed_2, accept_failure=True)
+
+        # If intersted, plot the results to visually inspect the smoothing and forecasting performance
+        if PLOT_TEST_RESULTS:
+            import matplotlib.pyplot as plt
+
+            for n_state in jnp.arange(cddynamax_model.state_dim):
+                plt.figure()
+                plt.plot(
+                    t_emissions,
+                    cdlgssm_smoothed.smoothed_means[:, n_state],
+                    label="KF-smoothed state",
+                    color="black",
+                )
+                plt.plot(
+                    t_emissions,
+                    smoothed.smoothed_means[:, n_state],
+                    label="Continuous-Discrete smoothed state",
+                    color="blue",
+                    marker="x",
+                )
+                plt.xlabel("time")
+                plt.ylabel(f"x_{n_state}")
+                plt.grid()
+                plt.legend()
+                plt.title("Smoothed states after SGD optimization")
+                plt.show()
         
 if __name__ == "__main__":
-    test_cdnonlinear_filter_cdlinear_kf_match(0)
+    #test_cdnonlinear_filter_cdlinear_kf_match(0)
+    test_cdnonlinear_smoother_cdlinear_ks_match(0)
     pass
