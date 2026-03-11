@@ -19,6 +19,11 @@ from tensorflow_probability.substrates.jax.distributions import (
 )
 
 # Our own custom src codebase
+from cd_dynamax import (
+    ContDiscreteLinearGaussianSSM,
+    ContDiscreteNonlinearGaussianSSM,
+    ContDiscreteNonlinearSSM,
+)
 # continuous-discrete nonlinear Gaussian SSM codebase
 from cd_dynamax.src.continuous_discrete_linear_gaussian_ssm import (
     cdlgssm_filter,
@@ -115,7 +120,289 @@ def generate_irregular_t_emissions(
         num_timesteps_forecast,
     )
 
+# cd-dynamax function to filter, based on model with given parameters
+def cddynamax_filter(
+    model_params,
+    filter_hyperparams,
+    t_emissions,
+    emissions,
+    start_idx_filter,
+    stop_idx_filter,
+    key=jr.PRNGKey(0),
+    filter_spec="model",
+    warn=True
+):
+    if filter_spec == "model":
+        # Check whether model_params are linear or nonlinear, based on class type
+        # To decide what filtering to use
+        if isinstance(model_params, ParamsCDLGSSM):
+            # Linear case
+            filtering_function = cdlgssm_filter
+            extra_args_filter = {}
+        elif isinstance(model_params, ParamsCDNLGSSM):
+            # Nonlinear Gaussian case
+            filtering_function = cdnlgssm_filter
+            extra_args_filter = {"key": key}
+        elif isinstance(model_params, ParamsCDNLSSM):
+            # Nonlinear case
+            filtering_function = cdnlssm_filter
+            extra_args_filter = {"key": key}
+    
+    elif filter_spec == "filter":
+        # Check filter_hyperarams type, based on class type
+        # To decide what filtering to use
+        if isinstance(filter_hyperparams, KFHyperParams):
+            # Linear case
+            filtering_function = cdlgssm_filter
+            extra_args_filter = {}
+        # EKF, UKF or EnKF
+        elif isinstance(filter_hyperparams, (EKFHyperParams, UKFHyperParams, EnKFHyperParams)):
+            # Nonlinear Gaussian case
+            filtering_function = cdnlgssm_filter
+            extra_args_filter = {"key": key}
+        elif isinstance(filter_hyperparams, DPFHyperParams):
+            # Nonlinear case
+            filtering_function = cdnlssm_filter
+            extra_args_filter = {"key": key}
 
+    # Run filter on filtering time points
+    filtered = filtering_function(
+        params=model_params,
+        emissions=emissions[start_idx_filter:stop_idx_filter],
+        t_emissions=t_emissions[start_idx_filter:stop_idx_filter],
+        filter_hyperparams=filter_hyperparams,
+        **extra_args_filter,
+        warn=warn,
+    )
+
+    return filtered
+
+# cd-dynamax function to forecast, based on model with given parameters
+def cddynamax_forecast(
+    model_params,
+    filter_hyperparams,
+    init_forecast, # This can be a distribution or a fixed state depending on the model and filter type
+    t_init,
+    t_forecast,
+    key,
+    filter_spec="model",
+    particle_weights=None,
+    warn=True
+):
+
+    if filter_spec == "model":
+        # Check whether model_params are linear or nonlinear, based on class type
+        # To decide what filtering to use
+        if isinstance(model_params, ParamsCDLGSSM):
+            # Linear case
+            forecasting_function = cdlgssm_forecast
+            extra_args_forecast = {}
+        elif isinstance(model_params, ParamsCDNLGSSM):
+            # Nonlinear Gaussian case
+            forecasting_function = cdnlgssm_forecast
+            extra_args_forecast = {"key": key}
+        elif isinstance(model_params, ParamsCDNLSSM):
+            # Nonlinear case
+            forecasting_function = cdnlssm_forecast
+            extra_args_forecast = {"key": key}
+    
+    elif filter_spec == "filter":
+        # Check filter_hyperarams type, based on class type
+        # To decide what filtering to use
+        if isinstance(filter_hyperparams, KFHyperParams):
+            # Linear case
+            forecasting_function = cdlgssm_forecast
+            extra_args_forecast = {}
+        # EKF, UKF or EnKF
+        elif isinstance(filter_hyperparams, (EKFHyperParams, UKFHyperParams, EnKFHyperParams)):
+            # Nonlinear Gaussian case
+            forecasting_function = cdnlgssm_forecast
+            extra_args_forecast = {"key": key}
+        elif isinstance(filter_hyperparams, DPFHyperParams):
+            # Nonlinear case
+            forecasting_function = cdnlssm_forecast
+            extra_args_forecast = {"key": key}
+
+    # Run forecast on forecasting time points
+    forecasted = forecasting_function(
+        params=model_params,
+        init_forecast=init_forecast,
+        t_init=t_init,
+        t_forecast=t_forecast,
+        filter_hyperparams=filter_hyperparams,
+        **extra_args_forecast,
+        warn=warn
+    )
+
+    # For DPF, we compute mean and covariance of forecasted particles for evaluation purposes
+    if isinstance(filter_hyperparams, DPFHyperParams):
+        # Make a copy of the forecasted object, and add mean and covariance to it
+        particles = forecasted # shape num_timesteps_forecast \times M \times state_dim
+        
+        # If particle weights are not provided, use uniform weights
+        if particle_weights is None:
+            particle_weights = jnp.ones(particles.shape[1]) / particles.shape[1]
+        
+        # Weight the particles by the particle weights from the last filtering step, and compute weighted mean and covariance
+        # first particle axis is time, second axis is particles, third axis is state dimension
+        forecasted_means, forecasted_covariances = vmap(
+            dpf_moments,
+            in_axes=(0, None)
+        )(
+            particles,
+            particle_weights
+        )
+
+        # CDLGSSM forecasting definition
+        from cd_dynamax.src.continuous_discrete_linear_gaussian_ssm.cdlgssm_utils import GSSMForecast
+        forecasted = GSSMForecast(
+            forecasted_state_means=forecasted_means,
+            forecasted_state_covariances=forecasted_covariances,
+            forecasted_state_path=particles
+        )
+
+    return forecasted
+    
+# cd-dynamax function to compute emissions, based on model with given parameters, and latent states
+def cddynamax_emissions(
+        model,
+        model_params,
+        t_emissions_filter,
+        filtered_state,
+        t_emissions_forecast=None,
+        forecasted_state=None,
+        filtering_inputs=None,
+        forecasting_inputs=None,
+        key=None,
+        warn=True
+    ):
+
+    # TODO: check emissions_covariance computations
+    # Emission generation function based on model type
+    if isinstance(model, ContDiscreteLinearGaussianSSM):
+        from cd_dynamax.src.continuous_discrete_linear_gaussian_ssm.inference import (
+            cdlgssm_emissions,
+        )
+
+        cddynamax_emissions_f = cdlgssm_emissions
+    elif isinstance(model, ContDiscreteNonlinearGaussianSSM):
+        from cd_dynamax.src.continuous_discrete_nonlinear_gaussian_ssm.models import (
+            cdnlgssm_emissions,
+        )
+
+        cddynamax_emissions_f = cdnlgssm_emissions
+    elif isinstance(model, ContDiscreteNonlinearSSM):
+        from cd_dynamax.src.continuous_discrete_nonlinear_ssm.models import (
+            cdnlssm_emissions,
+        )
+
+        cddynamax_emissions_f = cdnlssm_emissions
+    else:
+        raise ValueError(
+            "Model type not supported for emissions generation in filter-then-forecast."
+        )
+    
+    # For Gaussian-based emissions, we can compute the emissions means and covariances directly from the filtered and forecasted states.
+    if isinstance(model, (ContDiscreteLinearGaussianSSM, ContDiscreteNonlinearGaussianSSM)):
+        # Generate emissions means/covs from filtered states
+        f_emissions_mean, f_emissions_cov = cddynamax_emissions_f(
+            params=model_params,
+            t_states=t_emissions_filter,
+            state_means=filtered_state.filtered_means,
+            state_covs=filtered_state.filtered_covariances,
+            inputs=filtering_inputs,
+            warn=warn
+        )
+
+        # Dictionary with results
+        filtered_emissions={
+            'mean': f_emissions_mean,
+            'cov': f_emissions_cov,
+        }
+
+        if t_emissions_forecast is not None:
+            # Generate emissions means/covs from forecasted states
+            fc_emissions_mean, fc_emissions_cov = cddynamax_emissions_f(
+                params=model_params,
+                t_states=t_emissions_forecast,
+                state_means=forecasted_state.forecasted_state_means,
+                state_covs=forecasted_state.forecasted_state_covariances,
+                inputs=forecasting_inputs,
+                warn=warn
+            )
+
+            # Dictionary with results
+            forecasted_emissions={
+                'mean': fc_emissions_mean,
+                'cov': fc_emissions_cov,
+            }
+
+
+    elif isinstance(model, ContDiscreteNonlinearSSM):
+        # For the more general nonlinear case, we can only compute the emissions by pushing the filtered and forecasted particles through the model's emission function.
+        f_emissions = cddynamax_emissions_f(
+            params=model_params,
+            t_states=t_emissions_filter,
+            states=filtered_state.particles,
+            inputs=filtering_inputs,
+            key=key,
+            warn=warn
+        )
+
+        # We compute mean and covariance of emission particles for evaluation purposes
+        # If particle weights are not provided, use uniform weights
+        if filtered_state.log_weights is None:
+            particle_weights = jnp.ones(filtered_state.particles.shape[1]) / filtered_state.particles.shape[1]
+        else:
+            particle_weights = jnp.exp(filtered_state.log_weights[-1,...]) # shape (num_particles,)
+        
+        # Weight the particles by the particle weights from the last filtering step, and compute weighted mean and covariance
+        # first particle axis is time, second axis is particles, third axis is state dimension
+        f_emissions_mean, f_emissions_cov = vmap(
+            dpf_moments,
+            in_axes=(0, None)
+        )(
+            f_emissions,
+            particle_weights
+        )
+
+        # Dictionary with results
+        filtered_emissions={
+            'path': f_emissions,
+            'mean': f_emissions_mean,
+            'cov': f_emissions_cov,
+        }
+        
+        if t_emissions_forecast is not None:
+            fc_emissions = cddynamax_emissions_f(
+                params=model_params,
+                t_states=t_emissions_forecast,
+                states=forecasted_state.forecasted_state_path, # We expect particles to be saved here
+                inputs=forecasting_inputs,
+                warn=warn
+            )
+
+            # Weight the particles by the particle weights from the last filtering step, and compute weighted mean and covariance
+            # first particle axis is time, second axis is particles, third axis is state dimension
+            fc_emissions_mean, fc_emissions_cov = vmap(
+                dpf_moments,
+                in_axes=(0, None)
+            )(
+                fc_emissions,
+                particle_weights
+            )
+            
+            # Dictionary with results
+            forecasted_emissions={
+                'path': fc_emissions,
+                'mean': fc_emissions_mean,
+                'cov': fc_emissions_cov,
+            }
+    
+    # Return
+    return filtered_emissions, forecasted_emissions
+        
+    
 # Function to filter and forecast, based on model with given parameters
 def filter_and_forecast(
     model_params,
@@ -126,7 +413,8 @@ def filter_and_forecast(
     T_filter_end=70,
     T_forecast_end=100,
     key=0,
-    filter_spec="model"
+    filter_spec="model",
+    warn=True
 ):
     # Create a sequence of keys
     keys = make_key_sequence(key)
@@ -144,62 +432,20 @@ def filter_and_forecast(
         "Forecasting time points are invalid."
     )
 
-    if filter_spec == "model":
-        # Check whether model_params are linear or nonlinear, based on class type
-        # To decide what filtering to use
-        if isinstance(model_params, ParamsCDLGSSM):
-            # Linear case
-            filtering_function = cdlgssm_filter
-            forecasting_function = cdlgssm_forecast
-            extra_args_filter = {}
-            extra_args_forecast = {}
-        elif isinstance(model_params, ParamsCDNLGSSM):
-            # Nonlinear Gaussian case
-            filtering_function = cdnlgssm_filter
-            forecasting_function = cdnlgssm_forecast
-            extra_args_filter = {"key": next(keys)}
-            extra_args_forecast = {"key": next(keys)}
-        elif isinstance(model_params, ParamsCDNLSSM):
-            # Nonlinear case
-            filtering_function = cdnlssm_filter
-            forecasting_function = cdnlssm_forecast
-            extra_args_filter = {"key": next(keys)}
-            extra_args_forecast = {"key": next(keys)}
-    
-    elif filter_spec == "filter":
-        # Check filter_hyperarams type, based on class type
-        # To decide what filtering to use
-        if isinstance(filter_hyperparams, KFHyperParams):
-            # Linear case
-            filtering_function = cdlgssm_filter
-            forecasting_function = cdlgssm_forecast
-            extra_args_filter = {}
-            extra_args_forecast = {}
-        # EKF, UKF or EnKF
-        elif isinstance(filter_hyperparams, EKFHyperParams) or isinstance(filter_hyperparams, UKFHyperParams) or isinstance(filter_hyperparams, EnKFHyperParams):
-            # Nonlinear Gaussian case
-            filtering_function = cdnlgssm_filter
-            forecasting_function = cdnlgssm_forecast
-            extra_args_filter = {"key": next(keys)}
-            extra_args_forecast = {"key": next(keys)}
-        elif isinstance(filter_hyperparams, DPFHyperParams):
-            # Nonlinear case
-            filtering_function = cdnlssm_filter
-            forecasting_function = cdnlssm_forecast
-            extra_args_filter = {"key": next(keys)}
-            extra_args_forecast = {"key": next(keys)}
-
-    # Run filter on filtering time points
-    filtered = filtering_function(
-        params=model_params,
-        emissions=emissions[start_idx_filter:stop_idx_filter],
-        t_emissions=t_emissions[start_idx_filter:stop_idx_filter],
+    # Filter
+    filtered = cddynamax_filter(
+        model_params=model_params,
         filter_hyperparams=filter_hyperparams,
-        **extra_args_filter,
-    )
+        t_emissions=t_emissions,
+        emissions=emissions,
+        start_idx_filter=start_idx_filter,
+        stop_idx_filter=stop_idx_filter,
+        keys=next(keys),
+        filter_spec=filter_spec,
+        warn=warn
+    )    
 
     # Initialize forecast with last filtered state
-    init_time = t_emissions[stop_idx_filter - 1]
     if filter_spec == "model":
         if isinstance(model_params, (ParamsCDLGSSM, ParamsCDNLGSSM)):
             init_forecast = MVN(
@@ -216,14 +462,16 @@ def filter_and_forecast(
                 filtered.filtered_means[-1, :], filtered.filtered_covariances[-1, :]
             )
 
-    # Run forecast on forecasting time points
-    forecasted = forecasting_function(
-        params=model_params,
-        init_forecast=init_forecast,
-        t_init=init_time,
-        t_forecast=t_emissions[start_idx_forecast:stop_idx_forecast],
+    # Forecast
+    forecasted = cddynamax_forecast(
+        model_params=model_params,
         filter_hyperparams=filter_hyperparams,
-        **extra_args_forecast,
+        init_forecast=init_forecast,
+        t_init=t_emissions[stop_idx_filter - 1],
+        t_forecast=t_emissions[start_idx_forecast:stop_idx_forecast],
+        keys=next(keys),
+        filter_spec=filter_spec,
+        warn=warn
     )
 
     # For DPF, we compute mean and covariance of forecasted particles for evaluation purposes

@@ -591,6 +591,7 @@ class ContDiscreteLinearGaussianSSM(SSM):
         t_emissions: Optional[Float[Array, "ntime 1"]] = None,
         filter_hyperparams: Optional[KFHyperParams] = KFHyperParams(),
         inputs: Optional[Float[Array, "ntime input_dim"]] = None,
+        warn: bool = True,
     ) -> PosteriorGSSMSmoothed:
         r"""Compute the smoothing distribution over states using the CD-Kalman smoother.
 
@@ -606,7 +607,7 @@ class ContDiscreteLinearGaussianSSM(SSM):
         """
 
         return cdlgssm_smoother(
-            params, emissions, t_emissions, filter_hyperparams, inputs
+            params, emissions, t_emissions, filter_hyperparams, inputs, warn=warn
         )
 
     # Sampling from the posterior distribution of states given emissions

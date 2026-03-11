@@ -60,16 +60,16 @@ class StaticGaussianDistribution(NamedTuple):
 # These can depend on the state, input and time
 class LearnableGaussianEmission(NamedTuple):
     emission_function: Union[LearnableFunction, ParameterProperties]
-    emission_covariance: Union[LearnableMatrix, ParameterProperties]
+    emission_cov: Union[LearnableMatrix, ParameterProperties]
 
     def log_prob(self, y, x=None, u=None, t=None):
         mean = self.emission_function.f(x, u, t)
-        cov = self.emission_covariance.f(x, u, t)
+        cov = self.emission_cov.f(x, u, t)
         return MVN(mean, cov).log_prob(y)
 
     def sample(self, x=None, u=None, t=None, *args, **kwargs):
         mean = self.emission_function.f(x, u, t)
-        cov = self.emission_covariance.f(x, u, t)
+        cov = self.emission_cov.f(x, u, t)
         return MVN(mean, cov).sample(*args, **kwargs)
     
 # Poisson emission distribution for count data, with learnable bias and time bin size

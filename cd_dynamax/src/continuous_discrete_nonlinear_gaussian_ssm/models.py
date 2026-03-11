@@ -1184,7 +1184,7 @@ def cdnlgssm_forecast(
             - if init_forecast is a distribution, then we forecast such distribution based on different filtering methods
             - if init_forecast is a point estimate of state, then we forecast a forward path starting at that state
         t_init: time-instant of the initial condition of forecast
-        t_forecast: continuous-time specific time instants of observations: if not None, it is an array
+        t_forecast: continuous-time specific time instants for forecasting: if not None, it is an array
         filter_hyperparams: hyper-parameters of the filter
         inputs: optional array of inputs, of shape (1 + num_timesteps) \times input_dim
             - The extra input is needed for the initial emission, i.e., it should be at time t_init
@@ -1304,6 +1304,7 @@ def cdnlgssm_emissions(
         Union[EKFHyperParams, EnKFHyperParams, UKFHyperParams]
     ] = None,
     key: PRNGKey = jr.PRNGKey(0),
+    warn: bool = True,
 ) -> Tuple[
     Float[Array, "num_timesteps emission_dim"],
     Float[Array, "num_timesteps emission_dim emission_dim"],
@@ -1340,6 +1341,7 @@ def cdnlgssm_emissions(
                 state_covs=state_covs,
                 inputs=inputs,
                 filter_hyperparams=filter_hyperparams,
+                warn=warn,
             )
         elif isinstance(filter_hyperparams, EnKFHyperParams):
             emissions_mean, emissions_covariance = emissions_ensemble_kalman_filter(
@@ -1350,6 +1352,7 @@ def cdnlgssm_emissions(
                 inputs=inputs,
                 filter_hyperparams=filter_hyperparams,
                 key=key,
+                warn=warn,
             )
         elif isinstance(filter_hyperparams, UKFHyperParams):
             emissions_mean, emissions_covariance = emissions_unscented_kalman_filter(
@@ -1359,6 +1362,7 @@ def cdnlgssm_emissions(
                 state_covs=state_covs,
                 inputs=inputs,
                 filter_hyperparams=filter_hyperparams,
+                warn=warn,
             )
     else:
         # Emissions, based on pushing the state through the model emission function

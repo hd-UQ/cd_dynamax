@@ -159,7 +159,7 @@ class ContDiscreteNonlinearSSM(SSM):
         emission_distribution = {
             "params": LearnableGaussianEmission(
                 emission_function=LearnableVector(params=zero_emission),
-                emission_covariance=LearnableMatrix(params=eye_emission),
+                emission_cov=LearnableMatrix(params=eye_emission),
             ),
             "props": ParameterProperties(
                 trainable=False, constrainer=RealToPSDBijector()
@@ -642,7 +642,7 @@ def cdnlssm_joint_sample(
         u_prev = None
         u0 = None
 
-    init_state = params.initial.initial_distribution.distribution.sample(
+    init_state = params.initial.initial_distribution.sample(
         seed=key_state0
     )
     init_emission = params.emissions.emission_distribution.sample(
@@ -860,6 +860,7 @@ def cdnlssm_emissions(
     inputs: Optional[Float[Array, "num_timesteps input_dim"]] = None,
     filter_hyperparams: Optional[DPFHyperParams] = DPFHyperParams(),
     key: PRNGKey = jr.PRNGKey(0),
+    warn: bool = True,
 ) -> Float[Array, "num_timesteps emission_dim M"]:
     r"""Compute the emissions corresponding to
         - a continuous-discrete nonlinear model, as specified by params
