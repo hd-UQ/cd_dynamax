@@ -65,7 +65,7 @@ The `cd-dynamax` codebase extends the `dynamax` library to support continuous-di
 - We leverage [dynamax](https://github.com/probml/dynamax) code
     - Currently, based on a local directory with [Dynamax release 0.1.5](https://github.com/probml/dynamax/releases/tag/0.1.5)
 
-- We have implemented the [`cd-dynamax` codebase](./cd_dynamax/README.md) to deal with [continuous-discrete linear and non-linear models](./cd_dynamax/src/README.md), along with several filtering and smoothing algorithms.
+- We have implemented the [`cd-dynamax` codebase](https://github.com/hd-UQ/cd_dynamax) to deal with [continuous-discrete linear and non-linear models](./api_reference/index.md), along with several filtering and smoothing algorithms.
 
 - The codebase is organized into several key directories:
 ```
@@ -97,9 +97,9 @@ For instance:
 
 - [MCMC-based model fitting tutorial](./examples/notebooks/lorenz63_mcmc_fit_to_data_tutorial/) to MCMC-based fitting of continuous-discrete SDE model to data.
 
-## [Tests](./tests)
+## Tests
 
-- Several [tests](./tests/README.md) to establish cd-dynamax general functionality, as well as linear and non-linear filters/smoothers tests: e.g., checks that non-linear algorithms applied to linear problems return similar results as linear algorithms.
+- Several [tests](https://github.com/hd-UQ/cd_dynamax/tree/public/tests) to establish cd-dynamax general functionality, as well as linear and non-linear filters/smoothers tests: e.g., checks that non-linear algorithms applied to linear problems return similar results as linear algorithms.
 
 ## [Makefile](./Makefile)
 
