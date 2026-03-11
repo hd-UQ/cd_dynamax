@@ -65,7 +65,7 @@ The `cd-dynamax` codebase extends the `dynamax` library to support continuous-di
 - We leverage [dynamax](https://github.com/probml/dynamax) code
     - Currently, based on a local directory with [Dynamax release 0.1.5](https://github.com/probml/dynamax/releases/tag/0.1.5)
 
-- We have implemented the [`cd-dynamax` codebase](./cd_dynamax/README.md) to deal with [continuous-discrete linear and non-linear models](./cd_dynamax/src/README.md), along with several filtering and smoothing algorithms.
+- We have implemented the [`cd-dynamax` codebase](https://github.com/hd-UQ/cd_dynamax) to deal with [continuous-discrete linear and non-linear models](./api_reference/index.md), along with several filtering and smoothing algorithms.
 
 - The codebase is organized into several key directories:
 ```
@@ -83,23 +83,23 @@ demos/                       # Python demos showcasing cd-dynamax functionality
 tests/                       # Tests for cd-dynamax functionality
 ```
 
-## [Demos](./demos/python)
+## [Examples](./examples/)
 
-We provide a set of [demos](./demos/python/README.md) that showcase key functionality of `cd-dynamax`.
+We provide a set of [examples](./examples/) that showcase key functionality of `cd-dynamax`.
 
-These [scripts](./demos/python/scripts) and [notebooks](./demos/python/notebooks) illustrate how to learn components of continuous-discrete SDEs from data.
+These examples illustrate how to learn components of continuous-discrete SDEs from data.
 
 For instance:
 
-- [Filtering-based likelihood tutorial](./demos/python/notebooks/lorenz63_filter_based_likelihood_tutorial.ipynb) to filtering-based likelihood computation for continuous-discrete SDEs.
+- [Filtering-based likelihood tutorial](./examples/notebooks/lorenz63_filter_based_likelihood_tutorial/) to filtering-based likelihood computation for continuous-discrete SDEs.
 
-- [SGD-based model fitting tutorial](./demos/python/notebooks/lorenz63_sgd_fit_to_data_tutorial.ipynb) to SGD-based fitting of continuous-discrete SDE model to data.
+- [SGD-based model fitting tutorial](./examples/notebooks/lorenz63_sgd_fit_to_data_tutorial/) to SGD-based fitting of continuous-discrete SDE model to data.
 
-- [MCMC-based model fitting tutorial](./demos/python/notebooks/lorenz63_mcmc_fit_to_data_tutorial.ipynb) to MCMC-based fitting of continuous-discrete SDE model to data.
+- [MCMC-based model fitting tutorial](./examples/notebooks/lorenz63_mcmc_fit_to_data_tutorial/) to MCMC-based fitting of continuous-discrete SDE model to data.
 
-## [Tests](./tests)
+## Tests
 
-- Several [tests](./tests/README.md) to establish cd-dynamax general functionality, as well as linear and non-linear filters/smoothers tests: e.g., checks that non-linear algorithms applied to linear problems return similar results as linear algorithms.
+- Several [tests](https://github.com/hd-UQ/cd_dynamax/tree/public/tests) to establish cd-dynamax general functionality, as well as linear and non-linear filters/smoothers tests: e.g., checks that non-linear algorithms applied to linear problems return similar results as linear algorithms.
 
 ## [Makefile](./Makefile)
 
