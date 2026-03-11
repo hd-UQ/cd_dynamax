@@ -83,19 +83,19 @@ demos/                       # Python demos showcasing cd-dynamax functionality
 tests/                       # Tests for cd-dynamax functionality
 ```
 
-## [Demos](./demos/python)
+## [Examples](./examples/)
 
-We provide a set of [demos](./demos/python/README.md) that showcase key functionality of `cd-dynamax`.
+We provide a set of [examples](./examples/) that showcase key functionality of `cd-dynamax`.
 
-These [scripts](./demos/python/scripts) and [notebooks](./demos/python/notebooks) illustrate how to learn components of continuous-discrete SDEs from data.
+These examples illustrate how to learn components of continuous-discrete SDEs from data.
 
 For instance:
 
-- [Filtering-based likelihood tutorial](./demos/python/notebooks/lorenz63_filter_based_likelihood_tutorial.ipynb) to filtering-based likelihood computation for continuous-discrete SDEs.
+- [Filtering-based likelihood tutorial](./examples/notebooks/lorenz63_filter_based_likelihood_tutorial/) to filtering-based likelihood computation for continuous-discrete SDEs.
 
-- [SGD-based model fitting tutorial](./demos/python/notebooks/lorenz63_sgd_fit_to_data_tutorial.ipynb) to SGD-based fitting of continuous-discrete SDE model to data.
+- [SGD-based model fitting tutorial](./examples/notebooks/lorenz63_sgd_fit_to_data_tutorial/) to SGD-based fitting of continuous-discrete SDE model to data.
 
-- [MCMC-based model fitting tutorial](./demos/python/notebooks/lorenz63_mcmc_fit_to_data_tutorial.ipynb) to MCMC-based fitting of continuous-discrete SDE model to data.
+- [MCMC-based model fitting tutorial](./examples/notebooks/lorenz63_mcmc_fit_to_data_tutorial/) to MCMC-based fitting of continuous-discrete SDE model to data.
 
 ## [Tests](./tests)
 
