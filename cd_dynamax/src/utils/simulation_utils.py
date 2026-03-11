@@ -3,6 +3,7 @@
 # Imports
 import jax.numpy as jnp
 import jax.random as jr
+from jax import vmap
 
 from itertools import count
 
@@ -39,6 +40,7 @@ from cd_dynamax.src.continuous_discrete_nonlinear_ssm import (
     cdnlssm_forecast,
     ParamsCDNLSSM,
     DPFHyperParams,
+    dpf_moments
 )
 
 
@@ -224,14 +226,20 @@ def filter_and_forecast(
         **extra_args_forecast,
     )
 
+    # For DPF, we compute mean and covariance of forecasted particles for evaluation purposes
     if isinstance(filter_hyperparams, DPFHyperParams):
-        # For DPF, we compute mean and covariance of forecasted particles for evaluation purposes
-        # TODO: shall we weight them by the particle weights? For now we just compute the unweighted empirical mean and covariance
         # Make a copy of the forecasted object, and add mean and covariance to it
         particles = forecasted # shape num_timesteps_forecast \times M \times state_dim
-        forecasted_means = forecasted.mean(axis=1)
-        centered = forecasted - forecasted_means[:, None, :]
-        forecasted_covariances = jnp.einsum('tmi, tmj -> tij', centered, centered) / (particles.shape[1] - 1)
+
+        # Weight the particles by the particle weights from the last filtering step, and compute weighted mean and covariance
+        # first axis is time, second axis is particles, third axis is state dimension
+        forecasted_means, forecasted_covariances = vmap(
+            dpf_moments,
+            in_axes=(0, None)
+        )(
+            particles,
+            filtered.log_weights[-1, ...]
+        )
         # CDLGSSM forecasting definition
         from cd_dynamax.src.continuous_discrete_linear_gaussian_ssm.cdlgssm_utils import GSSMForecast
         forecasted = GSSMForecast(
