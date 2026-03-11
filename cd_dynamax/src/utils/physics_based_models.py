@@ -15,7 +15,16 @@ from cd_dynamax.src.continuous_discrete_nonlinear_gaussian_ssm.cdnlgssm_utils im
 from cd_dynamax import adjust_rhs
 
 ### Learnable physics-based models: Lorenz63, Lorenz96, FitzHugh-Nagumo, Van der Pol, Rossler
+# Learnable drift function for the Ornstein–Uhlenbeck process
+class LearnableOU_Drift(NamedTuple):
+    kappa: Union[Float[Array, "1"], ParameterProperties]
+    mu: Union[Float[Array, "1"], ParameterProperties]
 
+    def f(self, x, u=None, t=None):
+        return self.kappa * (self.mu - x)
+    
+    def get_params(self):
+        return _get_params(self.kappa, self.mu)
 
 # Learnable Lorenz63 model
 class LearnableLorenz63_Drift(NamedTuple):

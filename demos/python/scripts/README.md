@@ -24,12 +24,17 @@
     python3 run_filter_then_forecast.py --filter_config_file filter/enkf_StateFirst --ftf_key 0 1 2
     ```
 
-    - An example to run all (pre-defined) filters in one simulation
+    - An example to run all (pre-defined) CD-NLGSSM filters in one simulation
 
     ```bash
     python3 run_filter_then_forecast.py --filter_config_file all --data_key 10 --ftf_key 10
     ```
 
+- An example of a Differentiable Particle Filter for a CD-NLSSM model
+```bash
+python3 run_filter_then_forecast.py --data_config_file data/true_oudrift_poissondata --model_config_file model/cdnlssm_oudrift_poissondata --filter_config_file filter/dpf_bootstrap_stopg
+```
+    
 ### Plotting the filter and forecast results
 
 - To plot results from the above scripts, run the `plot_filter_then_forecast.py` with the same config files as when using `run_filter_then_forecast.py script
@@ -45,10 +50,15 @@
     python3 plot_filter_then_forecast.py --filter_config_file filter/ekf_StateFirst_EmissionsFirst
     ```
 
-- To compare all executed filters and plot their results, execute
+- To compare all executed CD-NLGSSM filters and plot their results, execute
 
 ```bash
 python3 compare_filter_then_forecast.py --filter_config_file all --data_key 10 --ftf_key 10
+```
+
+- To plot the example of a Differentiable Particle Filter for a CD-NLSSM model
+```bash
+python3 plot_filter_then_forecast.py --data_config_file data/true_oudrift_poissondata --model_config_file model/cdnlssm_oudrift_poissondata --filter_config_file filter/dpf_bootstrap_stopg
 ```
 
 # Parameter learning: i.e., fitting a cd-dynamax model to observed data

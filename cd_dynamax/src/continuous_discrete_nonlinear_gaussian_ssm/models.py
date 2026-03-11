@@ -72,7 +72,6 @@ DEBUG = False  # By default, debugging is off, e.g., no extra checks in lax_scan
 # Auxiliary function to process inputs ---from dynamax
 _process_input = lambda x, y: jnp.zeros((y, 1)) if x is None else x
 
-
 # CD-NLGSSM push-forward: this is a model-specific push-forward function
 # computed based on the assumed continuous-discrete nonlinear Gaussian SSM dynamics
 # using different SDE approximations (zeroth, first, second order) solved numerically via diffrax
@@ -1083,9 +1082,7 @@ def cdnlgssm_filter(
 
     # Run the appropriate filter based on filter_hyperparams type
     if isinstance(filter_hyperparams, EKFHyperParams):
-        filtered_posterior = iterated_extended_kalman_filter(
-            **common_args, num_iter=num_iter
-        )
+        filtered_posterior = iterated_extended_kalman_filter(**common_args, num_iter=num_iter)
     elif isinstance(filter_hyperparams, EnKFHyperParams):
         filtered_posterior = ensemble_kalman_filter(**common_args, key=key)
     elif isinstance(filter_hyperparams, UKFHyperParams):

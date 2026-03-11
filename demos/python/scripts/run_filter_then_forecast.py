@@ -12,6 +12,7 @@ from cd_dynamax.src.utils.simulation_utils import filter_and_forecast, tree_to_d
 from cd_dynamax import (
     ContDiscreteLinearGaussianSSM,
     ContDiscreteNonlinearGaussianSSM,
+    ContDiscreteNonlinearSSM,
 )
 
 
@@ -25,6 +26,7 @@ def run_filter_then_forecast(
     enforce_twin_experiment=False,
     ftf_key=None,
     overrides={},
+    filter_spec="model"
 ):
     """Run a filtering and forecasting experiment with specified configurations.
 
@@ -39,6 +41,7 @@ def run_filter_then_forecast(
         enforce_twin_experiment (bool): If True, will enforce the twin experiment setup.
             Done by resetting the true_model_config_file in the data_config_file = model_config_file.
         overrides (dict): Dictionary of configuration overrides.
+        filter_spec (str): Whether to decide the filtering type based on the model or the filter. Options are 'model' or 'filter' (default: 'model'). If 'model', will use the model type to decide what filter to use. If 'filter', will use the filter type to decide.
     """
     # Figure out and build the directory structure
     results_dir = build_results_dir(
@@ -121,6 +124,7 @@ def run_filter_then_forecast(
             T_filter_end=T_filter_end,
             T_forecast_end=T_forecast_end,
             key=ftf_key,
+            filter_spec=filter_spec
         )
 
         # TODO: check emissions_covariance computations
@@ -137,27 +141,63 @@ def run_filter_then_forecast(
             )
 
             cddynamax_emissions = cdnlgssm_emissions
+        elif isinstance(model, ContDiscreteNonlinearSSM):
+            from cd_dynamax.src.continuous_discrete_nonlinear_ssm.models import (
+                cdnlssm_emissions,
+            )
+
+            cddynamax_emissions = cdnlssm_emissions
         else:
             raise ValueError(
                 "Model type not supported for emissions generation in filter-then-forecast."
             )
-        # Generate emissions means/covs from filtered states
-        f_emissions_mean, f_emissions_cov = cddynamax_emissions(
-            params=params,
-            t_states=data["t_emissions"][:stop_idx_filter],
-            state_means=filtered.filtered_means,
-            state_covs=filtered.filtered_covariances,
-            inputs=None,
-        )
+        
+        # For Gaussian-based emissions, we can compute the emissions means and covariances directly from the filtered and forecasted states.
+        if isinstance(model, (ContDiscreteLinearGaussianSSM, ContDiscreteNonlinearGaussianSSM)):
+            # Generate emissions means/covs from filtered states
+            f_emissions_mean, f_emissions_cov = cddynamax_emissions(
+                params=params,
+                t_states=data["t_emissions"][:stop_idx_filter],
+                state_means=filtered.filtered_means,
+                state_covs=filtered.filtered_covariances,
+                inputs=None,
+            )
 
-        # Generate emissions means/covs from forecasted states
-        fc_emissions_mean, fc_emissions_cov = cddynamax_emissions(
-            params=params,
-            t_states=data["t_emissions"][start_idx_forecast:stop_idx_forecast],
-            state_means=forecasted.forecasted_state_means,
-            state_covs=forecasted.forecasted_state_covariances,
-            inputs=None,
-        )
+            # Generate emissions means/covs from forecasted states
+            fc_emissions_mean, fc_emissions_cov = cddynamax_emissions(
+                params=params,
+                t_states=data["t_emissions"][start_idx_forecast:stop_idx_forecast],
+                state_means=forecasted.forecasted_state_means,
+                state_covs=forecasted.forecasted_state_covariances,
+                inputs=None,
+            )
+        elif isinstance(model, ContDiscreteNonlinearSSM):
+            # For the more general nonlinear case, we can only compute the emissions by pushing the filtered and forecasted particles through the model's emission function.
+            f_emissions = cddynamax_emissions(
+                params=params,
+                t_states=data["t_emissions"][:stop_idx_filter],
+                states=filtered.particles,
+                inputs=None,
+            )
+            
+            fc_emissions = cddynamax_emissions(
+                params=params,
+                t_states=data["t_emissions"][start_idx_forecast:stop_idx_forecast],
+                states=forecasted.forecasted_state_path, # We expect particles to be saved here
+                inputs=None,
+            )
+
+            # Just for evaluation purposes, compute mean and covariance
+            import jax.numpy as jnp
+            # TODO incorporate particle weights if using a weighted particle filter
+            f_emissions_mean = jnp.mean(f_emissions, axis=1)  # mean over particles
+            f_centered = f_emissions - f_emissions_mean[:, None, :]
+            f_emissions_cov = jnp.einsum('tmi, tmj -> tij', f_centered, f_centered) / (f_emissions.shape[1] - 1)
+
+            fc_emissions_mean = jnp.mean(fc_emissions, axis=1)
+            fc_centered = fc_emissions - fc_emissions_mean[:, None, :]
+            fc_emissions_cov = jnp.einsum('tmi, tmj -> tij', fc_centered, fc_centered) / (fc_emissions.shape[1] - 1)
+
 
         # Convert the filtered and forecasted results to dictionaries, and add additional fields.
         filtered_dict = tree_to_dict(filtered)
@@ -253,6 +293,14 @@ if __name__ == "__main__":
         default=None,
         help="Key to use for filter-then-forecast. Default is None, in which case it will be set to data_key + 10.",
     )
+    # Decide what defines filtering type: model or filter
+    parser.add_argument(
+        "--filter_spec",
+        type=str,
+        default="model",
+        help="Whether to decide the filtering type based on the model or the filter. Options are 'model' or 'filter' (default: 'model'). If 'model', will use the model type to decide what filter to use. If 'filter', will use the filter type to decide.",
+    )
+
     args = parser.parse_args()
 
     # Process the filter_config_file argument to allow running multiple filter files
@@ -292,6 +340,7 @@ if __name__ == "__main__":
                     enforce_twin_experiment=args.enforce_twin_experiment,
                     ftf_key=args.ftf_key,
                     overrides=overrides,
+                    filter_spec=args.filter_spec
                 )
         else:
             print(f"\t with: {filter_config_file} and no overrides")
@@ -304,4 +353,5 @@ if __name__ == "__main__":
                 T_filter=args.T_filter,
                 enforce_twin_experiment=args.enforce_twin_experiment,
                 ftf_key=args.ftf_key,
+                filter_spec=args.filter_spec
             )

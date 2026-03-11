@@ -1,0 +1,29 @@
+[model]
+class_name: CDNLSSM
+state_dim: 1
+emission_dim: 1
+solver_config_file: solver/dt1e-2_maxSteps1e5
+
+[initial_values]
+# Initial distribution: zero-mean Gaussian with diagonal covariance
+initial_distribution : {"params": StaticGaussianDistribution(mean=jnp.zeros(state_dim),
+                                        cov=(0.5**2) * jnp.eye(state_dim)),
+                    "props": StaticGaussianDistribution(mean=ParameterProperties(trainable=False),
+                                        cov=ParameterProperties(trainable=False))}
+
+# Drift function 
+dynamics_drift : {"params": LearnableOU_Drift(kappa=0.8, mu=0.0),
+            "props": LearnableOU_Drift(kappa=ParameterProperties(trainable=False),
+                                        mu=ParameterProperties(trainable=False))}
+
+# Dynamics coefficients
+dynamics_diffusion_coefficient={"params": LearnableMatrix(params=0.5 * jnp.eye(state_dim)),
+            "props": LearnableMatrix(params=ParameterProperties(trainable=False))}
+
+# Observation function: Poisson emission function, with trainable bias
+emission_distribution={
+            "params": LearnablePoissonEmission(dt=float(0.1),
+                        bias=jnp.log(50.0)),
+            "props": LearnablePoissonEmission(dt=ParameterProperties(trainable=False),
+                        bias=ParameterProperties(trainable=True))}
+
