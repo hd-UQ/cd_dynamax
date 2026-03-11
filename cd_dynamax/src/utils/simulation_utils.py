@@ -238,7 +238,7 @@ def filter_and_forecast(
             in_axes=(0, None)
         )(
             particles,
-            filtered.log_weights[-1, ...]
+            jnp.exp(filtered.log_weights[-1, ...])
         )
         # CDLGSSM forecasting definition
         from cd_dynamax.src.continuous_discrete_linear_gaussian_ssm.cdlgssm_utils import GSSMForecast
