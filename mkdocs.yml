@@ -35,6 +35,10 @@ nav:
       - Extended Kalman Filter: api_reference/src/continuous_discrete_nonlinear_gaussian_ssm/inference_ekf.md
       - Unscented Kalman Filter: api_reference/src/continuous_discrete_nonlinear_gaussian_ssm/inference_ukf.md
       - Ensemble Kalman Filter: api_reference/src/continuous_discrete_nonlinear_gaussian_ssm/inference_enkf.md
+    - Continuous-Discrete Nonlinear SSMs:
+      - Models: api_reference/src/continuous_discrete_nonlinear_ssm/models.md
+      - Utilities: api_reference/src/continuous_discrete_nonlinear_ssm/cdnlssm_utils.md
+      - (Differentiable) Particle Filter: api_reference/src/continuous_discrete_nonlinear_ssm/inference_dpf.md
     - Utilities:
       - Diffrax Utilities: api_reference/src/utils/diffrax_utils.md
       - Optimization Utilities: api_reference/src/utils/optimize_utils.md
