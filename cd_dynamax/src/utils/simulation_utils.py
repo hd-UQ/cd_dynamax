@@ -3,6 +3,7 @@
 # Imports
 import jax.numpy as jnp
 import jax.random as jr
+from jax import vmap
 
 from itertools import count
 
@@ -44,6 +45,7 @@ from cd_dynamax.src.continuous_discrete_nonlinear_ssm import (
     cdnlssm_forecast,
     ParamsCDNLSSM,
     DPFHyperParams,
+    dpf_moments
 )
 
 
@@ -127,7 +129,8 @@ def cddynamax_filter(
     start_idx_filter,
     stop_idx_filter,
     key=jr.PRNGKey(0),
-    filter_spec="model"
+    filter_spec="model",
+    warn=True
 ):
     if filter_spec == "model":
         # Check whether model_params are linear or nonlinear, based on class type
@@ -169,6 +172,7 @@ def cddynamax_filter(
         t_emissions=t_emissions[start_idx_filter:stop_idx_filter],
         filter_hyperparams=filter_hyperparams,
         **extra_args_filter,
+        warn=warn,
     )
 
     return filtered
@@ -181,7 +185,9 @@ def cddynamax_forecast(
     t_init,
     t_forecast,
     key,
-    filter_spec="model"
+    filter_spec="model",
+    particle_weights=None,
+    warn=True
 ):
 
     if filter_spec == "model":
@@ -225,16 +231,28 @@ def cddynamax_forecast(
         t_forecast=t_forecast,
         filter_hyperparams=filter_hyperparams,
         **extra_args_forecast,
+        warn=warn
     )
 
+    # For DPF, we compute mean and covariance of forecasted particles for evaluation purposes
     if isinstance(filter_hyperparams, DPFHyperParams):
-        # For DPF, we compute mean and covariance of forecasted particles for evaluation purposes
-        # TODO: shall we weight them by the particle weights? For now we just compute the unweighted empirical mean and covariance
         # Make a copy of the forecasted object, and add mean and covariance to it
         particles = forecasted # shape num_timesteps_forecast \times M \times state_dim
-        forecasted_means = forecasted.mean(axis=1)
-        centered = forecasted - forecasted_means[:, None, :]
-        forecasted_covariances = jnp.einsum('tmi, tmj -> tij', centered, centered) / (particles.shape[1] - 1)
+        
+        # If particle weights are not provided, use uniform weights
+        if particle_weights is None:
+            particle_weights = jnp.ones(particles.shape[1]) / particles.shape[1]
+        
+        # Weight the particles by the particle weights from the last filtering step, and compute weighted mean and covariance
+        # first particle axis is time, second axis is particles, third axis is state dimension
+        forecasted_means, forecasted_covariances = vmap(
+            dpf_moments,
+            in_axes=(0, None)
+        )(
+            particles,
+            particle_weights
+        )
+
         # CDLGSSM forecasting definition
         from cd_dynamax.src.continuous_discrete_linear_gaussian_ssm.cdlgssm_utils import GSSMForecast
         forecasted = GSSMForecast(
@@ -256,6 +274,7 @@ def cddynamax_emissions(
         filtering_inputs=None,
         forecasting_inputs=None,
         key=None,
+        warn=True
     ):
 
     # TODO: check emissions_covariance computations
@@ -265,19 +284,19 @@ def cddynamax_emissions(
             cdlgssm_emissions,
         )
 
-        cddynamax_emissions = cdlgssm_emissions
+        cddynamax_emissions_f = cdlgssm_emissions
     elif isinstance(model, ContDiscreteNonlinearGaussianSSM):
         from cd_dynamax.src.continuous_discrete_nonlinear_gaussian_ssm.models import (
             cdnlgssm_emissions,
         )
 
-        cddynamax_emissions = cdnlgssm_emissions
+        cddynamax_emissions_f = cdnlgssm_emissions
     elif isinstance(model, ContDiscreteNonlinearSSM):
         from cd_dynamax.src.continuous_discrete_nonlinear_ssm.models import (
             cdnlssm_emissions,
         )
 
-        cddynamax_emissions = cdnlssm_emissions
+        cddynamax_emissions_f = cdnlssm_emissions
     else:
         raise ValueError(
             "Model type not supported for emissions generation in filter-then-forecast."
@@ -286,12 +305,13 @@ def cddynamax_emissions(
     # For Gaussian-based emissions, we can compute the emissions means and covariances directly from the filtered and forecasted states.
     if isinstance(model, (ContDiscreteLinearGaussianSSM, ContDiscreteNonlinearGaussianSSM)):
         # Generate emissions means/covs from filtered states
-        f_emissions_mean, f_emissions_cov = cddynamax_emissions(
+        f_emissions_mean, f_emissions_cov = cddynamax_emissions_f(
             params=model_params,
             t_states=t_emissions_filter,
             state_means=filtered_state.filtered_means,
             state_covs=filtered_state.filtered_covariances,
             inputs=filtering_inputs,
+            warn=warn
         )
 
         # Dictionary with results
@@ -302,12 +322,13 @@ def cddynamax_emissions(
 
         if t_emissions_forecast is not None:
             # Generate emissions means/covs from forecasted states
-            fc_emissions_mean, fc_emissions_cov = cddynamax_emissions(
+            fc_emissions_mean, fc_emissions_cov = cddynamax_emissions_f(
                 params=model_params,
                 t_states=t_emissions_forecast,
                 state_means=forecasted_state.forecasted_state_means,
                 state_covs=forecasted_state.forecasted_state_covariances,
                 inputs=forecasting_inputs,
+                warn=warn
             )
 
             # Dictionary with results
@@ -316,22 +337,34 @@ def cddynamax_emissions(
                 'cov': fc_emissions_cov,
             }
 
+
     elif isinstance(model, ContDiscreteNonlinearSSM):
         # For the more general nonlinear case, we can only compute the emissions by pushing the filtered and forecasted particles through the model's emission function.
-        f_emissions = cddynamax_emissions(
+        f_emissions = cddynamax_emissions_f(
             params=model_params,
             t_states=t_emissions_filter,
             states=filtered_state.particles,
             inputs=filtering_inputs,
-            key=key
+            key=key,
+            warn=warn
         )
 
-        # Just for evaluation purposes, compute mean and covariance
-        import jax.numpy as jnp
-        # TODO incorporate particle weights if using a weighted particle filter
-        f_emissions_mean = jnp.mean(f_emissions, axis=1)  # mean over particles
-        f_centered = f_emissions - f_emissions_mean[:, None, :]
-        f_emissions_cov = jnp.einsum('tmi, tmj -> tij', f_centered, f_centered) / (f_emissions.shape[1] - 1)
+        # We compute mean and covariance of emission particles for evaluation purposes
+        # If particle weights are not provided, use uniform weights
+        if filtered_state.log_weights is None:
+            particle_weights = jnp.ones(filtered_state.particles.shape[1]) / filtered_state.particles.shape[1]
+        else:
+            particle_weights = jnp.exp(filtered_state.log_weights[-1,...]) # shape (num_particles,)
+        
+        # Weight the particles by the particle weights from the last filtering step, and compute weighted mean and covariance
+        # first particle axis is time, second axis is particles, third axis is state dimension
+        f_emissions_mean, f_emissions_cov = vmap(
+            dpf_moments,
+            in_axes=(0, None)
+        )(
+            f_emissions,
+            particle_weights
+        )
 
         # Dictionary with results
         filtered_emissions={
@@ -341,20 +374,24 @@ def cddynamax_emissions(
         }
         
         if t_emissions_forecast is not None:
-            fc_emissions = cddynamax_emissions(
+            fc_emissions = cddynamax_emissions_f(
                 params=model_params,
                 t_states=t_emissions_forecast,
                 states=forecasted_state.forecasted_state_path, # We expect particles to be saved here
                 inputs=forecasting_inputs,
+                warn=warn
             )
 
-            # Just for evaluation purposes, compute mean and covariance
-            import jax.numpy as jnp
-            # TODO incorporate particle weights if using a weighted particle filter
-            fc_emissions_mean = jnp.mean(fc_emissions, axis=1)
-            fc_centered = fc_emissions - fc_emissions_mean[:, None, :]
-            fc_emissions_cov = jnp.einsum('tmi, tmj -> tij', fc_centered, fc_centered) / (fc_emissions.shape[1] - 1)
-
+            # Weight the particles by the particle weights from the last filtering step, and compute weighted mean and covariance
+            # first particle axis is time, second axis is particles, third axis is state dimension
+            fc_emissions_mean, fc_emissions_cov = vmap(
+                dpf_moments,
+                in_axes=(0, None)
+            )(
+                fc_emissions,
+                particle_weights
+            )
+            
             # Dictionary with results
             forecasted_emissions={
                 'path': fc_emissions,
@@ -376,7 +413,8 @@ def filter_and_forecast(
     T_filter_end=70,
     T_forecast_end=100,
     key=0,
-    filter_spec="model"
+    filter_spec="model",
+    warn=True
 ):
     # Create a sequence of keys
     keys = make_key_sequence(key)
@@ -403,7 +441,8 @@ def filter_and_forecast(
         start_idx_filter=start_idx_filter,
         stop_idx_filter=stop_idx_filter,
         keys=next(keys),
-        filter_spec=filter_spec
+        filter_spec=filter_spec,
+        warn=warn
     )    
 
     # Initialize forecast with last filtered state
@@ -431,7 +470,8 @@ def filter_and_forecast(
         t_init=t_emissions[stop_idx_filter - 1],
         t_forecast=t_emissions[start_idx_forecast:stop_idx_forecast],
         keys=next(keys),
-        filter_spec=filter_spec
+        filter_spec=filter_spec,
+        warn=warn
     )
 
     return (
