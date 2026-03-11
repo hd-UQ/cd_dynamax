@@ -409,7 +409,7 @@ def test_cdnonlinear_filter_cdlinear_kf_match(seed):
         cdlgssm_forecasted_emissions=cdlgssm_forecasted_emissions,
         keys=(forecasting_key, emissions_key, keys),
     )
-    print(f"... all filtering (with forecasting and emissions) tests passed for CD-NLSSM model")
+    print("... all filtering (with forecasting and emissions) tests passed for CD-NLSSM model")
     
 # Check whether continuous-discrete model filtering and forecasting run
 def check_nonlinear_linear_filter_match(
