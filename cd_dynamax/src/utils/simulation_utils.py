@@ -24,12 +24,13 @@ from cd_dynamax import (
     ContDiscreteNonlinearGaussianSSM,
     ContDiscreteNonlinearSSM,
 )
+
 # continuous-discrete nonlinear Gaussian SSM codebase
 from cd_dynamax.src.continuous_discrete_linear_gaussian_ssm import (
     cdlgssm_filter,
     cdlgssm_forecast,
     ParamsCDLGSSM,
-    KFHyperParams
+    KFHyperParams,
 )
 from cd_dynamax.src.continuous_discrete_nonlinear_gaussian_ssm import (
     cdnlgssm_filter,
@@ -45,7 +46,7 @@ from cd_dynamax.src.continuous_discrete_nonlinear_ssm import (
     cdnlssm_forecast,
     ParamsCDNLSSM,
     DPFHyperParams,
-    dpf_moments
+    dpf_moments,
 )
 
 
@@ -120,6 +121,7 @@ def generate_irregular_t_emissions(
         num_timesteps_forecast,
     )
 
+
 # cd-dynamax function to filter, based on model with given parameters
 def cddynamax_filter(
     model_params,
@@ -130,7 +132,7 @@ def cddynamax_filter(
     stop_idx_filter,
     key=jr.PRNGKey(0),
     filter_spec="model",
-    warn=True
+    warn=True,
 ):
     if filter_spec == "model":
         # Check whether model_params are linear or nonlinear, based on class type
@@ -147,7 +149,7 @@ def cddynamax_filter(
             # Nonlinear case
             filtering_function = cdnlssm_filter
             extra_args_filter = {"key": key}
-    
+
     elif filter_spec == "filter":
         # Check filter_hyperarams type, based on class type
         # To decide what filtering to use
@@ -156,7 +158,9 @@ def cddynamax_filter(
             filtering_function = cdlgssm_filter
             extra_args_filter = {}
         # EKF, UKF or EnKF
-        elif isinstance(filter_hyperparams, (EKFHyperParams, UKFHyperParams, EnKFHyperParams)):
+        elif isinstance(
+            filter_hyperparams, (EKFHyperParams, UKFHyperParams, EnKFHyperParams)
+        ):
             # Nonlinear Gaussian case
             filtering_function = cdnlgssm_filter
             extra_args_filter = {"key": key}
@@ -177,17 +181,18 @@ def cddynamax_filter(
 
     return filtered
 
+
 # cd-dynamax function to forecast, based on model with given parameters
 def cddynamax_forecast(
     model_params,
     filter_hyperparams,
-    init_forecast, # This can be a distribution or a fixed state depending on the model and filter type
+    init_forecast,  # This can be a distribution or a fixed state depending on the model and filter type
     t_init,
     t_forecast,
     key,
     filter_spec="model",
     particle_weights=None,
-    warn=True
+    warn=True,
 ):
 
     if filter_spec == "model":
@@ -205,7 +210,7 @@ def cddynamax_forecast(
             # Nonlinear case
             forecasting_function = cdnlssm_forecast
             extra_args_forecast = {"key": key}
-    
+
     elif filter_spec == "filter":
         # Check filter_hyperarams type, based on class type
         # To decide what filtering to use
@@ -214,7 +219,9 @@ def cddynamax_forecast(
             forecasting_function = cdlgssm_forecast
             extra_args_forecast = {}
         # EKF, UKF or EnKF
-        elif isinstance(filter_hyperparams, (EKFHyperParams, UKFHyperParams, EnKFHyperParams)):
+        elif isinstance(
+            filter_hyperparams, (EKFHyperParams, UKFHyperParams, EnKFHyperParams)
+        ):
             # Nonlinear Gaussian case
             forecasting_function = cdnlgssm_forecast
             extra_args_forecast = {"key": key}
@@ -231,51 +238,51 @@ def cddynamax_forecast(
         t_forecast=t_forecast,
         filter_hyperparams=filter_hyperparams,
         **extra_args_forecast,
-        warn=warn
+        warn=warn,
     )
 
     # For DPF, we compute mean and covariance of forecasted particles for evaluation purposes
     if isinstance(filter_hyperparams, DPFHyperParams):
         # Make a copy of the forecasted object, and add mean and covariance to it
-        particles = forecasted # shape num_timesteps_forecast \times M \times state_dim
-        
+        particles = forecasted  # shape num_timesteps_forecast \times M \times state_dim
+
         # If particle weights are not provided, use uniform weights
         if particle_weights is None:
             particle_weights = jnp.ones(particles.shape[1]) / particles.shape[1]
-        
+
         # Weight the particles by the particle weights from the last filtering step, and compute weighted mean and covariance
         # first particle axis is time, second axis is particles, third axis is state dimension
-        forecasted_means, forecasted_covariances = vmap(
-            dpf_moments,
-            in_axes=(0, None)
-        )(
-            particles,
-            particle_weights
+        forecasted_means, forecasted_covariances = vmap(dpf_moments, in_axes=(0, None))(
+            particles, particle_weights
         )
 
         # CDLGSSM forecasting definition
-        from cd_dynamax.src.continuous_discrete_linear_gaussian_ssm.cdlgssm_utils import GSSMForecast
+        from cd_dynamax.src.continuous_discrete_linear_gaussian_ssm.cdlgssm_utils import (
+            GSSMForecast,
+        )
+
         forecasted = GSSMForecast(
             forecasted_state_means=forecasted_means,
             forecasted_state_covariances=forecasted_covariances,
-            forecasted_state_path=particles
+            forecasted_state_path=particles,
         )
 
     return forecasted
-    
+
+
 # cd-dynamax function to compute emissions, based on model with given parameters, and latent states
 def cddynamax_emissions(
-        model,
-        model_params,
-        t_emissions_filter,
-        filtered_state,
-        t_emissions_forecast=None,
-        forecasted_state=None,
-        filtering_inputs=None,
-        forecasting_inputs=None,
-        key=jr.PRNGKey(0),
-        warn=True
-    ):
+    model,
+    model_params,
+    t_emissions_filter,
+    filtered_state,
+    t_emissions_forecast=None,
+    forecasted_state=None,
+    filtering_inputs=None,
+    forecasting_inputs=None,
+    key=jr.PRNGKey(0),
+    warn=True,
+):
 
     # TODO: check emissions_covariance computations
     # Emission generation function based on model type
@@ -301,9 +308,11 @@ def cddynamax_emissions(
         raise ValueError(
             "Model type not supported for emissions generation in filter-then-forecast."
         )
-    
+
     # For Gaussian-based emissions, we can compute the emissions means and covariances directly from the filtered and forecasted states.
-    if isinstance(model, (ContDiscreteLinearGaussianSSM, ContDiscreteNonlinearGaussianSSM)):
+    if isinstance(
+        model, (ContDiscreteLinearGaussianSSM, ContDiscreteNonlinearGaussianSSM)
+    ):
         # Generate emissions means/covs from filtered states
         f_emissions_mean, f_emissions_cov = cddynamax_emissions_f(
             params=model_params,
@@ -312,13 +321,13 @@ def cddynamax_emissions(
             state_covs=filtered_state.filtered_covariances,
             inputs=filtering_inputs,
             key=key,
-            warn=warn
+            warn=warn,
         )
 
         # Dictionary with results
-        filtered_emissions={
-            'mean': f_emissions_mean,
-            'cov': f_emissions_cov,
+        filtered_emissions = {
+            "mean": f_emissions_mean,
+            "cov": f_emissions_cov,
         }
 
         if t_emissions_forecast is not None:
@@ -330,15 +339,14 @@ def cddynamax_emissions(
                 state_covs=forecasted_state.forecasted_state_covariances,
                 inputs=forecasting_inputs,
                 key=key,
-                warn=warn
+                warn=warn,
             )
 
             # Dictionary with results
-            forecasted_emissions={
-                'mean': fc_emissions_mean,
-                'cov': fc_emissions_cov,
+            forecasted_emissions = {
+                "mean": fc_emissions_mean,
+                "cov": fc_emissions_cov,
             }
-
 
     elif isinstance(model, ContDiscreteNonlinearSSM):
         # For the more general nonlinear case, we can only compute the emissions by pushing the filtered and forecasted particles through the model's emission function.
@@ -348,64 +356,61 @@ def cddynamax_emissions(
             states=filtered_state.particles,
             inputs=filtering_inputs,
             key=key,
-            warn=warn
+            warn=warn,
         )
 
         # We compute mean and covariance of emission particles for evaluation purposes
         # If particle weights are not provided, use uniform weights
         if filtered_state.log_weights is None:
-            particle_weights = jnp.ones(filtered_state.particles.shape[1]) / filtered_state.particles.shape[1]
+            particle_weights = (
+                jnp.ones(filtered_state.particles.shape[1])
+                / filtered_state.particles.shape[1]
+            )
         else:
-            particle_weights = jnp.exp(filtered_state.log_weights[-1,...]) # shape (num_particles,)
-        
+            particle_weights = jnp.exp(
+                filtered_state.log_weights[-1, ...]
+            )  # shape (num_particles,)
+
         # Weight the particles by the particle weights from the last filtering step, and compute weighted mean and covariance
         # first particle axis is time, second axis is particles, third axis is state dimension
-        f_emissions_mean, f_emissions_cov = vmap(
-            dpf_moments,
-            in_axes=(0, None)
-        )(
-            f_emissions,
-            particle_weights
+        f_emissions_mean, f_emissions_cov = vmap(dpf_moments, in_axes=(0, None))(
+            f_emissions, particle_weights
         )
 
         # Dictionary with results
-        filtered_emissions={
-            'path': f_emissions,
-            'mean': f_emissions_mean,
-            'cov': f_emissions_cov,
+        filtered_emissions = {
+            "path": f_emissions,
+            "mean": f_emissions_mean,
+            "cov": f_emissions_cov,
         }
-        
+
         if t_emissions_forecast is not None:
             fc_emissions = cddynamax_emissions_f(
                 params=model_params,
                 t_states=t_emissions_forecast,
-                states=forecasted_state.forecasted_state_path, # We expect particles to be saved here
+                states=forecasted_state.forecasted_state_path,  # We expect particles to be saved here
                 inputs=forecasting_inputs,
                 key=key,
-                warn=warn
+                warn=warn,
             )
 
             # Weight the particles by the particle weights from the last filtering step, and compute weighted mean and covariance
             # first particle axis is time, second axis is particles, third axis is state dimension
-            fc_emissions_mean, fc_emissions_cov = vmap(
-                dpf_moments,
-                in_axes=(0, None)
-            )(
-                fc_emissions,
-                particle_weights
+            fc_emissions_mean, fc_emissions_cov = vmap(dpf_moments, in_axes=(0, None))(
+                fc_emissions, particle_weights
             )
-            
+
             # Dictionary with results
-            forecasted_emissions={
-                'path': fc_emissions,
-                'mean': fc_emissions_mean,
-                'cov': fc_emissions_cov,
+            forecasted_emissions = {
+                "path": fc_emissions,
+                "mean": fc_emissions_mean,
+                "cov": fc_emissions_cov,
             }
-    
+
     # Return
     return filtered_emissions, forecasted_emissions
-        
-    
+
+
 # Function to filter and forecast, based on model with given parameters
 def filter_and_forecast(
     model_params,
@@ -417,7 +422,7 @@ def filter_and_forecast(
     T_forecast_end=100,
     key=0,
     filter_spec="model",
-    warn=True
+    warn=True,
 ):
     # Create a sequence of keys
     keys = make_key_sequence(key)
@@ -445,8 +450,8 @@ def filter_and_forecast(
         stop_idx_filter=stop_idx_filter,
         key=next(keys),
         filter_spec=filter_spec,
-        warn=warn
-    )    
+        warn=warn,
+    )
 
     # Initialize forecast with last filtered state
     if filter_spec == "model":
@@ -456,7 +461,7 @@ def filter_and_forecast(
             )
         elif isinstance(model_params, ParamsCDNLSSM):
             init_forecast = filtered.particles[-1, ...]
-    elif filter_spec == 'filter':
+    elif filter_spec == "filter":
         # Non-Gaussian filters, use empirical distribution of particles as initial condition for forecasting
         if isinstance(filter_hyperparams, DPFHyperParams):
             init_forecast = filtered.particles[-1, ...]
@@ -474,7 +479,7 @@ def filter_and_forecast(
         t_forecast=t_emissions[start_idx_forecast:stop_idx_forecast],
         key=next(keys),
         filter_spec=filter_spec,
-        warn=warn
+        warn=warn,
     )
 
     return (

@@ -12,7 +12,11 @@ from typing import Tuple, NamedTuple, Union
 from jaxtyping import Array
 
 # CD-dynamax imports
-from cd_dynamax import ContDiscreteLinearGaussianSSM, ContDiscreteNonlinearGaussianSSM, ContDiscreteNonlinearSSM
+from cd_dynamax import (
+    ContDiscreteLinearGaussianSSM,
+    ContDiscreteNonlinearGaussianSSM,
+    ContDiscreteNonlinearSSM,
+)
 from cd_dynamax.src.continuous_discrete_linear_gaussian_ssm import ParamsCDLGSSM
 from cd_dynamax.src.continuous_discrete_nonlinear_gaussian_ssm import ParamsCDNLGSSM
 from cd_dynamax.src.continuous_discrete_nonlinear_ssm import ParamsCDNLSSM
@@ -182,7 +186,11 @@ def create_cddynamax_model_from_config(
     true_model_config_file: str = None,
     overrides=None,
 ) -> Tuple[
-    Union[ContDiscreteLinearGaussianSSM, ContDiscreteNonlinearGaussianSSM, ContDiscreteNonlinearSSM],
+    Union[
+        ContDiscreteLinearGaussianSSM,
+        ContDiscreteNonlinearGaussianSSM,
+        ContDiscreteNonlinearSSM,
+    ],
     Union[ParamsCDLGSSM, ParamsCDNLGSSM, ParamsCDNLSSM],
     ParameterProperties,
 ]:  # Either CD-LGSSM or CD-NLGSSM or CD-NLSSM
@@ -466,7 +474,8 @@ def create_cddynamax_filter_from_config(
         elif section == "DPF":
             hyperparam_dict["N_particles"] = int(hyperparam_dict.get("N_particles", 30))
             hyperparam_dict["proposal_method"] = hyperparam_dict.get(
-                "proposal_method", "bootstrap"  # Currently, only bootstrap proposals are supported.
+                "proposal_method",
+                "bootstrap",  # Currently, only bootstrap proposals are supported.
             )
             hyperparam_dict["resample_method"] = hyperparam_dict.get(
                 "resample_method", "multinomial"

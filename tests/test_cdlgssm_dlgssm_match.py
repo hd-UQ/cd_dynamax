@@ -5,7 +5,11 @@ import pytest
 
 # Dynamax Discrete-Discrete Linear Gaussian SSM (lgssm) model, filter and smoother
 from cd_dynamax.dynamax.linear_gaussian_ssm import LinearGaussianSSM
-from cd_dynamax.dynamax.linear_gaussian_ssm.inference import lgssm_filter, lgssm_smoother
+from cd_dynamax.dynamax.linear_gaussian_ssm.inference import (
+    lgssm_filter,
+    lgssm_smoother,
+)
+
 # and additional utilities
 from cd_dynamax.dynamax.parameters import ParameterProperties
 from cd_dynamax.dynamax.utils.bijectors import RealToPSDBijector
@@ -15,7 +19,7 @@ from cd_dynamax import (
     ContDiscreteLinearGaussianSSM,
     KFHyperParams,
     cdlgssm_filter,
-    cdlgssm_smoother
+    cdlgssm_smoother,
 )
 
 # Utilities for testing and comparing results
@@ -24,25 +28,24 @@ from cd_dynamax.src.utils.test_utils import compare, compare_structs
 # Set this to True to plot the results of the tests for visual inspection
 PLOT_TEST_RESULTS = False
 
+
 # Use a fixed random seed for reproducibility in tests
 @pytest.fixture
 def rng_keys():
     return jr.split(jr.PRNGKey(0))
 
+
 # Useful initialization of equivalent models
 def init_cdlgssm_lgssm_models(key_init):
     """Helper function to initialize equivalent discrete LGSSM and a continuous-discrete LGSSM for testing.
-        This equivalence is hardcoded for a single example, other equivalences are possible
+    This equivalence is hardcoded for a single example, other equivalences are possible
     """
     # Model definition parameters: shared
     state_dim = 2
     emission_dim = 6
 
     # Discrete time model setup
-    d_model = LinearGaussianSSM(
-        state_dim=state_dim,
-        emission_dim=emission_dim
-    )
+    d_model = LinearGaussianSSM(state_dim=state_dim, emission_dim=emission_dim)
     d_params, d_param_props = d_model.initialize(
         key_init,
         dynamics_weights=0.9048373699188232421875 * jnp.eye(d_model.state_dim),
@@ -53,8 +56,7 @@ def init_cdlgssm_lgssm_models(key_init):
 
     # Continuous-discrete model setup with parameters that should closely match the discrete model dynamics and emissions
     cd_model = ContDiscreteLinearGaussianSSM(
-        state_dim=state_dim,
-        emission_dim=emission_dim
+        state_dim=state_dim, emission_dim=emission_dim
     )
     cd_params, cd_param_props = cd_model.initialize(
         key_init,
@@ -99,19 +101,22 @@ def init_cdlgssm_lgssm_models(key_init):
     # Return the initialized models and parameters for use in tests
     return d_model, d_params, d_param_props, cd_model, cd_params, cd_param_props
 
+
 # Check whether continuous-discrete model definition (cd-dynamax) and sampling matches recover discrete model (dynamax)
 def test_cdlgssm_lgssm_model_equivalence(rng_keys):
     # Unpack RNG keys
     key_init, key_sample = rng_keys
 
     # Define discrete and continous-discrete models
-    d_model, d_params, d_param_props, cd_model, cd_params, cd_param_props = init_cdlgssm_lgssm_models(key_init)
+    d_model, d_params, d_param_props, cd_model, cd_params, cd_param_props = (
+        init_cdlgssm_lgssm_models(key_init)
+    )
 
     # Simulation params
     num_timesteps = 100
     # Continuous-discrete model's t_emissions
     t_emissions = jnp.arange(num_timesteps)[:, None]
-    
+
     # No inputs for now
     inputs = None
 
@@ -134,19 +139,22 @@ def test_cdlgssm_lgssm_model_equivalence(rng_keys):
     compare(cd_states, d_states)
     compare(cd_emissions, d_emissions)
 
+
 # Check whether continuous-discrete model filtering can recover discrete model's (dynamax) filtering
 def test_cdlgssm_lgssm_filter_equivalence(rng_keys):
     # Unpack RNG keys
     key_init, key_sample = rng_keys
 
     # Define discrete and continous-discrete models
-    d_model, d_params, d_param_props, cd_model, cd_params, cd_param_props = init_cdlgssm_lgssm_models(key_init)
+    d_model, d_params, d_param_props, cd_model, cd_params, cd_param_props = (
+        init_cdlgssm_lgssm_models(key_init)
+    )
 
     # Simulation params
     num_timesteps = 100
     # Continuous-discrete model's t_emissions
     t_emissions = jnp.arange(num_timesteps)[:, None]
-    
+
     # No inputs for now
     inputs = None
 
@@ -195,7 +203,7 @@ def test_cdlgssm_lgssm_filter_equivalence(rng_keys):
     )
 
     # Compare the SGD-fitted parameters and log-likelihoods between the discrete and continuous-discrete models.
-    # We use accept_failure=True since we don't necessarily expect exact matches 
+    # We use accept_failure=True since we don't necessarily expect exact matches
     compare(cd_sgd_lps, d_sgd_lps)
     compare_structs(d_sgd_fitted_params, cd_sgd_fitted_params, accept_failure=True)
 
@@ -209,7 +217,7 @@ def test_cdlgssm_lgssm_filter_equivalence(rng_keys):
     )
 
     # Compare the post-SGD fitted filtered posterior from the continuous-discrete model to the discrete model's post-SGD fitted filtered posterior.
-    ## We use accept_failure=True since we don't necessarily expect exact matches 
+    ## We use accept_failure=True since we don't necessarily expect exact matches
     compare_structs(
         d_sgd_fitted_filtered_posterior,
         cd_sgd_fitted_filtered_posterior,
@@ -259,13 +267,15 @@ def test_cdlgssm_lgssm_smoother_equivalence(rng_keys):
     key_init, key_sample = rng_keys
 
     # Define discrete and continous-discrete models
-    d_model, d_params, d_param_props, cd_model, cd_params, cd_param_props = init_cdlgssm_lgssm_models(key_init)
+    d_model, d_params, d_param_props, cd_model, cd_params, cd_param_props = (
+        init_cdlgssm_lgssm_models(key_init)
+    )
 
     # Simulation params
     num_timesteps = 100
     # Continuous-discrete model's t_emissions
     t_emissions = jnp.arange(num_timesteps)[:, None]
-    
+
     # No inputs for now
     inputs = None
 
@@ -297,9 +307,7 @@ def test_cdlgssm_lgssm_smoother_equivalence(rng_keys):
 
         print(f"Comparing {smoother_type} smoothed posteriors...")
         compare_structs(
-            d_smoother_posterior,
-            cd_smoother_posterior,
-            accept_failure=True
+            d_smoother_posterior, cd_smoother_posterior, accept_failure=True
         )
 
         print(

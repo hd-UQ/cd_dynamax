@@ -25,7 +25,7 @@ def run_filter_then_forecast(
     enforce_twin_experiment=False,
     ftf_key=None,
     overrides={},
-    filter_spec="model"
+    filter_spec="model",
 ):
     """Run a filtering and forecasting experiment with specified configurations.
 
@@ -123,7 +123,7 @@ def run_filter_then_forecast(
             T_filter_end=T_filter_end,
             T_forecast_end=T_forecast_end,
             key=ftf_key,
-            filter_spec=filter_spec
+            filter_spec=filter_spec,
         )
 
         # Compute emissions for filtered and forecasted states
@@ -132,19 +132,23 @@ def run_filter_then_forecast(
             model_params=params,
             t_emissions_filter=data["t_emissions"][:stop_idx_filter],
             filtered_state=filtered,
-            t_emissions_forecast=data["t_emissions"][start_idx_forecast:stop_idx_forecast],
+            t_emissions_forecast=data["t_emissions"][
+                start_idx_forecast:stop_idx_forecast
+            ],
             forecasted_state=forecasted,
             filtering_inputs=None,
-            forecasting_inputs=None
+            forecasting_inputs=None,
         )
-        
+
         # Convert the filtered and forecasted results to dictionaries, and add additional fields.
         filtered_dict = tree_to_dict(filtered)
-        filtered_dict["filtered_emissions_means"] = filtered_emissions['mean']
-        filtered_dict["filtered_emissions_covariances"] = filtered_emissions['cov']
+        filtered_dict["filtered_emissions_means"] = filtered_emissions["mean"]
+        filtered_dict["filtered_emissions_covariances"] = filtered_emissions["cov"]
         forecasted_dict = tree_to_dict(forecasted)
-        forecasted_dict["forecasted_emissions_means"] = forecasted_emissions['mean']
-        forecasted_dict["forecasted_emissions_covariances"] = forecasted_emissions['cov']
+        forecasted_dict["forecasted_emissions_means"] = forecasted_emissions["mean"]
+        forecasted_dict["forecasted_emissions_covariances"] = forecasted_emissions[
+            "cov"
+        ]
 
         # Save the results as a dictionary
         results = {
@@ -279,7 +283,7 @@ if __name__ == "__main__":
                     enforce_twin_experiment=args.enforce_twin_experiment,
                     ftf_key=args.ftf_key,
                     overrides=overrides,
-                    filter_spec=args.filter_spec
+                    filter_spec=args.filter_spec,
                 )
         else:
             print(f"\t with: {filter_config_file} and no overrides")
@@ -292,5 +296,5 @@ if __name__ == "__main__":
                 T_filter=args.T_filter,
                 enforce_twin_experiment=args.enforce_twin_experiment,
                 ftf_key=args.ftf_key,
-                filter_spec=args.filter_spec
+                filter_spec=args.filter_spec,
             )

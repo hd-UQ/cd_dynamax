@@ -2,7 +2,7 @@
 import jax.numpy as jnp
 import jax.random as jr
 
-# Type annotations 
+# Type annotations
 from typing import NamedTuple, Tuple, Union
 from jax import Array as JaxArray
 from jaxtyping import Array, Float
@@ -28,6 +28,7 @@ from tensorflow_probability.substrates.jax.distributions import (
 )
 from jax.scipy.special import gammaln
 
+
 ### CD-NLSSM learnable functions, now defined as distributions (as Gaussianity is not assumed anymore)
 # Definition of an abstract learnable distribution
 class LearnableDistribution(NamedTuple):
@@ -45,6 +46,7 @@ class LearnableDistribution(NamedTuple):
     def get_params(self):
         return _get_params(self)
 
+
 # Multivariate normal distribution with learnable mean and covariance
 class StaticGaussianDistribution(NamedTuple):
     mean: Union[Float[Array, " dim"], ParameterProperties]
@@ -55,6 +57,7 @@ class StaticGaussianDistribution(NamedTuple):
 
     def sample(self, *args, **kwargs):
         return MVN(self.mean, self.cov).sample(*args, **kwargs)
+
 
 # Multivariate normal distribution with learnable mean function and covariance matrix
 # These can depend on the state, input and time
@@ -71,7 +74,8 @@ class LearnableGaussianEmission(NamedTuple):
         mean = self.emission_function.f(x, u, t)
         cov = self.emission_cov.f(x, u, t)
         return MVN(mean, cov).sample(*args, **kwargs)
-    
+
+
 # Poisson emission distribution for count data, with learnable bias and time bin size
 # These can depend on the state, input and time
 class LearnablePoissonEmission(NamedTuple):
@@ -81,10 +85,11 @@ class LearnablePoissonEmission(NamedTuple):
         $P(Y=y) = \frac{\lambda^y e^{-\lambda}}{y!}$
     where $\lambda$ is the rate parameter of the distribution.
     """
+
     # Learnable parameters
     dt: Union[Float[Array, "1"], ParameterProperties]
     bias: Union[Float[Array, " dim"], ParameterProperties]
-    
+
     def log_prob(self, y, x=None, u=None, t=None):
         log_rate = x[..., 0] + self.bias + jnp.log(self.dt)
         y0 = jnp.squeeze(jnp.asarray(y, dtype=log_rate.dtype))
@@ -93,18 +98,21 @@ class LearnablePoissonEmission(NamedTuple):
     def sample(self, x=None, u=None, t=None, *args, **kwargs):
         log_rate = x + self.bias + jnp.log(self.dt)
         return tfd.Poisson(log_rate=log_rate).sample(*args, **kwargs)
-    
+
     def get_params(self):
         return _get_params(self.dt, self.bias)
+
 
 ### CDNLSSM parameter class definitions
 # Continuous non-linear dynamics
 class ParamsCDNLSSMInitial(NamedTuple):
     initial_distribution: LearnableDistribution
 
+
 # Currently, we only support Brownian motion-driven SDEs,
 # so we can reuse the CDNLGSSM dynamics parameters
 ParamsCDNLSSMDynamics = ParamsCDNLGSSMDynamics
+
 
 # Discrete non-linear emission parameters
 class ParamsCDNLSSMEmissions(NamedTuple):
@@ -134,12 +142,13 @@ class ParamsCDNLSSM(NamedTuple):
 def default(x, x0):
     return x if x is not None else x0
 
+
 ### Create CD-NLSSM parameters and properties, based on provided dictionaries
 def create_cdnlssm_params_and_props(
     params: dict,
 ) -> Tuple[ParamsCDNLSSM, ParameterProperties]:
     """Create CD-NLSSM parameters and properties, based on provided dictionaries.
-    
+
     Args:
         :param params: dictionary of parameters
 
@@ -178,7 +187,7 @@ def init_cdnlssm_params(
     key=jr.PRNGKey(0),
 ) -> Tuple[ParamsCDNLSSM, ParamsCDNLSSM]:
     """Create CD-NLSSM parameters and properties using provided prior, init_values or defaults.
-    
+
     Args:
         default_params: dictionary of default parameters: we at least need some default values
         init_params: dictionary of all parameters
@@ -286,6 +295,7 @@ def sample_cdnlssm_params(
         params[dict_name]["params"] = sampled_params[dict_name]
 
     return create_cdnlssm_params_and_props(params)
+
 
 # Utility function to update parameters of a CD-NLSSM
 def update_params(params, updates: dict):
