@@ -15,6 +15,7 @@ from .cdnlssm_utils import ParamsCDNLSSM
 # Diffrax based diff-eq solver
 from ..utils.diffrax_utils import diffeqsolve
 
+
 #### CD-NLSSM filtering: Differentiable Particle Filter (DPF)
 # compute mean and covariance of DPF particles and weights
 def dpf_moments(p, w):
@@ -22,6 +23,7 @@ def dpf_moments(p, w):
     centered = p - mean
     cov = jnp.einsum("n,ni,nj->ij", w, centered, centered)
     return mean, cov
+
 
 # Default DPF filtering hyperparameters, as clas
 class DPFHyperParams(NamedTuple):
@@ -40,6 +42,7 @@ class DPFHyperParams(NamedTuple):
     proposal_method: str = (
         "bootstrap"  # Currently, only bootstrap proposals are supported.
     )
+
 
 # Helper function to build DPF hyperparameters with some defaults and overrides
 def build_dpf_hyperparams(
@@ -73,6 +76,7 @@ def build_dpf_hyperparams(
             "diffeqsolve_settings", diffeqsolve_settings
         ),
     )
+
 
 ## CD-NLSSM filtering key function
 # Predict next-time particles
@@ -156,15 +160,19 @@ def _predict(
         x_pred += noise
     return x_pred
 
+
 # Auxiliary functions for resampling and weight normalization
 def _normalize_log_weights(log_w):
     log_norm = logsumexp(log_w)
     return log_w - log_norm, log_norm
 
+
 def _effective_sample_size(log_w):
     return jnp.exp(-logsumexp(2.0 * log_w))
 
+
 _SUPPORTED_RESAMPLERS = ("multinomial", "soft", "stop_gradient")
+
 
 def _validate_resample_method(method: str) -> str:
     """Ensure the requested resampling strategy is implemented.
@@ -367,7 +375,7 @@ def diff_particle_filter(
         particles_hist = particles
         logw_hist = log_w
 
-        # Resampling 
+        # Resampling
         def _resample(args):
             x_in, log_w_in, key_in = args
             if resample_method == "soft":

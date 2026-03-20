@@ -221,7 +221,7 @@ def _predict(
         )
         # Compute state noise covariance
         P_pred += dt * L_t @ Qc_t @ L_t.T
-        P_pred = psd(P_pred)
+        P_pred = psd(P_pred, warn=warn)
 
     else:
         # Sarkka Thesis's algo 3.24, with weights defined in eq. 3.69;
@@ -266,7 +266,7 @@ def _predict(
             rhs_all, t0=t0, t1=t1, y0=y0, **filter_hyperparams.diffeqsolve_settings
         )
         # Extract final mean and covariance
-        m_pred, P_pred = sol[0][-1], psd(sol[1][-1])
+        m_pred, P_pred = sol[0][-1], psd(sol[1][-1], warn=warn)
 
     # According to Sarkka's algo 3.24
     # we only need to return m_pred and P_pred (not P_cross) in continuous-discrete

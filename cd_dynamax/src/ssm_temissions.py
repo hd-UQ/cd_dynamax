@@ -430,6 +430,7 @@ class SSM(ABC):
         filter_hyperparams: Optional[Any] = None,
         inputs: Optional[Float[Array, "ntime input_dim"]] = None,
         key: PRNGKey = jr.PRNGKey(0),
+        warn: bool = True,
     ) -> Scalar:
         r"""Compute log marginal likelihood of observations, $\log \sum_{z_{1:T}} p(y_{1:T}, z_{1:T} \mid \theta)$.
 
@@ -440,7 +441,7 @@ class SSM(ABC):
             filter_hyperparams: hyperparameters of the filtering algorithm
             inputs: current inputs  $u_t$
             key: random number generator (for use in randomized methods approximating the marginal likelihood)
-
+            warn: whether to print warnings from filters
         Returns:
             marginal log probability
 
