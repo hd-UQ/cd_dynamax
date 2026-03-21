@@ -175,7 +175,6 @@ def compute_pushforward(
            $z_{t1} = A z_{t0} + C (B u + b) + \epsilon,  \epsilon \sim \mathcal{N}(0, Q)$
 
         where $C = \int_{t0}^{t1} \Phi(t1, s) ds$ and $\Phi$ is the state transition matrix.
-        c.f. equation (6.10) in Särkkä & Solin (2019).
 
     Args:
         params: CD-LGSSM model parameters
@@ -210,6 +209,17 @@ def compute_pushforward(
         # Define the RHS of the ODEs for A, Q, and C
         dAdt = F_t @ A
         dQdt = F_t @ Q + Q @ F_t.T + L_t @ Qc_t @ L_t.T
+
+        # Eq. (6.10) in Särkka & Solin (2019) gives control term as 
+        # $$c(t_{k+1}) = \int_{t_k}^{t_{k+1}} \Phi(t_{k+1}, s) (B u(s) + b) ds$$
+        # for transition matrix $\Phi(t_{k+1}, s)$.
+        # By noting a constant control term $B u(s) + b$, we have
+        # $$c(t_{k+1}) = (\int_{t_k}^{t_{k+1}} \Phi(t_{k+1}, s) ds) (B u + b).$$
+        # Call the integral term $C(t_{k+1})$. Then, by Feynman's trick, we have
+        # $$dC(t)/dt = \Phi(t_{k+1}, t_{k+1}) + \int_{t_k}^{t_{k+1}} d/d{t_{k+1}} \Phi(t_{k+1}, s) ds.$$
+        # By Eq. (2.34) of Sarkka & Solin (2019), the first term is the identity, and the second
+        # term is $\int F_t \Phi(t_{k+1}, s) ds = F_t C(t_{k+1})$, i.e.,
+        # $$dC(t)/dt = F_t C(t) + jnp.eye(state_dim).$$
         dCdt = F_t @ C + jnp.eye(state_dim)
 
         # Return the RHS
