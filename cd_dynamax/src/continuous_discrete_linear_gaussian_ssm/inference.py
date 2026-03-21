@@ -210,12 +210,12 @@ def compute_pushforward(
         dAdt = F_t @ A
         dQdt = F_t @ Q + Q @ F_t.T + L_t @ Qc_t @ L_t.T
 
-        # Eq. (6.10) in Särkka & Solin (2019) gives control term as 
+        # Eq. (6.10) in Särkka & Solin (2019) gives control term as
         # $$c(t_{k+1}) = \int_{t_k}^{t_{k+1}} \Phi(t_{k+1}, s) (B u(s) + b) ds$$
         # for transition matrix $\Phi(t_{k+1}, s)$.
         # By noting a constant control term $B u(s) + b$, we have
         # $$c(t_{k+1}) = (\int_{t_k}^{t_{k+1}} \Phi(t_{k+1}, s) ds) (B u + b).$$
-        # Call the integral term $C(t_{k+1})$. Then, by Feynman's trick, we have
+        # Call the integral term $C(t_{k+1})$. Then, by differentiating under the integral sign,
         # $$dC(t)/dt = \Phi(t_{k+1}, t_{k+1}) + \int_{t_k}^{t_{k+1}} d/d{t_{k+1}} \Phi(t_{k+1}, s) ds.$$
         # By Eq. (2.34) of Sarkka & Solin (2019), the first term is the identity, and the second
         # term is $\int F_t \Phi(t_{k+1}, s) ds = F_t C(t_{k+1})$, i.e.,
