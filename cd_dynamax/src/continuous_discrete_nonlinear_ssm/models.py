@@ -26,8 +26,9 @@ from .inference_dpf import (
     DPFHyperParams,
     build_dpf_hyperparams,
     diff_particle_filter,
-    dpf_moments
+    dpf_moments,
 )
+
 # CDNLSSM pushforward, which currently just calls the CDNLGSSM pushforward
 # as only Brownian motion-driven SDEs are supported
 from ..continuous_discrete_nonlinear_gaussian_ssm.models import (
@@ -39,6 +40,7 @@ from ..continuous_discrete_nonlinear_gaussian_ssm.cdnlgssm_utils import (
     LearnableVector,
     LearnableMatrix,
 )
+
 # Learnable distributions and several utilities
 from .cdnlssm_utils import (
     ParamsCDNLSSM,
@@ -52,10 +54,12 @@ from ..utils.diffrax_utils import diffeqsolve
 
 # Debugging utilities
 from ..utils.debug_utils import lax_scan
+
 DEBUG = False  # By default, debugging is off, e.g., no extra checks in lax_scan
 
 # Auxiliary function to process inputs ---from dynamax
 _process_input = lambda x, y: jnp.zeros((y, 1)) if x is None else x
+
 
 # CD-NLSSM push-forward: compute the pushforward of particles through the CD-NLSSM dynamics.
 def compute_pushforward(
@@ -84,6 +88,7 @@ def compute_pushforward(
         diffeqsolve_settings=diffeqsolve_settings,
     )
 
+
 # CD-NLSSM posterior definition
 class PosteriorCDNLSSMFiltered(NamedTuple):
     filtered_means: Array
@@ -92,6 +97,7 @@ class PosteriorCDNLSSMFiltered(NamedTuple):
     log_weights: Array
     marginal_loglik: float
 
+
 # CD-NLSSM model definition
 class ContDiscreteNonlinearSSM(SSM):
     r"""Continuous-discrete nonlinear SSM with generic (possibly non-Gaussian) initial and emission distributions.
@@ -99,7 +105,7 @@ class ContDiscreteNonlinearSSM(SSM):
     We assume a model of the form
 
     $$ dz=f(z,u_t,t)dt + L(z, u, t) db(t)$$
-    
+
     with diffusion covariance $Q_c$.
 
     We allow for arbitrary initial and emission distributions,
@@ -257,7 +263,7 @@ class ContDiscreteNonlinearSSM(SSM):
         raise NotImplementedError(
             "CD-NLSSM transition distribution is not available in closed form."
         )
-    
+
     # Sampling methods
     # Sampling from the prior
     def sample_prior(
@@ -286,7 +292,7 @@ class ContDiscreteNonlinearSSM(SSM):
             init_params=init_params,
             key=key,
         )
-    
+
     # Sampling from the joint distribution of states and emissions, using the CD-NLSSM distributions
     def sample_dist(
         self,
@@ -360,9 +366,7 @@ class ContDiscreteNonlinearSSM(SSM):
 
         # Initial state and emission
         # iurteaga: removed .distribution
-        init_state = params.initial.initial_distribution.sample(
-            seed=key_state0
-        )
+        init_state = params.initial.initial_distribution.sample(seed=key_state0)
 
         init_emission = params.emissions.emission_distribution.sample(
             x=init_state, u=u0, t=ts[0], seed=key_emit0
@@ -403,7 +407,7 @@ class ContDiscreteNonlinearSSM(SSM):
             )
 
             return state, (state, emission)
-        
+
         _, (next_states, next_emissions) = lax.scan(
             _step,
             init_state,
@@ -597,7 +601,7 @@ class ContDiscreteNonlinearSSM(SSM):
 
         # Initialize forecast with last filtered state's particles
         init_time = t_emissions_filter[-1]
-        init_forecast = filtered.particles[-1, ...] # shape M \times state_dim
+        init_forecast = filtered.particles[-1, ...]  # shape M \times state_dim
 
         # Run forecast on forecasting time-points, using the initialized particles as initial condition for the forecast
         forecasted = cdnlssm_forecast(
@@ -642,9 +646,7 @@ def cdnlssm_joint_sample(
         u_prev = None
         u0 = None
 
-    init_state = params.initial.initial_distribution.sample(
-        seed=key_state0
-    )
+    init_state = params.initial.initial_distribution.sample(seed=key_state0)
     init_emission = params.emissions.emission_distribution.sample(
         x=init_state, u=u0, t=ts[0], seed=key_emit0
     )
@@ -687,6 +689,7 @@ def cdnlssm_joint_sample(
     states = jnp.concatenate([init_state[None, ...], next_states], axis=0)
     emissions = jnp.concatenate([init_emission[None, ...], next_emissions], axis=0)
     return states, emissions
+
 
 # CDNLSSM filtering function: DPF with configurable hyperparameters
 def cdnlssm_filter(
@@ -744,6 +747,7 @@ def cdnlssm_filter(
         marginal_loglik=log_evidence,
     )
 
+
 # CDNLSSM forecasting function
 def cdnlssm_forecast(
     params: ParamsCDNLSSM,
@@ -756,7 +760,7 @@ def cdnlssm_forecast(
     diffeqsolve_settings: dict = {},
     warn: bool = True,
 ) -> Float[Array, "num_timesteps state_dim M"]:
-    """ Run an continuous-discrete nonlinear model
+    """Run an continuous-discrete nonlinear model
         to produce the forecasted state estimates.
 
         It supports two modes of forecasting:
@@ -781,7 +785,9 @@ def cdnlssm_forecast(
     """
 
     # Point-estimate forecasting, based on pushing forward the initial condition through the model dynamics, via numerical SDE solving
-    def _cdnlssm_forecast(this_init_forecast)-> Float[Array, "num_timesteps state_dim"]:
+    def _cdnlssm_forecast(
+        this_init_forecast,
+    ) -> Float[Array, "num_timesteps state_dim"]:
         # Forecasting point estimates, based on pushing forward the model
 
         # Figure out timestamps, as vectors to scan over
@@ -814,7 +820,9 @@ def cdnlssm_forecast(
             def diffusion(t, y, args):
                 Qc_t = params.dynamics.diffusion_cov.f(None, forecast_inputs[t0_idx], t)
                 Q_sqrt = jnp.linalg.cholesky(Qc_t)
-                L_t = params.dynamics.diffusion_coefficient.f(None, forecast_inputs[t0_idx], t)
+                L_t = params.dynamics.diffusion_coefficient.f(
+                    None, forecast_inputs[t0_idx], t
+                )
                 combined_diffusion = L_t @ Q_sqrt
                 return combined_diffusion
 
@@ -842,7 +850,7 @@ def cdnlssm_forecast(
 
         # Return the forecasted object
         return next_states
-    
+
     # Vmap or not, depending on whether we have multiple particles in the initial condition of the forecast
     if init_forecast.ndim == 1:
         return _cdnlssm_forecast(init_forecast)
@@ -851,6 +859,7 @@ def cdnlssm_forecast(
         # input axis is 0, as init_forecast is of shape M \times state_dim,
         # and output axis is 1, as we want to keep the particle axis in the output, so we get num_timesteps \times M \times state_dim
         return vmap(_cdnlssm_forecast, in_axes=0, out_axes=1)(init_forecast)
+
 
 # CDNLSSM emissions function
 def cdnlssm_emissions(
@@ -880,7 +889,7 @@ def cdnlssm_emissions(
     """
 
     # Point-estimate emissions
-    def _cdnlssm_emissions(this_states)-> Float[Array, "num_timesteps state_dim"]:
+    def _cdnlssm_emissions(this_states) -> Float[Array, "num_timesteps state_dim"]:
         # Emissions, based on pushing the state through the model emission function
 
         # Figure out timestamps, as vectors to scan over
@@ -903,16 +912,19 @@ def cdnlssm_emissions(
             this_state, this_input, t0, t0_idx, this_key = args
 
             # Push the state through the emission distribution to get observation samples
-            emissions  = params.emissions.emission_distribution.sample(
+            emissions = params.emissions.emission_distribution.sample(
                 x=this_state, u=this_input, t=t0, seed=this_key
             )
-            
+
             # Return the state and the emissions'
             return this_state, (emissions)
 
         # Compute emissions, over time, via scan
         _, (emissions) = lax_scan(
-            _step, this_states[0], (this_states, emission_inputs, t0, t0_idx, key_emissions), debug=DEBUG
+            _step,
+            this_states[0],
+            (this_states, emission_inputs, t0, t0_idx, key_emissions),
+            debug=DEBUG,
         )  # type: ignore
 
         # Return the emissions

@@ -136,6 +136,7 @@ def preprocess_args(f):
         t_emissions = bound_args.arguments["t_emissions"]
         filter_hyperparams = bound_args.arguments["filter_hyperparams"]
         inputs = bound_args.arguments["inputs"]
+        warn = bound_args.arguments["warn"]
 
         num_timesteps = len(emissions)
         full_params, inputs = preprocess_params_and_inputs(
@@ -148,6 +149,7 @@ def preprocess_args(f):
             t_emissions,
             filter_hyperparams=filter_hyperparams,
             inputs=inputs,
+            warn=warn,
         )
 
     return wrapper
