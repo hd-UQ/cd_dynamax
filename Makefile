@@ -6,6 +6,7 @@ clean:
 
 lint:
 	ruff check . --exclude cd_dynamax/dynamax --exclude "**/*.ipynb"
+	ruff format --check . --exclude cd_dynamax/dynamax --exclude "**/*.ipynb"
 
 test:
 	pytest --ignore cd_dynamax/dynamax
