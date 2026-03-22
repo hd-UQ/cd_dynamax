@@ -373,8 +373,7 @@ def test_cdlgssm_lgssm_smoother_equivalence(rng_keys):
 
 # Initialization of equivalent models with non-zero controls (inputs and bias)
 def init_cdlgssm_lgssm_models_with_controls(key_init):
-    """Initialize equivalent discrete LGSSM and CD-LGSSM with non-zero input weights and dynamics bias.
-    """
+    """Initialize equivalent discrete LGSSM and CD-LGSSM with non-zero input weights and dynamics bias."""
     state_dim = 2
     emission_dim = 6
     input_dim = 3
@@ -382,7 +381,7 @@ def init_cdlgssm_lgssm_models_with_controls(key_init):
     # Hardcoded discretization constants for F = -0.1*I, L = I, Qc = 0.125*I, dt = 1
     A_scalar = 0.9048373699188232421875
     Q_scalar = 0.11329327523708343505859375
-    # C = \int e^{F (1-t)} dt = e^F \int e^{-F t} dt 
+    # C = \int e^{F (1-t)} dt = e^F \int e^{-F t} dt
     # = e^F (1 - e^{-F}) F^{-1} = (A - 1.0) / F * I.
     C_scalar = (A_scalar - 1.0) / (-0.1)
 
