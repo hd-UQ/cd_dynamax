@@ -21,9 +21,6 @@ from cd_dynamax import (
     cdlgssm_filter,
     cdlgssm_smoother,
 )
-from cd_dynamax.src.continuous_discrete_linear_gaussian_ssm.inference import (
-    compute_pushforward,
-)
 
 # Utilities for testing and comparing results
 from cd_dynamax.src.utils.test_utils import compare, compare_structs
@@ -377,18 +374,37 @@ def test_cdlgssm_lgssm_smoother_equivalence(rng_keys):
 # Initialization of equivalent models with non-zero controls (inputs and bias)
 def init_cdlgssm_lgssm_models_with_controls(key_init):
     """Initialize equivalent discrete LGSSM and CD-LGSSM with non-zero input weights and dynamics bias.
-
-    The discrete model's input weights and bias are set to the properly discretized
-    versions of the continuous-time parameters via the integrated input matrix C.
     """
     state_dim = 2
     emission_dim = 6
     input_dim = 3
 
+    # Hardcoded discretization constants for F = -0.1*I, L = I, Qc = 0.125*I, dt = 1
+    A_scalar = 0.9048373699188232421875
+    Q_scalar = 0.11329327523708343505859375
+    # C = \int e^{F (1-t)} dt = e^F \int e^{-F t} dt 
+    # = e^F (1 - e^{-F}) F^{-1} = (A - 1.0) / F * I.
+    C_scalar = (A_scalar - 1.0) / (-0.1)
+
     # Continuous-time input weights and bias
     key_init, key_B = jr.split(key_init)
     B_cont = 0.1 * jr.normal(key_B, (state_dim, input_dim))
     b_cont = 0.1 * jnp.ones(state_dim)
+
+    # Discrete model with discretized controls
+    d_model = LinearGaussianSSM(
+        state_dim=state_dim,
+        emission_dim=emission_dim,
+        input_dim=input_dim,
+    )
+    d_params, d_param_props = d_model.initialize(
+        key_init,
+        dynamics_weights=A_scalar * jnp.eye(state_dim),
+        dynamics_covariance=Q_scalar * jnp.eye(state_dim),
+        dynamics_input_weights=C_scalar * B_cont,
+        dynamics_bias=C_scalar * b_cont,
+        emission_bias=jnp.zeros(emission_dim),
+    )
 
     # Continuous-discrete model
     cd_model = ContDiscreteLinearGaussianSSM(
@@ -399,15 +415,15 @@ def init_cdlgssm_lgssm_models_with_controls(key_init):
     cd_params, cd_param_props = cd_model.initialize(
         key_init,
         initial_mean={
-            "params": jnp.zeros(cd_model.state_dim),
+            "params": jnp.zeros(state_dim),
             "props": ParameterProperties(),
         },
         initial_cov={
-            "params": jnp.eye(cd_model.state_dim),
+            "params": jnp.eye(state_dim),
             "props": ParameterProperties(constrainer=RealToPSDBijector()),
         },
         dynamics_weights={
-            "params": -0.1 * jnp.eye(cd_model.state_dim),
+            "params": -0.1 * jnp.eye(state_dim),
             "props": ParameterProperties(),
         },
         dynamics_bias={
@@ -419,45 +435,25 @@ def init_cdlgssm_lgssm_models_with_controls(key_init):
             "props": ParameterProperties(trainable=False),
         },
         dynamics_diffusion_coefficient={
-            "params": jnp.eye(cd_model.state_dim),
+            "params": jnp.eye(state_dim),
             "props": ParameterProperties(),
         },
         dynamics_diffusion_cov={
-            "params": (0.5 * 0.5) * 0.5 * jnp.eye(cd_model.state_dim),
+            "params": (0.5 * 0.5) * 0.5 * jnp.eye(state_dim),
             "props": ParameterProperties(constrainer=RealToPSDBijector()),
         },
         emission_weights={
-            "params": jr.normal(key_init, (cd_model.emission_dim, cd_model.state_dim)),
+            "params": jr.normal(key_init, (emission_dim, state_dim)),
             "props": ParameterProperties(),
         },
         emission_bias={
-            "params": jnp.zeros((cd_model.emission_dim,)),
+            "params": jnp.zeros(emission_dim),
             "props": ParameterProperties(),
         },
         emission_cov={
-            "params": 0.1 * jnp.eye(cd_model.emission_dim),
+            "params": 0.1 * jnp.eye(emission_dim),
             "props": ParameterProperties(constrainer=RealToPSDBijector()),
         },
-    )
-
-    # Compute discretized parameters for dt=1 via pushforward
-    A, Q, C = compute_pushforward(cd_params, jnp.array(0.0), jnp.array(1.0))
-    B_disc = C @ B_cont
-    b_disc = C @ b_cont
-
-    # Discrete model with discretized controls
-    d_model = LinearGaussianSSM(
-        state_dim=state_dim,
-        emission_dim=emission_dim,
-        input_dim=input_dim,
-    )
-    d_params, d_param_props = d_model.initialize(
-        key_init,
-        dynamics_weights=A,
-        dynamics_covariance=Q,
-        dynamics_input_weights=B_disc,
-        dynamics_bias=b_disc,
-        emission_bias=jnp.zeros(d_model.emission_dim),
     )
 
     return d_model, d_params, d_param_props, cd_model, cd_params, cd_param_props
