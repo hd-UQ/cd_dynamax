@@ -844,6 +844,183 @@ def check_nonlinear_linear_smoother_match(
                 plt.show()
 
 
+# Initialization of example, linear Gaussian cd-dynamax model with non-zero dynamics bias
+def init_cdlgssm_model_with_bias(key):
+    """Helper function to initialize a continuous-discrete LGSSM with non-zero dynamics bias.
+
+    This exercises the integrated input matrix C in compute_pushforward,
+    since the prediction step should use C @ b (not just b).
+    """
+    # Split key
+    key_init, key_w = jr.split(key)
+
+    # Model definition parameters: shared
+    state_dim = 2
+    emission_dim = 6
+
+    # Non-zero dynamics bias
+    b_cont = 0.1 * jnp.ones(state_dim)
+
+    # Continuous-discrete model setup
+    cd_model = ContDiscreteLinearGaussianSSM(
+        state_dim=state_dim, emission_dim=emission_dim
+    )
+    cd_params, cd_param_props = cd_model.initialize(
+        key_init,
+        ## Initial
+        initial_mean={
+            "params": jnp.zeros(cd_model.state_dim),
+            "props": ParameterProperties(),
+        },
+        initial_cov={
+            "params": jnp.eye(cd_model.state_dim),
+            "props": ParameterProperties(constrainer=RealToPSDBijector()),
+        },
+        ## Dynamics
+        dynamics_weights={
+            "params": -0.1 * jnp.eye(cd_model.state_dim),
+            "props": ParameterProperties(),
+        },
+        dynamics_bias={
+            "params": b_cont,
+            "props": ParameterProperties(trainable=False),
+        },
+        dynamics_diffusion_coefficient={
+            "params": 0.1 * jnp.eye(cd_model.state_dim),
+            "props": ParameterProperties(),
+        },
+        dynamics_diffusion_cov={
+            "params": 0.1 * jnp.eye(cd_model.state_dim),
+            "props": ParameterProperties(constrainer=RealToPSDBijector()),
+        },
+        ## Emission
+        emission_weights={
+            "params": jr.normal(key_w, (cd_model.emission_dim, cd_model.state_dim)),
+            "props": ParameterProperties(),
+        },
+        emission_bias={
+            "params": jnp.zeros((cd_model.emission_dim,)),
+            "props": ParameterProperties(trainable=False),
+        },
+        emission_cov={
+            "params": 0.1 * jnp.eye(cd_model.emission_dim),
+            "props": ParameterProperties(constrainer=RealToPSDBijector()),
+        },
+    )
+    return cd_model, cd_params, cd_param_props, key_init
+
+
+# Check that CD-NLGSSM filtering with non-zero bias matches CD-LGSSM Kalman filter
+def test_cdnonlinear_filter_cdlinear_kf_match_with_bias(seed):
+
+    # Sequence of keys
+    keys = make_key_sequence(seed)
+
+    # Define CD-LGSSM model with non-zero bias
+    cdlgssm_model, cdlgssm_params, cdlgssm_props, cdlgssm_key = (
+        init_cdlgssm_model_with_bias(next(keys))
+    )
+
+    # Simulation from CD-LGSSM
+    t0 = 0
+    t1 = 1
+    num_samples = 100
+
+    # Regularly sampled in [0,1]
+    num_timesteps, t_all = generate_t_emissions(
+        t0=t0,
+        t1=t1,
+        num_samples=num_samples,
+        irregular_samples=False,
+        key=next(keys),
+    )
+    # Filtering Vs forecasting time points
+    sample_idx = jnp.floor(num_timesteps * 0.8).astype(int)
+    t_emissions = t_all[:sample_idx]
+    t_forecast_emissions = t_all[sample_idx:]
+
+    # No inputs (bias alone is sufficient to test the C matrix fix)
+    inputs = None
+
+    # Sample from the continuous-discrete model
+    sampling_key = next(keys)
+    cdlgssm_states, cdlgssm_emissions = cdlgssm_model.sample(
+        params=cdlgssm_params,
+        key=sampling_key,
+        num_timesteps=len(t_emissions),
+        t_emissions=t_emissions,
+        inputs=inputs,
+    )
+
+    # Filter the cdlgssm emissions to get filtered posterior
+    cdlgssm_filtered = cdlgssm_filter(
+        cdlgssm_params,
+        cdlgssm_emissions,
+        t_emissions,
+        filter_hyperparams=KFHyperParams(),
+        inputs=inputs,
+    )
+
+    # Forecasting with cdlgssm model
+    forecasting_key = next(keys)
+    from tensorflow_probability.substrates.jax.distributions import (
+        MultivariateNormalFullCovariance as MVN,
+    )
+
+    cdlgssm_init_forecast = MVN(
+        cdlgssm_filtered.filtered_means[-1, :],
+        cdlgssm_filtered.filtered_covariances[-1, :],
+    )
+    cdlgssm_forecasted = cdlgssm_forecast(
+        params=cdlgssm_params,
+        init_forecast=cdlgssm_init_forecast,
+        t_init=t_emissions[-1],
+        t_forecast=t_forecast_emissions,
+        filter_hyperparams=KFHyperParams(),
+        inputs=inputs,
+        key=forecasting_key,
+    )
+
+    # CD-LGSSM Emissions
+    emissions_key = next(keys)
+    cdlgssm_filtered_emissions, cdlgssm_forecasted_emissions = cddynamax_emissions(
+        model=cdlgssm_model,
+        model_params=cdlgssm_params,
+        t_emissions_filter=t_emissions,
+        filtered_state=cdlgssm_filtered,
+        t_emissions_forecast=t_forecast_emissions,
+        forecasted_state=cdlgssm_forecasted,
+        filtering_inputs=None,
+        forecasting_inputs=None,
+        key=emissions_key,
+    )
+
+    # CD-NLGSSM: check that nonlinear filters match linear KF with non-zero bias
+    for dynamics_approx_order in [1.0, 2.0]:
+        cdnlgssm_model, cdnlgssm_params, cdnlgssm_props = (
+            init_cdnlgssm_equivalent_model(
+                cdlgssm_model, cdlgssm_key, cdlgssm_params, dynamics_approx_order
+            )
+        )
+
+        # Check match
+        check_nonlinear_linear_filter_match(
+            cddynamax_model=cdnlgssm_model,
+            cddynamax_params=cdnlgssm_params,
+            t_emissions=t_emissions,
+            cdlgssm_emissions=cdlgssm_emissions,
+            cdlgssm_filtered=cdlgssm_filtered,
+            t_forecast_emissions=t_forecast_emissions,
+            cdlgssm_forecasted=cdlgssm_forecasted,
+            cdlgssm_filtered_emissions=cdlgssm_filtered_emissions,
+            cdlgssm_forecasted_emissions=cdlgssm_forecasted_emissions,
+            keys=(forecasting_key, emissions_key, keys),
+        )
+        print(
+            f"... all filtering (with bias) tests passed for CD-NLGSSM model with dynamics_approx_order={dynamics_approx_order}"
+        )
+
+
 if __name__ == "__main__":
     test_cdnonlinear_filter_cdlinear_kf_match(0)
     # test_cdnonlinear_smoother_cdlinear_ks_match(0)

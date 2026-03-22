@@ -328,13 +328,14 @@ class ContDiscreteLinearGaussianSSM(SSM):
         # Compute pushforward map:
         # A maps the state from t0 to t1
         # Q is the covariance at t1
-        A, Q = compute_pushforward(
+        A, Q, C = compute_pushforward(
             params, t0, t1, diffeqsolve_settings=self.diffeqsolve_settings
         )
-        # Pushforward the state from t0 to t1, then add controls at t1
-        mean = A @ state + params.dynamics.input_weights @ inputs
+        # Pushforward the state from t0 to t1, with properly discretized controls
+        control = params.dynamics.input_weights @ inputs
         if self.has_dynamics_bias:
-            mean += params.dynamics.bias
+            control = control + params.dynamics.bias
+        mean = A @ state + C @ control
 
         # Return the corresponding Gaussian transition distribution
         return MVN(mean, Q)

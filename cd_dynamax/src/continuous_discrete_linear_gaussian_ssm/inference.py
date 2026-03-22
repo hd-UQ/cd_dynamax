@@ -165,11 +165,18 @@ def compute_pushforward(
     t1: Float,
     diffeqsolve_settings: dict = {},
     warn: bool = True,
-) -> Tuple[Float[Array, "state_dim state_dim"], Float[Array, "state_dim state_dim"]]:
+) -> Tuple[
+    Float[Array, "state_dim state_dim"],
+    Float[Array, "state_dim state_dim"],
+    Float[Array, "state_dim state_dim"],
+]:
     r"""Compute the push-forward of the continuous-time linear Gaussian dynamics
-        based on the SDE definition $dz_t = F_t z_t dt + L_t dB_t$
-        from time t0 to t1, returning the dynamics matrix A and covariance Q, such that
-           $z_{t1} = A z_{t0} + \epsilon,  \epsilon \sim \mathcal{N}(0, Q)$
+        based on the SDE definition $dz_t = (F_t z_t + B u + b) dt + L_t dB_t$
+        from time t0 to t1, returning the dynamics matrix A, covariance Q,
+        and integrated input matrix C, such that
+           $z_{t1} = A z_{t0} + C (B u + b) + \epsilon,  \epsilon \sim \mathcal{N}(0, Q)$
+
+        where $C = \int_{t0}^{t1} \Phi(t1, s) ds$ and $\Phi$ is the state transition matrix.
 
     Args:
         params: CD-LGSSM model parameters
@@ -181,37 +188,50 @@ def compute_pushforward(
     Returns:
         A: dynamics matrix from t0 to t1
         Q: dynamics covariance from t0 to t1
+        C: integrated input matrix from t0 to t1
     """
 
     # Initial conditions
     state_dim = params.dynamics.weights.shape[0]
     A0 = jnp.eye(state_dim)
     Q0 = jnp.zeros((state_dim, state_dim))
-    y0 = (A0, Q0)
+    C0 = jnp.zeros((state_dim, state_dim))
+    y0 = (A0, Q0, C0)
 
-    # Define the right-hand side of the SDEs for mean (A) and covariance (Q)
+    # Define the right-hand side of the ODEs for A, Q, and C
     def rhs_all(t, y, args):
         # Unpack
-        A, Q = y
+        A, Q, C = y
 
         # Possibly time-dependent linear matrices/weights
         F_t = _get_params(params.dynamics.weights, 2, t)
         Qc_t = _get_params(params.dynamics.diffusion_cov, 2, t)
         L_t = _get_params(params.dynamics.diffusion_coefficient, 2, t)
 
-        # Define the RHS of the SDE for A and Q
+        # Define the RHS of the ODEs for A, Q, and C
         dAdt = F_t @ A
         dQdt = F_t @ Q + Q @ F_t.T + L_t @ Qc_t @ L_t.T
 
-        # Return the RHS
-        return (dAdt, dQdt)
+        # Eq. (6.10) in Särkka & Solin (2019) gives control term as
+        # $$c(t_{k+1}) = \int_{t_k}^{t_{k+1}} \Phi(t_{k+1}, s) (B u(s) + b) ds$$
+        # for transition matrix $\Phi(t_{k+1}, s)$.
+        # By noting a constant control term $B u(s) + b$, we have
+        # $$c(t_{k+1}) = (\int_{t_k}^{t_{k+1}} \Phi(t_{k+1}, s) ds) (B u + b).$$
+        # Call the integral term $C(t_{k+1})$. Then, by differentiating under the integral sign,
+        # $$dC(t)/dt = \Phi(t_{k+1}, t_{k+1}) + \int_{t_k}^{t_{k+1}} d/d{t_{k+1}} \Phi(t_{k+1}, s) ds.$$
+        # By Eq. (2.34) of Sarkka & Solin (2019), the first term is the identity, and the second
+        # term is $\int F_t \Phi(t_{k+1}, s) ds = F_t C(t_{k+1})$, i.e.,
+        # $$dC(t)/dt = F_t C(t) + jnp.eye(state_dim).$$
+        dCdt = F_t @ C + jnp.eye(state_dim)
 
-    # Solve the SDE as specified by rhs_all
+        # Return the RHS
+        return (dAdt, dQdt, dCdt)
+
+    # Solve the ODE system
     sol = diffeqsolve(rhs_all, t0=t0, t1=t1, y0=y0, **diffeqsolve_settings)
-    # Extract final A and Q, ensure PSD covariance
-    A, Q = sol[0][-1], psd(sol[1][-1], warn=warn)
-    # Return SDE's mean (A) and covariance (Q)
-    return A, Q
+    # Extract final A, Q, and C; ensure PSD covariance
+    A, Q, C = sol[0][-1], psd(sol[1][-1], warn=warn), sol[2][-1]
+    return A, Q, C
 
 
 #### CD-LGSSM filtering
@@ -226,16 +246,20 @@ class KFHyperParams(NamedTuple):
 
 
 # Predict next mean and covariance under a linear Gaussian model
-def _predict(m, S, F, B, b, Q, u, warn: bool = True):
+def _predict(m, S, F, C, B, b, Q, u, warn: bool = True):
     r"""Predict next mean and covariance under a linear Gaussian model.
 
-        p(z_{t+1}) = int N(z_t \mid m, S) N(z_{t+1} \mid Fz_t + Bu + b, Q)
-                    = N(z_{t+1} \mid Fm + Bu, F S F^T + Q)
+        p(z_{t+1}) = int N(z_t \mid m, S) N(z_{t+1} \mid Fz_t + C(Bu + b), Q)
+                    = N(z_{t+1} \mid Fm + C(Bu + b), F S F^T + Q)
+
+        where C = \int_{t0}^{t1} \Phi(t1, s) ds is the integrated input matrix
+        that properly discretizes the continuous-time input contribution.
 
     Args:
         m (D_hid,): prior mean.
         S (D_hid,D_hid): prior covariance.
         F (D_hid,D_hid): dynamics matrix.
+        C (D_hid,D_hid): integrated input matrix.
         B (D_hid,D_in): dynamics input matrix.
         u (D_in,): inputs.
         Q (D_hid,D_hid): dynamics covariance matrix.
@@ -247,7 +271,7 @@ def _predict(m, S, F, B, b, Q, u, warn: bool = True):
         Sigma_pred (D_hid,D_hid): predicted covariance.
     """
     # Compute the predicted mean and covariance
-    mu_pred = F @ m + B @ u + b
+    mu_pred = F @ m + C @ (B @ u + b)
     Sigma_pred = psd(F @ S @ F.T + Q, warn=warn)
 
     # Return them
@@ -391,7 +415,7 @@ def cdlgssm_filter(
 
         # Predict to the next time instant
         # Get the matrices for the push-forward from t0 to t1
-        F, Q = compute_pushforward(
+        F, Q, C = compute_pushforward(
             params,
             t0,
             t1,
@@ -400,7 +424,7 @@ def cdlgssm_filter(
         )
         # Predict the next state
         pred_mean, pred_cov = _predict(
-            filtered_mean, filtered_cov, F, B, b, Q, u, warn=warn
+            filtered_mean, filtered_cov, F, C, B, b, Q, u, warn=warn
         )
 
         # Return the carry and outputs
@@ -571,7 +595,7 @@ def cdlgssm_smoother(
 
         print("Running KF smoother type 1")
         # Get the discretization matrices
-        F, Q = compute_pushforward(
+        F, Q, C_input = compute_pushforward(
             params,
             t0,
             t1,
@@ -584,27 +608,27 @@ def cdlgssm_smoother(
         # Get inputs at this time
         u = inputs[t0_idx]
 
-        # Computation of C in CD-Kalman Smoother in Equation 3.148
-        C = psd_solve(Q + F @ filtered_cov @ F.T, F @ filtered_cov).T
+        # Smoother gain (Equation 3.148 in Sarkka's thesis)
+        G = psd_solve(Q + F @ filtered_cov @ F.T, F @ filtered_cov).T
 
         # Compute the smoothed mean and covariance as in Equation 3.148
         if b is None:
-            smoothed_mean = filtered_mean + C @ (
-                smoothed_mean_next - F @ filtered_mean - B @ u
+            smoothed_mean = filtered_mean + G @ (
+                smoothed_mean_next - F @ filtered_mean - C_input @ (B @ u)
             )
         else:
-            smoothed_mean = filtered_mean + C @ (
-                smoothed_mean_next - F @ filtered_mean - B @ u - b
+            smoothed_mean = filtered_mean + G @ (
+                smoothed_mean_next - F @ filtered_mean - C_input @ (B @ u + b)
             )
 
         # Compute the smoothed covariance
         smoothed_cov = psd(
-            filtered_cov + C @ (smoothed_cov_next - F @ filtered_cov @ F.T - Q) @ C.T,
+            filtered_cov + G @ (smoothed_cov_next - F @ filtered_cov @ F.T - Q) @ G.T,
             warn=warn,
         )
 
         # Compute the smoothed expectation of z_t z_{t+1}^T
-        smoothed_cross = C @ smoothed_cov_next + jnp.outer(
+        smoothed_cross = G @ smoothed_cov_next + jnp.outer(
             smoothed_mean, smoothed_mean_next
         )
 
@@ -714,9 +738,9 @@ def cdlgssm_joint_sample(
     params, inputs = preprocess_params_and_inputs(params, num_timesteps, inputs)
 
     # Function to sample from transition distribution
-    def _sample_transition(key, F, B, b, Q, x_tm1, u):
+    def _sample_transition(key, F, C, B, b, Q, x_tm1, u):
         # Compute the mean of the transition distribution
-        mean = F @ x_tm1 + B @ u + b
+        mean = F @ x_tm1 + C @ (B @ u + b)
         # Return a sample from the transition distribution
         return MVN(mean, Q).sample(seed=key)
 
@@ -761,14 +785,14 @@ def cdlgssm_joint_sample(
         # Get parameters and inputs for time index t
         B = _get_params(params.dynamics.input_weights, 2, t0)
         b = _get_params(params.dynamics.bias, 1, t0)
-        F, Q = compute_pushforward(params, t0, t1, diffeqsolve_settings, warn=warn)
+        F, Q, C = compute_pushforward(params, t0, t1, diffeqsolve_settings, warn=warn)
         H = _get_params(params.emissions.weights, 2, t1)
         D = _get_params(params.emissions.input_weights, 2, t1)
         d = _get_params(params.emissions.bias, 1, t1)
         R = _get_params(params.emissions.cov, 2, t1)
 
         # Sample from transition and emission distributions
-        state = _sample_transition(key1, F, B, b, Q, prev_state, inpt)
+        state = _sample_transition(key1, F, C, B, b, Q, prev_state, inpt)
         emission = _sample_emission(key2, H, D, d, R, state, inpt)
 
         # Return the sampled state and emission
@@ -1008,7 +1032,7 @@ def cdlgssm_posterior_sample(
         key, t0, t1, t0_idx, filtered_mean, filtered_cov = args
 
         # get parameters and inputs for time index t
-        F, Q = compute_pushforward(
+        F, Q, C_input = compute_pushforward(
             params,
             t0,
             t1,
@@ -1020,9 +1044,11 @@ def cdlgssm_posterior_sample(
         # Get inputs at this time
         u = inputs[t0_idx]
 
-        # Condition on next state
+        # Condition on next state, using discretized input weights
+        B_d = C_input @ B
+        b_d = C_input @ b
         smoothed_mean, smoothed_cov = _condition_on(
-            filtered_mean, filtered_cov, F, B, b, Q, u, next_state, warn=warn
+            filtered_mean, filtered_cov, F, B_d, b_d, Q, u, next_state, warn=warn
         )
         # Sample the current state
         state = MVN(smoothed_mean, smoothed_cov).sample(seed=key)
@@ -1132,7 +1158,7 @@ def cdlgssm_forecast(
             # CD-LGSSM parameters: just the dynamics
             B = _get_params(params.dynamics.input_weights, 2, t0)
             b = _get_params(params.dynamics.bias, 1, t0)
-            F, Q = compute_pushforward(
+            F, Q, C = compute_pushforward(
                 params,
                 t0,
                 t1,
@@ -1145,6 +1171,7 @@ def cdlgssm_forecast(
                 current_state_mean,
                 current_state_cov,
                 F,
+                C,
                 B,
                 b,
                 Q,

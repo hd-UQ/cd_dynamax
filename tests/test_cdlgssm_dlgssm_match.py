@@ -369,3 +369,141 @@ def test_cdlgssm_lgssm_smoother_equivalence(rng_keys):
             plt.legend()
             plt.title("Filtered and smoothed states")
             plt.show()
+
+
+# Initialization of equivalent models with non-zero controls (inputs and bias)
+def init_cdlgssm_lgssm_models_with_controls(key_init):
+    """Initialize equivalent discrete LGSSM and CD-LGSSM with non-zero input weights and dynamics bias."""
+    state_dim = 2
+    emission_dim = 6
+    input_dim = 3
+
+    # Hardcoded discretization constants for F = -0.1*I, L = I, Qc = 0.125*I, dt = 1
+    A_scalar = 0.9048373699188232421875
+    Q_scalar = 0.11329327523708343505859375
+    # C = \int e^{F (1-t)} dt = e^F \int e^{-F t} dt
+    # = e^F (1 - e^{-F}) F^{-1} = (A - 1.0) / F * I.
+    C_scalar = (A_scalar - 1.0) / (-0.1)
+
+    # Continuous-time input weights and bias
+    key_init, key_B = jr.split(key_init)
+    B_cont = 0.1 * jr.normal(key_B, (state_dim, input_dim))
+    b_cont = 0.1 * jnp.ones(state_dim)
+
+    # Discrete model with discretized controls
+    d_model = LinearGaussianSSM(
+        state_dim=state_dim,
+        emission_dim=emission_dim,
+        input_dim=input_dim,
+    )
+    d_params, d_param_props = d_model.initialize(
+        key_init,
+        dynamics_weights=A_scalar * jnp.eye(state_dim),
+        dynamics_covariance=Q_scalar * jnp.eye(state_dim),
+        dynamics_input_weights=C_scalar * B_cont,
+        dynamics_bias=C_scalar * b_cont,
+        emission_bias=jnp.zeros(emission_dim),
+    )
+
+    # Continuous-discrete model
+    cd_model = ContDiscreteLinearGaussianSSM(
+        state_dim=state_dim,
+        emission_dim=emission_dim,
+        input_dim=input_dim,
+    )
+    cd_params, cd_param_props = cd_model.initialize(
+        key_init,
+        initial_mean={
+            "params": jnp.zeros(state_dim),
+            "props": ParameterProperties(),
+        },
+        initial_cov={
+            "params": jnp.eye(state_dim),
+            "props": ParameterProperties(constrainer=RealToPSDBijector()),
+        },
+        dynamics_weights={
+            "params": -0.1 * jnp.eye(state_dim),
+            "props": ParameterProperties(),
+        },
+        dynamics_bias={
+            "params": b_cont,
+            "props": ParameterProperties(),
+        },
+        dynamics_input_weights={
+            "params": B_cont,
+            "props": ParameterProperties(trainable=False),
+        },
+        dynamics_diffusion_coefficient={
+            "params": jnp.eye(state_dim),
+            "props": ParameterProperties(),
+        },
+        dynamics_diffusion_cov={
+            "params": (0.5 * 0.5) * 0.5 * jnp.eye(state_dim),
+            "props": ParameterProperties(constrainer=RealToPSDBijector()),
+        },
+        emission_weights={
+            "params": jr.normal(key_init, (emission_dim, state_dim)),
+            "props": ParameterProperties(),
+        },
+        emission_bias={
+            "params": jnp.zeros(emission_dim),
+            "props": ParameterProperties(),
+        },
+        emission_cov={
+            "params": 0.1 * jnp.eye(emission_dim),
+            "props": ParameterProperties(constrainer=RealToPSDBijector()),
+        },
+    )
+
+    return d_model, d_params, d_param_props, cd_model, cd_params, cd_param_props
+
+
+# Check that CD-LGSSM filtering with controls matches discrete LGSSM filtering
+def test_cdlgssm_lgssm_filter_equivalence_with_controls(rng_keys):
+    # Unpack RNG keys
+    key_init, key_sample = rng_keys
+
+    # Define discrete and continuous-discrete models with non-zero controls
+    d_model, d_params, d_param_props, cd_model, cd_params, cd_param_props = (
+        init_cdlgssm_lgssm_models_with_controls(key_init)
+    )
+
+    # Simulation params
+    num_timesteps = 100
+    t_emissions = jnp.arange(num_timesteps)[:, None]
+
+    # Non-zero inputs
+    inputs = 0.5 * jr.normal(key_sample, (num_timesteps, cd_model.input_dim))
+
+    # Sample from the discrete model
+    d_states, d_emissions = d_model.sample(
+        d_params, key_sample, num_timesteps=num_timesteps, inputs=inputs
+    )
+
+    # Sample from the continuous-discrete model
+    cd_states, cd_emissions = cd_model.sample(
+        cd_params,
+        key_sample,
+        num_timesteps=num_timesteps,
+        t_emissions=t_emissions,
+        inputs=inputs,
+    )
+
+    # Compare samples
+    compare(cd_states, d_states)
+    compare(cd_emissions, d_emissions)
+
+    # Filter discrete model emissions with both models
+    d_filtered_posterior = lgssm_filter(d_params, d_emissions, inputs)
+
+    kf_hyperparams = KFHyperParams(dt_final=1.0)
+    cd_filtered_posterior = cdlgssm_filter(
+        cd_params,
+        d_emissions,
+        t_emissions,
+        filter_hyperparams=kf_hyperparams,
+        inputs=inputs,
+    )
+
+    # Compare filtered posteriors (including marginal log-likelihood)
+    compare_structs(d_filtered_posterior, cd_filtered_posterior)
