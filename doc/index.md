@@ -58,6 +58,7 @@ There are **significant benefits of a continuous-time treatment of dynamical sys
 
 - *First-principles-based theory*: continuous-time models, expressed as differential equations, are the "first principles" foundation for many physical and life sciences. The discrete-time model is most accurately viewed as a subsequent numerical implementation or approximation of this theoretical truth.
 
+
 ## cd-dynamax goals and approach
 
 For a given set of observations $Y_K = [y(t_1),\\ \dots ,\\ y(t_K)]$, we wish to:
