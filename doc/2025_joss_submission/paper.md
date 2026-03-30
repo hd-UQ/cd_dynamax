@@ -149,7 +149,7 @@ Several additional collaborations are planned, and we expect them to grow `cd-dy
 
 # AI usage disclosure
 
-The core architectural design, feature development, and algorithmic implementations are the original work of the authors, who carried out all scientific and technical decisions and judgments.
+The core architectural design, feature development, and algorithmic implementations are the authors' original work, who carried out all scientific and technical decisions and judgments.
 
 We acknowledge the use of generative AI to assist in the development and documentation of `cd-dynamax`:
 
