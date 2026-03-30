@@ -62,6 +62,42 @@ def sample_t_emissions(start=0.0, stop=10.0, dt=0.1, regular=True, key=None, ver
 
     return t_emissions
 
+def make_bayesian_nn_drift(state_dim, hidden_dims, prior="uniform", prior_scale=10.0, **kwargs):
+    """Sample NN weights once, then return a deterministic drift(x)."""
+
+    def sample_or_use(name, shape):
+        if name in kwargs:
+            val = kwargs[name]
+            numpyro.deterministic(name, val)
+            return val
+        else:
+            if prior == "uniform":
+                return numpyro.sample(name, dist.Uniform(-prior_scale, prior_scale).expand(shape).to_event(len(shape)))
+            elif prior == "normal":
+                return numpyro.sample(name, dist.Normal(0.0, prior_scale).expand(shape).to_event(len(shape)))
+            else:
+                raise ValueError(f"Unknown prior: {prior}")
+
+    # sample weights once
+    params = {}
+    in_dim = state_dim
+    for layer_idx, out_dim in enumerate(hidden_dims):
+        params[f"W{layer_idx}"] = sample_or_use(f"W{layer_idx}", (in_dim, out_dim))
+        params[f"b{layer_idx}"] = sample_or_use(f"b{layer_idx}", (out_dim,))
+        in_dim = out_dim
+    params["W_out"] = sample_or_use("W_out", (in_dim, state_dim))
+    params["b_out"] = sample_or_use("b_out", (state_dim,))
+
+    # build deterministic forward
+    def drift_fn(x):
+        h = x
+        for layer_idx, out_dim in enumerate(hidden_dims):
+            h = jnn.gelu(jnp.dot(h, params[f"W{layer_idx}"]) + params[f"b{layer_idx}"])
+        out = jnp.dot(h, params["W_out"]) + params["b_out"]
+        return out
+
+    return drift_fn
+
 # ------------------------
 # MCMC Plot helpers
 # ------------------------
