@@ -66,7 +66,7 @@ Dynamical systems describe complex phenomena in fields including engineering, ec
   $$y(t) = h(x(t), u(t), t) + \eta(t) \;,$$
   where:
     - $h: \mathbb{R}^{d_x} \times \mathbb{R}^{d_u} \times \mathbb{R} \to \mathbb{R}^{d_y}$ transforms the $d_x$-dimensional latent state to a $d_y$-dimensional observation, and
-    - $\eta(t)$ is an independent and identically distributed noise process that corrupts the observations.
+    - $\eta(t)$ is an independent and identically distributed noise process corrupting the observations.
 
 We denote the collection of all parameters --- including those of the initial state distribution $P(x_0)$, latent dynamics $f$, $L$, and $Q$, and observation model $h$ and $p(\eta(t))$ --- as the vector $\theta$.
 
