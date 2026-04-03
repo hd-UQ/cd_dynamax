@@ -40,6 +40,7 @@ dependencies = [
     "orbax-checkpoint>=0.9",
     "etils>=1.5",
     "dm-tree>=0.1.8",
+    "fastprogress>=1.0.0",
     "graphviz",
     "ipykernel"
 ]
