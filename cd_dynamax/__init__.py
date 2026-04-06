@@ -1,5 +1,9 @@
 # cd_dynamax/__init__.py
 
+from importlib.metadata import version
+
+__version__ = version("cd_dynamax")
+
 # Nonlinear SSM
 from .src.continuous_discrete_nonlinear_gaussian_ssm import (
     ContDiscreteNonlinearGaussianSSM,
@@ -45,6 +49,7 @@ from .src.utils.optimize_utils import make_optimizer
 from .src.utils.simulation_utils import make_key_sequence
 
 __all__ = [
+    "__version__",
     # Models
     "ContDiscreteNonlinearGaussianSSM",
     "ContDiscreteNonlinearSSM",
