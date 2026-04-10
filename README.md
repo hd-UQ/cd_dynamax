@@ -25,7 +25,7 @@ $$y(t) = h(x(t)) + \eta(t)$$
 
 where $h: \mathbb{R}^{d_x} \mapsto \mathbb{R}^{d_y}$ creates a $d_y$-dimensional observation from the $d_x$-dimensional state of the dynamical system $x(t)$ (a realization of the above SDE), and $\eta(t)$ applies additive Gaussian noise to the observation.
 
-We denote the collection of all parameters as $\theta = \\{f,\\  L,\\  \mu_0,\\  \Sigma_0,\\  L,\\  Q,\\  h,\\  \textrm{Law}(\eta) \\}$.
+We denote the collection of all parameters as $\theta = \\{f,\\  L,\\  \mu_0,\\  \Sigma_0,\\  Q,\\  h,\\  \textrm{Law}(\eta) \\}$.
 
 Note:
 
@@ -46,7 +46,7 @@ For a given set of observations $Y_K = [y(t_1),\\ \dots ,\\ y(t_K)]$, we wish to
 
 All of these problems are deeply interconnected.
 
-- In cd-dynamax, we enable filtering, smoothing, and parameter inference for a single system under multiple trajectory observations ($[Y^{(1)}, \\ \dots \\, \\ Y^{(N)}]$.
+- In cd-dynamax, we enable filtering, smoothing, and parameter inference for a single system under multiple trajectory observations ($[Y^{(1)}, \\ \dots \\, \\ Y^{(N)}]$).
    
     - In these cases, we assume that each trajectory represents an independent realization of the same dynamics-data model, which we may be interested in learning, filtering, smoothing, or predicting.
         - In the future, we would like to have options to perform hierarchical inference, where we assume that each trajectory came from a different, yet similar set of system-defining parameters $\theta^{(n)}$.
@@ -69,18 +69,19 @@ The `cd-dynamax` codebase extends the `dynamax` library to support continuous-di
 
 - The codebase is organized into several key directories:
 ```
-cd_dynamax/
-├── src/                       # Source code for cd-dynamax library
-│   ├── continuous_discrete_linear_gaussian_ssm/  # CD-LGSSM models and algorithms
-│   ├── continuous_discrete_nonlinear_gaussian_ssm/ # CD-NLGSSM models and algorithms
-│   ├── ssm_temissions.py      # Modified SSM class for discrete emissions
-│   └── utils/               # Utility functions and example models
-├── dynamax/                     # Original dynamax library (as a submodule)
-demos/                       # Python demos showcasing cd-dynamax functionality
-├── python/scripts/          # Python scripts for running demos
-├── python/notebooks/        # Jupyter notebooks for interactive demos
-├── python/configs/          # Configuration files for demos
-tests/                       # Tests for cd-dynamax functionality
+.
+├── cd_dynamax/                  # Source code for cd-dynamax library
+│   ├── src/                     # Core source code
+│   │   ├── continuous_discrete_linear_gaussian_ssm/  # CD-LGSSM models and algorithms
+│   │   ├── continuous_discrete_nonlinear_gaussian_ssm/ # CD-NLGSSM models and algorithms
+│   │   ├── ssm_temissions.py    # Modified SSM class for discrete emissions
+│   │   └── utils/               # Utility functions and example models
+│   └── dynamax/                 # Original dynamax library (as a submodule)
+├── demos/                       # Python demos showcasing cd-dynamax functionality
+│   ├── python/scripts/          # Python scripts for running demos
+│   ├── python/notebooks/        # Jupyter notebooks for interactive demos
+│   └── python/configs/          # Configuration files for demos
+└── tests/                       # Tests for cd-dynamax functionality
 ```
 
 ## [Demos](./demos/python)
@@ -111,7 +112,7 @@ make test
 ```
 
 - For linting, we use `ruff`:
-```bashbash
+```bash
 make lint
 ```
 
@@ -127,38 +128,55 @@ make build_docs
 
 # Installation
 
-We support installation via **Conda** (recommended) or via a standard Python virtual environment.
+Install from **PyPI** (recommended), from source in editable mode, or with a Conda-managed environment.
 
 ---
 
-### Option 1: Conda (recommended)
-
-```bash
-# Create and activate a new environment with Python 3.11
-conda create -n cd_dynamax_joss python=3.11
-conda activate cd_dynamax_joss
-
-# Install your package in editable mode (so local changes are picked up)
-pip install -e .[dev]
-```
-
-This installs the core dependencies listed in `pyproject.toml`, along with optional developer tools (`pytest`, etc.) if you use `[dev]`.
-
----
-
-### Option 2: Python venv + pip
+### Option 1: Install from PyPI (recommended)
 
 ```bash
 # Create and activate a virtual environment
-python -m venv .venv
+python -m venv .venv        # or `uv venv`
 source .venv/bin/activate   # on macOS/Linux
 .venv\Scripts\activate      # on Windows
 
 # Upgrade pip
 pip install --upgrade pip
 
-# Install in editable mode
+# Install latest release from PyPI
+pip install cd-dynamax
+```
+
+`cd-dynamax` is currently **not available on Conda Forge**.
+
+---
+
+### Option 2: Install from source (editable)
+
+```bash
+# Create and activate a virtual environment
+python -m venv .venv        # or `uv venv`
+source .venv/bin/activate   # on macOS/Linux
+.venv\Scripts\activate      # on Windows
+
+# Upgrade pip
+pip install --upgrade pip
+
+# Install in editable mode for local development
 pip install -e .[dev]
+```
+
+---
+
+### Option 3: Conda environment + pip install
+
+```bash
+# Create and activate a Conda environment with Python 3.11
+conda create -n cd_dynamax python=3.11
+conda activate cd_dynamax
+
+# Install latest release from PyPI
+pip install cd-dynamax
 ```
 
 #### GPU support
