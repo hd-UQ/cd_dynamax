@@ -42,7 +42,8 @@ dependencies = [
     "dm-tree>=0.1.8",
     "fastprogress>=1.0.0",
     "graphviz",
-    "ipykernel"
+    "ipykernel",
+    "orbax-checkpoint<0.11.3; sys_platform == 'win32'"
 ]
 
 [tool.setuptools.packages.find]
