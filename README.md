@@ -111,7 +111,7 @@ make test
 ```
 
 - For linting, we use `ruff`:
-```bashbash
+```bash
 make lint
 ```
 
@@ -127,26 +127,30 @@ make build_docs
 
 # Installation
 
-We support installation via **Conda** (recommended) or via a standard Python virtual environment.
+Install from **PyPI** (recommended), from source in editable mode, or with a Conda-managed environment.
 
 ---
 
-### Option 1: Conda (recommended)
+### Option 1: Install from PyPI (recommended)
 
 ```bash
-# Create and activate a new environment with Python 3.11
-conda create -n cd_dynamax_joss python=3.11
-conda activate cd_dynamax_joss
+# Create and activate a virtual environment
+python -m venv .venv        # or `uv venv`
+source .venv/bin/activate   # on macOS/Linux
+.venv\Scripts\activate      # on Windows
 
-# Install your package in editable mode (so local changes are picked up)
-pip install -e .[dev]
+# Upgrade pip
+pip install --upgrade pip
+
+# Install latest release from PyPI
+pip install cd-dynamax
 ```
 
-This installs the core dependencies listed in `pyproject.toml`, along with optional developer tools (`pytest`, etc.) if you use `[dev]`.
+`cd-dynamax` is currently **not available on Conda Forge**.
 
 ---
 
-### Option 2: Python venv + pip
+### Option 2: Install from source (editable)
 
 ```bash
 # Create and activate a virtual environment
@@ -157,8 +161,21 @@ source .venv/bin/activate   # on macOS/Linux
 # Upgrade pip
 pip install --upgrade pip
 
-# Install in editable mode
+# Install in editable mode for local development
 pip install -e .[dev]
+```
+
+---
+
+### Option 3: Conda environment + pip install
+
+```bash
+# Create and activate a Conda environment with Python 3.11
+conda create -n cd_dynamax python=3.11
+conda activate cd_dynamax
+
+# Install latest release from PyPI
+pip install cd-dynamax
 ```
 
 #### GPU support
