@@ -46,7 +46,7 @@ For a given set of observations $Y_K = [y(t_1),\\ \dots ,\\ y(t_K)]$, we wish to
 
 All of these problems are deeply interconnected.
 
-- In cd-dynamax, we enable filtering, smoothing, and parameter inference for a single system under multiple trajectory observations ($[Y^{(1)}, \\ \dots \\, \\ Y^{(N)}]$.
+- In cd-dynamax, we enable filtering, smoothing, and parameter inference for a single system under multiple trajectory observations ($[Y^{(1)}, \\ \dots \\, \\ Y^{(N)}]$).
    
     - In these cases, we assume that each trajectory represents an independent realization of the same dynamics-data model, which we may be interested in learning, filtering, smoothing, or predicting.
         - In the future, we would like to have options to perform hierarchical inference, where we assume that each trajectory came from a different, yet similar set of system-defining parameters $\theta^{(n)}$.
@@ -69,18 +69,19 @@ The `cd-dynamax` codebase extends the `dynamax` library to support continuous-di
 
 - The codebase is organized into several key directories:
 ```
-cd_dynamax/
-├── src/                       # Source code for cd-dynamax library
-│   ├── continuous_discrete_linear_gaussian_ssm/  # CD-LGSSM models and algorithms
-│   ├── continuous_discrete_nonlinear_gaussian_ssm/ # CD-NLGSSM models and algorithms
-│   ├── ssm_temissions.py      # Modified SSM class for discrete emissions
-│   └── utils/               # Utility functions and example models
-├── dynamax/                     # Original dynamax library (as a submodule)
-demos/                       # Python demos showcasing cd-dynamax functionality
-├── python/scripts/          # Python scripts for running demos
-├── python/notebooks/        # Jupyter notebooks for interactive demos
-├── python/configs/          # Configuration files for demos
-tests/                       # Tests for cd-dynamax functionality
+.
+├── cd_dynamax/                  # Source code for cd-dynamax library
+│   ├── src/                     # Core source code
+│   │   ├── continuous_discrete_linear_gaussian_ssm/  # CD-LGSSM models and algorithms
+│   │   ├── continuous_discrete_nonlinear_gaussian_ssm/ # CD-NLGSSM models and algorithms
+│   │   ├── ssm_temissions.py    # Modified SSM class for discrete emissions
+│   │   └── utils/               # Utility functions and example models
+│   └── dynamax/                 # Original dynamax library (as a submodule)
+├── demos/                       # Python demos showcasing cd-dynamax functionality
+│   ├── python/scripts/          # Python scripts for running demos
+│   ├── python/notebooks/        # Jupyter notebooks for interactive demos
+│   └── python/configs/          # Configuration files for demos
+└── tests/                       # Tests for cd-dynamax functionality
 ```
 
 ## [Demos](./demos/python)
@@ -154,7 +155,7 @@ pip install cd-dynamax
 
 ```bash
 # Create and activate a virtual environment
-python -m venv .venv
+python -m venv .venv        # or `uv venv`
 source .venv/bin/activate   # on macOS/Linux
 .venv\Scripts\activate      # on Windows
 
