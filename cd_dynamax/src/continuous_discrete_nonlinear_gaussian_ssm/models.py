@@ -1054,7 +1054,8 @@ def cdnlgssm_filter(
         num_iter: number of linearizations around posterior for update step (default 1).
         output_fields: list of fields to return in posterior object.
             These can take the values "filtered_means", "filtered_covariances",
-            "predicted_means", "predicted_covariances", and "marginal_loglik".
+            "predicted_means", "predicted_covariances", "marginal_loglik",
+            and "posterior_extras".
         key: random key (e.g., for EnKF).
         warn: whether to issue warnings during filtering.
 

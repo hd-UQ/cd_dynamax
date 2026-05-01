@@ -12,6 +12,7 @@ from cd_dynamax.src.continuous_discrete_nonlinear_gaussian_ssm import (
     EKFHyperParams,
     UKFHyperParams,
     EnKFHyperParams,
+    cdnlgssm_filter,
 )
 
 from cd_dynamax.src.continuous_discrete_nonlinear_ssm import (
@@ -59,6 +60,63 @@ def test_filter_forecast_emissions(seed):
             key=seed,
         )
         print(f"... all tests passed for model config {model_config}!")
+
+
+def test_enkf_posterior_extras_are_opt_in(seed):
+    keys = make_key_sequence(seed)
+
+    cd_model, cd_params, _ = create_cddynamax_model_from_config(
+        config_path="./demos/python/configs/",
+        true_model_config_file="model/true_l63_mech",
+        overrides=None,
+    )
+
+    _, t_all = generate_t_emissions(
+        t0=0,
+        t1=1,
+        num_samples=25,
+        irregular_samples=False,
+        key=next(keys),
+    )
+    t_emissions = t_all[:20]
+
+    _, cd_emissions = cd_model.sample(
+        params=cd_params,
+        key=next(keys),
+        num_timesteps=len(t_emissions),
+        t_emissions=t_emissions,
+        inputs=None,
+    )
+
+    filter_hyperparams = EnKFHyperParams()
+
+    filtered_default = cdnlgssm_filter(
+        params=cd_params,
+        emissions=cd_emissions,
+        t_emissions=t_emissions,
+        filter_hyperparams=filter_hyperparams,
+        key=next(keys),
+    )
+    assert filtered_default.posterior_extras is None
+
+    filtered_with_extras = cdnlgssm_filter(
+        params=cd_params,
+        emissions=cd_emissions,
+        t_emissions=t_emissions,
+        filter_hyperparams=filter_hyperparams,
+        output_fields=[
+            "filtered_means",
+            "filtered_covariances",
+            "predicted_means",
+            "predicted_covariances",
+            "marginal_loglik",
+            "posterior_extras",
+        ],
+        key=next(keys),
+    )
+    assert filtered_with_extras.posterior_extras is not None
+    for diagnostic_key in ["innovation", "nis", "min_eig_S", "cond_S", "cond_K"]:
+        assert diagnostic_key in filtered_with_extras.posterior_extras
 
 
 # Check whether continuous-discrete model filtering and forecasting run
