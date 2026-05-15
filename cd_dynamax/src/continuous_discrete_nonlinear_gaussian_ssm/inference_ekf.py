@@ -119,9 +119,9 @@ def _predict(
         f = params.dynamics.drift.f
 
         # Get time-varying parameters
-        Qc_t = params.dynamics.diffusion_cov.f(None, u, t)
+        Qc_t = params.dynamics.diffusion_cov.f(m, u, t)
         L_t = (
-            params.dynamics.diffusion_coefficient.f(None, u, t)
+            params.dynamics.diffusion_coefficient.f(m, u, t)
             * filter_hyperparams.cov_rescaling
         )
 
@@ -185,9 +185,9 @@ def _predict(
             dt = filter_hyperparams.dt_average
 
         # Covariance parameters at time t0
-        Qc_t = params.dynamics.diffusion_cov.f(None, u, t0)
+        Qc_t = params.dynamics.diffusion_cov.f(m, u, t0)
         L_t = (
-            params.dynamics.diffusion_coefficient.f(None, u, t0)
+            params.dynamics.diffusion_coefficient.f(m, u, t0)
             * filter_hyperparams.cov_rescaling
         )
         # Covariance update
@@ -530,9 +530,9 @@ def _smooth(
         # TODO: possibly time- and parameter-dependent functions
         f = params.dynamics.drift.f
         # Get time-varying parameters
-        Qc_t = params.dynamics.diffusion_cov.f(None, u, t)
+        Qc_t = params.dynamics.diffusion_cov.f(m_filter, u, t)
         L_t = (
-            params.dynamics.diffusion_coefficient.f(None, u, t)
+            params.dynamics.diffusion_coefficient.f(m_filter, u, t)
             * filter_hyperparams.cov_rescaling
         )
 
@@ -831,7 +831,7 @@ def extended_kalman_posterior_sample(
 
         # Get parameters and inputs for time t0
         u = inputs[t0_idx]
-        Q = params.dynamics.diffusion_cov.f(None, u, t0)
+        Q = params.dynamics.diffusion_cov.f(filtered_mean, u, t0)
 
         # Condition on next state
         smoothed_mean, smoothed_cov = _condition_on(

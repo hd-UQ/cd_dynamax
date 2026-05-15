@@ -112,9 +112,9 @@ def _predict(
     else:
 
         def diffusion(t, y, args):
-            Qc_t = params.dynamics.diffusion_cov.f(None, u, t)
+            Qc_t = params.dynamics.diffusion_cov.f(y, u, t)
             L_t = (
-                params.dynamics.diffusion_coefficient.f(None, u, t)
+                params.dynamics.diffusion_coefficient.f(y, u, t)
                 * filter_hyperparams.cov_rescaling
             )
             Q_sqrt = jnp.linalg.cholesky(Qc_t)
@@ -143,20 +143,20 @@ def _predict(
         else:
             dt = filter_hyperparams.dt_average
 
-        Qc_t = params.dynamics.diffusion_cov.f(None, u, t0)
-        L_t = (
-            params.dynamics.diffusion_coefficient.f(None, u, t0)
-            * filter_hyperparams.cov_rescaling
-        )
-        state_noise_cov = dt * L_t @ Qc_t @ L_t.T  # D_hid x D_hid
-
         key_array = jr.split(key, x.shape[0])
-        noise = vmap(
-            lambda key: jr.multivariate_normal(
-                key=key, mean=jnp.zeros(x.shape[1]), cov=state_noise_cov
-            ),
-            in_axes=0,
-        )(key_array)
+
+        def _sample_noise(x_i, key_i):
+            Qc_t = params.dynamics.diffusion_cov.f(x_i, u, t0)
+            L_t = (
+                params.dynamics.diffusion_coefficient.f(x_i, u, t0)
+                * filter_hyperparams.cov_rescaling
+            )
+            state_noise_cov = dt * L_t @ Qc_t @ L_t.T
+            return jr.multivariate_normal(
+                key=key_i, mean=jnp.zeros(x.shape[1]), cov=state_noise_cov
+            )
+
+        noise = vmap(_sample_noise, in_axes=(0, 0))(x_pred, key_array)
         x_pred += noise
     return x_pred
 

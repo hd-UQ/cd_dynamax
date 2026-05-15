@@ -387,8 +387,8 @@ class ContDiscreteNonlinearSSM(SSM):
                 return params.dynamics.drift.f(y, u_prev_t, t)
 
             def diffusion(t, y, _):
-                Qc_t = params.dynamics.diffusion_cov.f(None, u_prev_t, t)
-                L_t = params.dynamics.diffusion_coefficient.f(None, u_prev_t, t)
+                Qc_t = params.dynamics.diffusion_cov.f(y, u_prev_t, t)
+                L_t = params.dynamics.diffusion_coefficient.f(y, u_prev_t, t)
                 Q_sqrt = jnp.linalg.cholesky(Qc_t)
                 return L_t @ Q_sqrt
 
@@ -818,10 +818,10 @@ def cdnlssm_forecast(
                 return params.dynamics.drift.f(y, forecast_inputs[t0_idx], t)
 
             def diffusion(t, y, args):
-                Qc_t = params.dynamics.diffusion_cov.f(None, forecast_inputs[t0_idx], t)
+                Qc_t = params.dynamics.diffusion_cov.f(y, forecast_inputs[t0_idx], t)
                 Q_sqrt = jnp.linalg.cholesky(Qc_t)
                 L_t = params.dynamics.diffusion_coefficient.f(
-                    None, forecast_inputs[t0_idx], t
+                    y, forecast_inputs[t0_idx], t
                 )
                 combined_diffusion = L_t @ Q_sqrt
                 return combined_diffusion
