@@ -527,7 +527,6 @@ def _smooth(
         m_smooth, P_smooth = y
         m_filter, P_filter = args
 
-        # TODO: possibly time- and parameter-dependent functions
         f = params.dynamics.drift.f
         # Get time-varying parameters
         Qc_t = params.dynamics.diffusion_cov.f(m_filter, u, t)
