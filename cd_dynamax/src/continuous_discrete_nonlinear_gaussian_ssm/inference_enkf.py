@@ -163,7 +163,7 @@ def _predict(
                 params.dynamics.diffusion_coefficient.f(x_i, u, t0)
                 * filter_hyperparams.cov_rescaling
             )
-            state_noise_cov = dt * L_t @ Qc_t @ L_t.T # D_hid x D_hid
+            state_noise_cov = dt * L_t @ Qc_t @ L_t.T  # D_hid x D_hid
             return jr.multivariate_normal(
                 key=key_i, mean=jnp.zeros(x.shape[1]), cov=state_noise_cov
             )
