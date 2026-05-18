@@ -425,9 +425,6 @@ class ContDiscreteLinearGaussianSSM(SSM):
             latent states and observed emissions
         """
 
-        print(
-            "CD-LGSSM Sampling from continuous-discrete linear Gaussian SSM distributions"
-        )
         return cdlgssm_joint_sample(
             params,
             key,
@@ -462,7 +459,6 @@ class ContDiscreteLinearGaussianSSM(SSM):
             latent states and observed emissions
 
         """
-        print("CD-LGSSM Sampling from continuous-discrete linear Gaussian SSM path")
         return cdlgssm_path_sample(
             params=params,
             key=key,

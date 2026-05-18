@@ -585,15 +585,12 @@ def cdlgssm_smoother(
     # Unpack the filtered posterior
     ll, filtered_means, filtered_covs, *_ = filtered_posterior
 
-    print("Running KF smoother type = {}".format(smoother_type))
-
     # Smoothing step, according to smoother type 1 (Sarkka's Algorithm 3.17)
     def _step_1(carry, args):
         # Unpack the inputs
         smoothed_mean_next, smoothed_cov_next = carry
         t0, t1, t0_idx, filtered_mean, filtered_cov = args
 
-        print("Running KF smoother type 1")
         # Get the discretization matrices
         F, Q, C_input = compute_pushforward(
             params,
@@ -645,7 +642,6 @@ def cdlgssm_smoother(
         smoothed_mean_next, smoothed_cov_next = carry
         t0, t1, t0_idx, filtered_mean, filtered_cov = args
 
-        print("Running KF smoother type 2")
         # Compute the smoothed mean and covariance by solving Equation 3.149
         smoothed_mean, smoothed_cov = _smooth(
             m_filter=filtered_mean,

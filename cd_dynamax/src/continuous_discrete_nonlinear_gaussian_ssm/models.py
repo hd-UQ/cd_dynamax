@@ -513,9 +513,6 @@ class ContDiscreteNonlinearGaussianSSM(SSM):
             latent states and observed emissions
 
         """
-        print(
-            "CD-NLGSSM Sampling from continuous-discrete non-linear Gaussian SSM distributions"
-        )
         return cdnlgssm_joint_sample(
             params=params,
             key=key,
@@ -550,9 +547,6 @@ class ContDiscreteNonlinearGaussianSSM(SSM):
             latent states and observed emissions
 
         """
-        print(
-            "CD-NLGSSM Sampling from continuous-discrete non-linear Gaussian SSM path"
-        )
         return cdnlgssm_path_sample(
             params=params,
             key=key,

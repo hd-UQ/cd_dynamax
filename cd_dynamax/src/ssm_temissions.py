@@ -268,16 +268,10 @@ class SSM(ABC):
 
         """
         if transition_type == "distribution":
-            print(
-                "Sampling from CD distributions: this may be a poor approximation if you're simulating from a non-linear SDE. It is a highly appropriate choice for linear SDEs."
-            )
             states, emissions = self.sample_dist(
                 params, key, num_timesteps, t_emissions, inputs
             )
         elif transition_type == "path":
-            print(
-                "Sampling from SDE solver path: this may be an unnecessarily poor approximation if you're simulating from a linear SDE. It is an appropriate choice for non-linear SDEs."
-            )
             states, emissions = self.sample_path(
                 params, key, num_timesteps, t_emissions, inputs
             )
