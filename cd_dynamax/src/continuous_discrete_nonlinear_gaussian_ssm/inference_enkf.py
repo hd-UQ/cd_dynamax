@@ -113,9 +113,9 @@ def _predict(
         # First order EnKF diffusion
         def diffusion(t, y, args):
             # Get parameters at time t and input u
-            Qc_t = params.dynamics.diffusion_cov.f(None, u, t)
+            Qc_t = params.dynamics.diffusion_cov.f(y, u, t)
             L_t = (
-                params.dynamics.diffusion_coefficient.f(None, u, t)
+                params.dynamics.diffusion_coefficient.f(y, u, t)
                 * filter_hyperparams.cov_rescaling
             )
             Q_sqrt = jnp.linalg.cholesky(Qc_t)
@@ -155,26 +155,20 @@ def _predict(
             # but the same amount of noise is added after each measurement.
             dt = filter_hyperparams.dt_average
 
-        # Get diffusion parameters at time t0 and input u
-        Qc_t = params.dynamics.diffusion_cov.f(None, u, t0)
-        L_t = (
-            params.dynamics.diffusion_coefficient.f(None, u, t0)
-            * filter_hyperparams.cov_rescaling
-        )
-
-        # Compute state noise covariance
-        state_noise_cov = dt * L_t @ Qc_t @ L_t.T  # D_hid x D_hid
-
-        # Noise realizations from MVN(0, state_noise_cov), for each particle particles (N x D_hid)
-        # Split keys for each particle
         key_array = jr.split(key, x.shape[0])
-        # vmap over particles
-        noise = vmap(
-            lambda key: jr.multivariate_normal(
-                key=key, mean=jnp.zeros(x.shape[1]), cov=state_noise_cov
-            ),
-            in_axes=0,
-        )(key_array)
+
+        def _sample_noise(x_i, key_i):
+            Qc_t = params.dynamics.diffusion_cov.f(x_i, u, t0)
+            L_t = (
+                params.dynamics.diffusion_coefficient.f(x_i, u, t0)
+                * filter_hyperparams.cov_rescaling
+            )
+            state_noise_cov = dt * L_t @ Qc_t @ L_t.T  # D_hid x D_hid
+            return jr.multivariate_normal(
+                key=key_i, mean=jnp.zeros(x.shape[1]), cov=state_noise_cov
+            )
+
+        noise = vmap(_sample_noise, in_axes=(0, 0))(x_pred, key_array)
 
         # Add noise to predicted particles
         x_pred += noise

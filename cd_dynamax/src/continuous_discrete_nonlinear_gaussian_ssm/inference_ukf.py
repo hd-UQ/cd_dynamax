@@ -214,9 +214,9 @@ def _predict(
             dt = filter_hyperparams.dt_average
 
         # Get diffusion parameters at time t0 and input u
-        Qc_t = params.dynamics.diffusion_cov.f(None, u, t0)
+        Qc_t = params.dynamics.diffusion_cov.f(m, u, t0)
         L_t = (
-            params.dynamics.diffusion_coefficient.f(None, u, t0)
+            params.dynamics.diffusion_coefficient.f(m, u, t0)
             * filter_hyperparams.cov_rescaling
         )
         # Compute state noise covariance
@@ -237,9 +237,9 @@ def _predict(
             f = (
                 params.dynamics.drift.f
             )  # TODO: reconsider when we want time-varying dynamics functions
-            Qc_t = params.dynamics.diffusion_cov.f(None, u, t)
+            Qc_t = params.dynamics.diffusion_cov.f(m_t, u, t)
             L_t = (
-                params.dynamics.diffusion_coefficient.f(None, u, t)
+                params.dynamics.diffusion_coefficient.f(m_t, u, t)
                 * filter_hyperparams.cov_rescaling
             )
 

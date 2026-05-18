@@ -111,8 +111,8 @@ def compute_pushforward(
         f = params.dynamics.drift.f
 
         # Get time-varying parameters
-        Qc_t = params.dynamics.diffusion_cov.f(None, inputs, t)
-        L_t = params.dynamics.diffusion_coefficient.f(None, inputs, t)
+        Qc_t = params.dynamics.diffusion_cov.f(x, inputs, t)
+        L_t = params.dynamics.diffusion_coefficient.f(x, inputs, t)
 
         # Different SDE approximations to the dynamics
         # Zeroth-order (no gradient information),
@@ -964,8 +964,8 @@ def cdnlgssm_path_sample(
             return params.dynamics.drift.f(y, inpt, t)
 
         def diffusion(t, y, args):
-            Qc_t = params.dynamics.diffusion_cov.f(None, inpt, t)
-            L_t = params.dynamics.diffusion_coefficient.f(None, inpt, t)
+            Qc_t = params.dynamics.diffusion_cov.f(y, inpt, t)
+            L_t = params.dynamics.diffusion_coefficient.f(y, inpt, t)
             Q_sqrt = jnp.linalg.cholesky(Qc_t)
             combined_diffusion = L_t @ Q_sqrt
             return combined_diffusion
@@ -1261,9 +1261,9 @@ def cdnlgssm_forecast(
                 return params.dynamics.drift.f(y, inputs[t0_idx], t)
 
             def diffusion(t, y, args):
-                Qc_t = params.dynamics.diffusion_cov.f(None, inputs[t0_idx], t)
+                Qc_t = params.dynamics.diffusion_cov.f(y, inputs[t0_idx], t)
                 Q_sqrt = jnp.linalg.cholesky(Qc_t)
-                L_t = params.dynamics.diffusion_coefficient.f(None, inputs[t0_idx], t)
+                L_t = params.dynamics.diffusion_coefficient.f(y, inputs[t0_idx], t)
                 combined_diffusion = L_t @ Q_sqrt
                 return combined_diffusion
 
