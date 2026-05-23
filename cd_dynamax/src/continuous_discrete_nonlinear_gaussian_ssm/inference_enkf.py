@@ -188,6 +188,7 @@ def _condition_on(
     t,
     perturb_measurements=True,
     inflation_delta=0.0,
+    compute_diagnostics: bool = False,
     warn: bool = True,
 ):
     """Condition a Gaussian potential on a new observation
@@ -290,24 +291,34 @@ def _condition_on(
     # Updated the particles
     x_cond = x_inflated + (K @ (y_data_perturbed - y_ensemble_infl).T).T
 
-    # --- Diagnostics ---
-    innovation = y - y_pred_mean
-    nis = innovation @ jnp.linalg.solve(S, innovation)  # normalized innovation squared
-    eigvals_S = jnp.linalg.eigvalsh(S)
-    min_eig_S = jnp.min(eigvals_S)
-    max_eig_S = jnp.max(eigvals_S)
-    cond_S = max_eig_S / min_eig_S
-
-    return {
+    cond_dict = {
         "loglik_step": ll_step,
         "x_cond": x_cond,
         "S": S,
         "K": K,
-        "innovation": innovation,
-        "nis": nis,
-        "min_eig_S": min_eig_S,
-        "cond_S": cond_S,
     }
+
+    if compute_diagnostics:
+        # These diagnostics are optional because they add extra solves /
+        # decompositions beyond the EnKF update itself.
+        innovation = y - y_pred_mean
+        nis = innovation @ jnp.linalg.solve(
+            S, innovation
+        )  # normalized innovation squared
+        eigvals_S = jnp.linalg.eigvalsh(S)
+        min_eig_S = jnp.min(eigvals_S)
+        max_eig_S = jnp.max(eigvals_S)
+        cond_S = max_eig_S / min_eig_S
+        cond_dict.update(
+            {
+                "innovation": innovation,
+                "nis": nis,
+                "min_eig_S": min_eig_S,
+                "cond_S": cond_S,
+            }
+        )
+
+    return cond_dict
 
 
 # EnKF filtering main function
@@ -323,7 +334,6 @@ def ensemble_kalman_filter(
         "predicted_means",
         "predicted_covariances",
         "marginal_loglik",
-        "posterior_extras",
     ],
     key: PRNGKey = jr.PRNGKey(0),
     warn: bool = True,
@@ -341,6 +351,9 @@ def ensemble_kalman_filter(
         filter_hyperparams: hyper-parameters.
         inputs: optional array of inputs.
         output_fields: list of fields to include in the output.
+            Include "posterior_extras" to opt into per-step EnKF particles
+            and diagnostics. By default those extras are omitted to avoid
+            unnecessary storage and diagnostic computations.
         key: random generator key.
         warn: whether to warn about PSD issues.
 
@@ -348,6 +361,19 @@ def ensemble_kalman_filter(
         filtered_posterior: posterior object.
 
     """
+
+    if output_fields is None:
+        output_fields = [
+            "filtered_means",
+            "filtered_covariances",
+            "predicted_means",
+            "predicted_covariances",
+            "marginal_loglik",
+        ]
+
+    # Decide whether callers want EnKF extras. When omitted, skip the
+    # additional diagnostic math instead of only dropping the returned values.
+    include_posterior_extras = "posterior_extras" in output_fields
 
     # Figure out timestamps, as vectors to scan over
     # t_emissions is of shape num_timesteps \times 1
@@ -403,6 +429,7 @@ def ensemble_kalman_filter(
             t0,
             filter_hyperparams.perturb_measurements,
             filter_hyperparams.inflation_delta,
+            compute_diagnostics=include_posterior_extras,
             warn=warn,
         )
         # Filtered ensemble
@@ -438,22 +465,6 @@ def ensemble_kalman_filter(
         # Build carry and output states
         carry = (ll_cum, pred_x_ens)
 
-        # EnKF extras
-        posterior_extras = {
-            # Filtered/predicted particles here.
-            "x_ens_filtered": filtered_x_ens,
-            "x_ens_predicted": pred_x_ens,
-            # Other diagnostics
-            "loglik_step": cond_dict["loglik_step"],
-            "S": cond_dict["S"],
-            "K": cond_dict["K"],
-            "innovation": cond_dict["innovation"],
-            "nis": cond_dict["nis"],
-            "min_eig_S": cond_dict["min_eig_S"],
-            "cond_S": cond_dict["cond_S"],
-            "cond_K": jnp.linalg.cond(cond_dict["K"]),
-        }
-
         # Posterior output
         outputs = {
             # Default outputs
@@ -461,9 +472,22 @@ def ensemble_kalman_filter(
             "filtered_covariances": filtered_cov,
             "predicted_means": pred_mean,
             "predicted_covariances": pred_cov,
-            # Extras
-            "posterior_extras": posterior_extras,
         }
+        if include_posterior_extras:
+            outputs["posterior_extras"] = {
+                # Filtered/predicted particles here.
+                "x_ens_filtered": filtered_x_ens,
+                "x_ens_predicted": pred_x_ens,
+                # Other diagnostics
+                "loglik_step": cond_dict["loglik_step"],
+                "S": cond_dict["S"],
+                "K": cond_dict["K"],
+                "innovation": cond_dict["innovation"],
+                "nis": cond_dict["nis"],
+                "min_eig_S": cond_dict["min_eig_S"],
+                "cond_S": cond_dict["cond_S"],
+                "cond_K": jnp.linalg.cond(cond_dict["K"]),
+            }
         outputs = {key: val for key, val in outputs.items() if key in output_fields}
 
         # Return carry and outputs
