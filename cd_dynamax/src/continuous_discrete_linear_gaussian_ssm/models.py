@@ -44,7 +44,7 @@ from .inference import (
 from .inference import compute_pushforward
 
 # Debug utilities
-from ..utils.debug_utils import psd
+from ..utils.debug_utils import psd, resolve_verbosity
 
 
 class SuffStatsCDLGSSM(Protocol):
@@ -408,6 +408,7 @@ class ContDiscreteLinearGaussianSSM(SSM):
         num_timesteps: int,
         t_emissions: Optional[Float[Array, "ntime 1"]] = None,
         inputs: Optional[Float[Array, "ntime input_dim"]] = None,
+        verbosity: int = 1,
     ) -> Tuple[
         Float[Array, "num_timesteps state_dim"],
         Float[Array, "num_timesteps emission_dim"],
@@ -424,6 +425,10 @@ class ContDiscreteLinearGaussianSSM(SSM):
         Returns:
             latent states and observed emissions
         """
+        if verbosity >= 2:
+            print(
+                "CD-LGSSM Sampling from continuous-discrete linear Gaussian SSM distributions"
+            )
 
         return cdlgssm_joint_sample(
             params,
@@ -442,6 +447,7 @@ class ContDiscreteLinearGaussianSSM(SSM):
         num_timesteps: int,
         t_emissions: Optional[Float[Array, "num_timesteps 1"]] = None,
         inputs: Optional[Float[Array, "num_timesteps input_dim"]] = None,
+        verbosity: int = 1,
     ) -> Tuple[
         Float[Array, "num_timesteps state_dim"],
         Float[Array, "num_timesteps emission_dim"],
@@ -459,6 +465,8 @@ class ContDiscreteLinearGaussianSSM(SSM):
             latent states and observed emissions
 
         """
+        if verbosity >= 2:
+            print("CD-LGSSM Sampling from continuous-discrete linear Gaussian SSM path")
         return cdlgssm_path_sample(
             params=params,
             key=key,
@@ -478,6 +486,7 @@ class ContDiscreteLinearGaussianSSM(SSM):
         inputs: Optional[Float[Array, "ntime input_dim"]] = None,
         key: PRNGKey = jr.PRNGKey(0),
         warn: bool = True,
+        verbosity: Optional[int] = None,
     ) -> Scalar:
         r"""Compute the marginal log likelihood of a sequence of emissions under the CD-LGSSM model.
 
@@ -492,9 +501,10 @@ class ContDiscreteLinearGaussianSSM(SSM):
         Returns:
             Marginal log likelihood of the emissions, $\log p(y_{1:T})$.
         """
+        warn, verbosity = resolve_verbosity(warn=warn, verbosity=verbosity)
         # Run CD-Kalman filter to compute marginal log likelihood
         filtered_posterior = cdlgssm_filter(
-            params, emissions, t_emissions, filter_hyperparams, inputs, warn=warn
+            params, emissions, t_emissions, filter_hyperparams, inputs, warn=warn, verbosity=verbosity
         )
         return filtered_posterior.marginal_loglik
 
@@ -507,6 +517,7 @@ class ContDiscreteLinearGaussianSSM(SSM):
         filter_hyperparams: Optional[KFHyperParams] = KFHyperParams(),
         inputs: Optional[Float[Array, "ntime input_dim"]] = None,
         warn: bool = True,
+        verbosity: Optional[int] = None,
     ) -> PosteriorGSSMFiltered:
         r"""Run the CD-Kalman filter to compute the filtered posterior distribution over states.
         Args:
@@ -519,10 +530,11 @@ class ContDiscreteLinearGaussianSSM(SSM):
         Returns:
             filtered posterior distribution over states.
         """
+        warn, verbosity = resolve_verbosity(warn=warn, verbosity=verbosity)
 
         # Directly run the CD-Kalman filter
         return cdlgssm_filter(
-            params, emissions, t_emissions, filter_hyperparams, inputs, warn=warn
+            params, emissions, t_emissions, filter_hyperparams, inputs, warn=warn, verbosity=verbosity
         )
 
     # High-level, user-friendly interface combining filtering and forecasting steps
@@ -535,6 +547,7 @@ class ContDiscreteLinearGaussianSSM(SSM):
         inputs_filter=None,
         inputs_forecast=None,
         warn: bool = True,
+        verbosity: Optional[int] = None,
     ):
         r"""Run the CD-Kalman filter to compute the filtered posterior distributions over states,
         and then run forecasting from the last filtered state.
@@ -551,6 +564,7 @@ class ContDiscreteLinearGaussianSSM(SSM):
         Returns:
             filtered and forecasted posterior distributions over states.
         """
+        warn, verbosity = resolve_verbosity(warn=warn, verbosity=verbosity)
 
         # Run filter on filtering time points
         filtered = self.filter(
@@ -558,7 +572,7 @@ class ContDiscreteLinearGaussianSSM(SSM):
             emissions=emissions_filter,
             t_emissions=t_emissions_filter,
             inputs=inputs_filter,
-            warn=warn,
+            warn=warn, verbosity=verbosity,
         )
 
         # Initialize forecast with last filtered state
@@ -574,7 +588,7 @@ class ContDiscreteLinearGaussianSSM(SSM):
             t_init=init_time,
             t_forecast=t_emissions_forecast,
             inputs=inputs_forecast,
-            warn=warn,
+            warn=warn, verbosity=verbosity,
         )
 
         # Return both filtered and forecasted posteriors
@@ -589,6 +603,7 @@ class ContDiscreteLinearGaussianSSM(SSM):
         filter_hyperparams: Optional[KFHyperParams] = KFHyperParams(),
         inputs: Optional[Float[Array, "ntime input_dim"]] = None,
         warn: bool = True,
+        verbosity: Optional[int] = None,
     ) -> PosteriorGSSMSmoothed:
         r"""Compute the smoothing distribution over states using the CD-Kalman smoother.
 
@@ -602,9 +617,10 @@ class ContDiscreteLinearGaussianSSM(SSM):
         Returns:
             smoothed posterior distributions over states.
         """
+        warn, verbosity = resolve_verbosity(warn=warn, verbosity=verbosity)
 
         return cdlgssm_smoother(
-            params, emissions, t_emissions, filter_hyperparams, inputs, warn=warn
+            params, emissions, t_emissions, filter_hyperparams, inputs, warn=warn, verbosity=verbosity
         )
 
     # Sampling from the posterior distribution of states given emissions

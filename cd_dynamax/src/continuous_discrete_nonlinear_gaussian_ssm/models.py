@@ -63,7 +63,7 @@ from .inference_ukf import (
 from ..utils.diffrax_utils import diffeqsolve
 
 # Debugging utilities
-from ..utils.debug_utils import psd, lax_scan
+from ..utils.debug_utils import psd, lax_scan, resolve_verbosity
 
 tfb = tfp.bijectors
 
@@ -495,6 +495,7 @@ class ContDiscreteNonlinearGaussianSSM(SSM):
         num_timesteps: int,
         t_emissions: Optional[Float[Array, "num_timesteps 1"]] = None,
         inputs: Optional[Float[Array, "num_timesteps input_dim"]] = None,
+        verbosity: int = 1,
     ) -> Tuple[
         Float[Array, "num_timesteps state_dim"],
         Float[Array, "num_timesteps emission_dim"],
@@ -513,6 +514,10 @@ class ContDiscreteNonlinearGaussianSSM(SSM):
             latent states and observed emissions
 
         """
+        if verbosity >= 2:
+            print(
+                "CD-NLGSSM Sampling from continuous-discrete non-linear Gaussian SSM distributions"
+            )
         return cdnlgssm_joint_sample(
             params=params,
             key=key,
@@ -530,6 +535,7 @@ class ContDiscreteNonlinearGaussianSSM(SSM):
         num_timesteps: int,
         t_emissions: Optional[Float[Array, "num_timesteps 1"]] = None,
         inputs: Optional[Float[Array, "num_timesteps input_dim"]] = None,
+        verbosity: int = 1,
     ) -> Tuple[
         Float[Array, "num_timesteps state_dim"],
         Float[Array, "num_timesteps emission_dim"],
@@ -547,6 +553,10 @@ class ContDiscreteNonlinearGaussianSSM(SSM):
             latent states and observed emissions
 
         """
+        if verbosity >= 2:
+            print(
+                "CD-NLGSSM Sampling from continuous-discrete non-linear Gaussian SSM path"
+            )
         return cdnlgssm_path_sample(
             params=params,
             key=key,
@@ -568,6 +578,7 @@ class ContDiscreteNonlinearGaussianSSM(SSM):
         inputs: Optional[Float[Array, "ntime input_dim"]] = None,
         key: PRNGKey = jr.PRNGKey(0),
         warn: bool = True,
+        verbosity: Optional[int] = None,
     ) -> Scalar:
         r"""Compute the marginal log-likelihood of a sequence of emissions under the CD-NLGSSM model,
         Args:
@@ -580,6 +591,7 @@ class ContDiscreteNonlinearGaussianSSM(SSM):
         Returns:
             Marginal log-likelihood of the emissions, $\log p(y_{1:T})$.
         """
+        warn, verbosity = resolve_verbosity(warn=warn, verbosity=verbosity)
 
         # Run a CD-filter, as specified via filter_hyperparams, to compute marginal log likelihood
         filtered_posterior = cdnlgssm_filter(
@@ -589,7 +601,7 @@ class ContDiscreteNonlinearGaussianSSM(SSM):
             filter_hyperparams=filter_hyperparams,
             inputs=inputs,
             key=key,
-            warn=warn,
+            warn=warn, verbosity=verbosity,
         )
         return filtered_posterior.marginal_loglik
 
@@ -615,6 +627,7 @@ class ContDiscreteNonlinearGaussianSSM(SSM):
         diffeqsolve_kwargs: Optional[dict] = {},
         extra_filter_kwargs: Optional[dict] = {},
         warn: bool = True,
+        verbosity: Optional[int] = None,
     ):
         """A high-level filtering interface, to compute the filtered posterior distribution over states.
 
@@ -641,6 +654,7 @@ class ContDiscreteNonlinearGaussianSSM(SSM):
                 (e.g., {"emission_order": "zeroth"} for EKF).
             warn: whether to issue warnings (e.g., about PSD issues)
         """
+        warn, verbosity = resolve_verbosity(warn=warn, verbosity=verbosity)
 
         # Build filter hyperparameters, using the provided settings
         filter_hyperparams = build_filter_hyperparams(
@@ -667,7 +681,7 @@ class ContDiscreteNonlinearGaussianSSM(SSM):
             num_iter=filter_num_iter,
             output_fields=output_fields,
             key=key,
-            warn=warn,
+            warn=warn, verbosity=verbosity,
         )
 
     # High-level, user-friendly interface combining filtering and forecasting steps
@@ -693,6 +707,7 @@ class ContDiscreteNonlinearGaussianSSM(SSM):
         diffeqsolve_kwargs: Optional[dict] = {},
         extra_filter_kwargs: Optional[dict] = {},
         warn: bool = True,
+        verbosity: Optional[int] = None,
     ):
         r"""A high-level interface combining filtering and forecasting steps.
             It computes the filtered posterior distributions over states,
@@ -726,6 +741,7 @@ class ContDiscreteNonlinearGaussianSSM(SSM):
             filtered: filtering posterior over states
             forecasted: forecasting distribution over future states
         """
+        warn, verbosity = resolve_verbosity(warn=warn, verbosity=verbosity)
 
         # Split key for filtering and forecasting steps
         key_filter, key_forecast = jr.split(key)
@@ -754,7 +770,7 @@ class ContDiscreteNonlinearGaussianSSM(SSM):
             filter_hyperparams=filter_hyperparams,
             num_iter=filter_num_iter,
             key=key_filter,
-            warn=warn,
+            warn=warn, verbosity=verbosity,
         )
 
         # Initialize forecast with last filtered state
@@ -772,7 +788,7 @@ class ContDiscreteNonlinearGaussianSSM(SSM):
             inputs=inputs_forecast,
             filter_hyperparams=filter_hyperparams,
             key=key_forecast,
-            warn=warn,
+            warn=warn, verbosity=verbosity,
         )
 
         # Return both filtered and forecasted posteriors
@@ -1033,6 +1049,7 @@ def cdnlgssm_filter(
     output_fields: Optional[List[str]] = None,
     key: PRNGKey = jr.PRNGKey(0),
     warn: bool = True,
+    verbosity: Optional[int] = None,
 ) -> PosteriorGSSMFiltered:
     r"""Run an continuous-discrete nonlinear filter
         to produce the marginal likelihood and filtered state estimates.
@@ -1056,6 +1073,7 @@ def cdnlgssm_filter(
         post: filtered posterior object.
 
     """
+    warn, verbosity = resolve_verbosity(warn=warn, verbosity=verbosity)
     # Double-check filter_hyperparams is not None
     if filter_hyperparams is None:
         filter_hyperparams = EKFHyperParams()
@@ -1108,6 +1126,7 @@ def cdnlgssm_smoother(
     ],
     key: PRNGKey = jr.PRNGKey(0),
     warn: bool = True,
+    verbosity: Optional[int] = None,
 ) -> PosteriorGSSMFiltered:
     r"""Run an continuous-discrete nonlinear smoother
         to produce the marginal likelihood and smoothed state estimates.
@@ -1131,6 +1150,7 @@ def cdnlgssm_smoother(
         post: posterior object.
 
     """
+    warn, verbosity = resolve_verbosity(warn=warn, verbosity=verbosity)
     # Run the appropriate smoother based on filter_hyperparams type
     if isinstance(filter_hyperparams, EKFHyperParams):
         smoothed_posterior = iterated_extended_kalman_smoother(
@@ -1140,7 +1160,7 @@ def cdnlgssm_smoother(
             filter_hyperparams=filter_hyperparams,
             inputs=inputs,
             num_iter=num_iter,
-            warn=warn,
+            warn=warn, verbosity=verbosity,
         )
     elif isinstance(filter_hyperparams, EnKFHyperParams):
         raise ValueError("EnKS not implemented yet")
@@ -1168,6 +1188,7 @@ def cdnlgssm_forecast(
     key: PRNGKey = jr.PRNGKey(0),
     diffeqsolve_settings: dict = {},
     warn: bool = True,
+    verbosity: Optional[int] = None,
 ) -> GSSMForecast:
     r"""Run an continuous-discrete nonlinear model
         to produce the forecasted state estimates.
@@ -1200,6 +1221,7 @@ def cdnlgssm_forecast(
         post: forecasted object.
 
     """
+    warn, verbosity = resolve_verbosity(warn=warn, verbosity=verbosity)
     # Double-check filter_hyperparams is not None
     if filter_hyperparams is None:
         filter_hyperparams = EKFHyperParams()
@@ -1302,6 +1324,7 @@ def cdnlgssm_emissions(
     ] = None,
     key: PRNGKey = jr.PRNGKey(0),
     warn: bool = True,
+    verbosity: Optional[int] = None,
 ) -> Tuple[
     Float[Array, "num_timesteps emission_dim"],
     Float[Array, "num_timesteps emission_dim emission_dim"],
@@ -1326,6 +1349,7 @@ def cdnlgssm_emissions(
         emissions_mean: mean of emissions
         emissions_covariance: covariance of emissions
     """
+    warn, verbosity = resolve_verbosity(warn=warn, verbosity=verbosity)
 
     # Check whether we are using model or a filter
     if filter_hyperparams is not None:
@@ -1338,7 +1362,7 @@ def cdnlgssm_emissions(
                 state_covs=state_covs,
                 inputs=inputs,
                 filter_hyperparams=filter_hyperparams,
-                warn=warn,
+                warn=warn, verbosity=verbosity,
             )
         elif isinstance(filter_hyperparams, EnKFHyperParams):
             emissions_mean, emissions_covariance = emissions_ensemble_kalman_filter(
@@ -1349,7 +1373,7 @@ def cdnlgssm_emissions(
                 inputs=inputs,
                 filter_hyperparams=filter_hyperparams,
                 key=key,
-                warn=warn,
+                warn=warn, verbosity=verbosity,
             )
         elif isinstance(filter_hyperparams, UKFHyperParams):
             emissions_mean, emissions_covariance = emissions_unscented_kalman_filter(
@@ -1359,7 +1383,7 @@ def cdnlgssm_emissions(
                 state_covs=state_covs,
                 inputs=inputs,
                 filter_hyperparams=filter_hyperparams,
-                warn=warn,
+                warn=warn, verbosity=verbosity,
             )
     else:
         # Emissions, based on pushing the state through the model emission function

@@ -87,6 +87,19 @@ def test_cdlgssm_sample_path():
     )
 
 
+def test_cdlgssm_sample_verbosity(capsys):
+    model = ContDiscreteLinearGaussianSSM(state_dim=3, emission_dim=2)
+    params, _ = model.initialize()
+
+    model.sample(params, jr.PRNGKey(0), num_timesteps=5)
+    assert capsys.readouterr().out == ""
+
+    model.sample(params, jr.PRNGKey(0), num_timesteps=5, verbosity=2)
+    out = capsys.readouterr().out
+    assert "Sampling from CD distributions" in out
+    assert "CD-LGSSM Sampling from continuous-discrete linear Gaussian SSM distributions" in out
+
+
 # CD-NLGSSM basic tests
 def test_cdnlgssm_basic_init():
     """Test that a model can be created and has correct dimensions."""

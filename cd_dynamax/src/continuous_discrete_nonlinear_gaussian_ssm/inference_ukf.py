@@ -35,7 +35,7 @@ from .cdnlgssm_utils import ParamsCDNLGSSM
 from ..utils.diffrax_utils import diffeqsolve
 
 # Debugging utilities
-from ..utils.debug_utils import psd, lax_scan
+from ..utils.debug_utils import psd, lax_scan, resolve_verbosity
 
 tfb = tfp.bijectors
 
@@ -140,6 +140,7 @@ def _predict(
     u,
     filter_hyperparams,
     warn: bool = True,
+    verbosity: Optional[int] = None,
 ):
     """Predict next mean and covariance using additive UKF
 
@@ -165,6 +166,7 @@ def _predict(
         P_pred (D_hid,D_hid): predicted covariance.
 
     """
+    warn, verbosity = resolve_verbosity(warn=warn, verbosity=verbosity)
 
     # Dimensions
     n = len(m)
@@ -221,7 +223,7 @@ def _predict(
         )
         # Compute state noise covariance
         P_pred += dt * L_t @ Qc_t @ L_t.T
-        P_pred = psd(P_pred, warn=warn)
+        P_pred = psd(P_pred, warn=warn, verbosity=verbosity)
 
     else:
         # Sarkka Thesis's algo 3.24, with weights defined in eq. 3.69;
@@ -266,7 +268,7 @@ def _predict(
             rhs_all, t0=t0, t1=t1, y0=y0, **filter_hyperparams.diffeqsolve_settings
         )
         # Extract final mean and covariance
-        m_pred, P_pred = sol[0][-1], psd(sol[1][-1], warn=warn)
+        m_pred, P_pred = sol[0][-1], psd(sol[1][-1], warn=warn, verbosity=verbosity)
 
     # According to Sarkka's algo 3.24
     # we only need to return m_pred and P_pred (not P_cross) in continuous-discrete
@@ -274,7 +276,7 @@ def _predict(
 
 
 # Condition on a new observation, under UKF approximations
-def _condition_on(m, P, h, R, lamb, w_mean, w_cov, u, y, t, warn: bool = True):
+def _condition_on(m, P, h, R, lamb, w_mean, w_cov, u, y, t, warn: bool = True, verbosity: Optional[int] = None):
     """Condition a Gaussian potential on a new observation,
         using additive UKF approximations.
 
@@ -297,6 +299,7 @@ def _condition_on(m, P, h, R, lamb, w_mean, w_cov, u, y, t, warn: bool = True):
         P_cond (D_hid,D_hid): filtered covariance.
 
     """
+    warn, verbosity = resolve_verbosity(warn=warn, verbosity=verbosity)
     # Dimensions
     n = len(m)
 
@@ -316,7 +319,7 @@ def _condition_on(m, P, h, R, lamb, w_mean, w_cov, u, y, t, warn: bool = True):
             _outer(sigmas_cond_prop - pred_mean, sigmas_cond_prop - pred_mean),
             axes=1,
         ),
-        warn=warn,
+        warn=warn, verbosity=verbosity,
     )
     pred_cross = jnp.tensordot(
         w_cov, _outer(sigmas_cond - m, sigmas_cond_prop - pred_mean), axes=1
@@ -330,7 +333,7 @@ def _condition_on(m, P, h, R, lamb, w_mean, w_cov, u, y, t, warn: bool = True):
     K = psd_solve(pred_cov, pred_cross.T).T
     # Compute UKF filtered mean and covariance
     m_cond = m + K @ (y - pred_mean)
-    P_cond = psd(P - K @ pred_cov @ K.T, warn=warn)
+    P_cond = psd(P - K @ pred_cov @ K.T, warn=warn, verbosity=verbosity)
     # Return log-likelihood, filtered mean and covariance
     return ll, m_cond, P_cond
 
@@ -349,6 +352,7 @@ def unscented_kalman_filter(
         "predicted_covariances",
     ],
     warn: bool = True,
+    verbosity: Optional[int] = None,
 ) -> PosteriorGSSMFiltered:
     r"""Run a unscented Kalman filter
         to produce the marginal likelihood and filtered state estimates.
@@ -369,6 +373,7 @@ def unscented_kalman_filter(
         filtered_posterior: posterior object.
 
     """
+    warn, verbosity = resolve_verbosity(warn=warn, verbosity=verbosity)
     # Figure out timestamps, as vectors to scan over
     # t_emissions is of shape num_timesteps \times 1
     # t0 and t1 are num_timesteps \times 0
@@ -421,7 +426,7 @@ def unscented_kalman_filter(
 
         # Condition on this emission
         log_likelihood, filtered_mean, filtered_cov = _condition_on(
-            pred_mean, pred_cov, h, R, lamb, w_mean, w_cov, u, y, t0, warn=warn
+            pred_mean, pred_cov, h, R, lamb, w_mean, w_cov, u, y, t0, warn=warn, verbosity=verbosity
         )
 
         # Update the log likelihood
@@ -440,7 +445,7 @@ def unscented_kalman_filter(
             W_matrix,
             u,
             filter_hyperparams,
-            warn=warn,
+            warn=warn, verbosity=verbosity,
         )
 
         # Build carry and output states
@@ -482,6 +487,7 @@ def forecast_unscented_kalman_filter(
         "forecasted_state_covariances",
     ],
     warn: bool = True,
+    verbosity: Optional[int] = None,
 ) -> GSSMForecast:
     r"""Run an Unscented Kalman filter to forecast states.
 
@@ -502,6 +508,7 @@ def forecast_unscented_kalman_filter(
         forecast: forecast object.
 
     """
+    warn, verbosity = resolve_verbosity(warn=warn, verbosity=verbosity)
 
     # Figure out timestamps, as vectors to scan over
     # t_forecast is of shape num_timesteps \times 1
@@ -550,7 +557,7 @@ def forecast_unscented_kalman_filter(
             W_matrix,
             inputs[t0_idx],
             filter_hyperparams,
-            warn=warn,
+            warn=warn, verbosity=verbosity,
         )
 
         # Build carry and output states
@@ -586,6 +593,7 @@ def emissions_unscented_kalman_filter(
     inputs: Optional[Float[Array, "num_timesteps input_dim"]] = None,
     filter_hyperparams: UKFHyperParams = UKFHyperParams(),
     warn: bool = True,
+    verbosity: Optional[int] = None,
 ) -> Tuple[
     Float[Array, "num_timesteps emission_dim"],
     Optional[Float[Array, "num_timesteps emission_dim emission_dim"]],
@@ -611,6 +619,7 @@ def emissions_unscented_kalman_filter(
         emissions_covariance: covariance of emissions, if available
 
     """
+    warn, verbosity = resolve_verbosity(warn=warn, verbosity=verbosity)
 
     # Figure out timestamps, as vectors to scan over
     # t_states is of shape num_timesteps \times 1
@@ -666,7 +675,7 @@ def emissions_unscented_kalman_filter(
                 ),
                 axes=1,
             ),
-            warn=warn,
+            warn=warn, verbosity=verbosity,
         )
 
         # Return carry and output states

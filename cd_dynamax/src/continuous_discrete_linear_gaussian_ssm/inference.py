@@ -47,7 +47,7 @@ from ..continuous_discrete_linear_gaussian_ssm.cdlgssm_utils import (
 from ..utils.diffrax_utils import diffeqsolve
 
 # Debug utilities
-from ..utils.debug_utils import psd
+from ..utils.debug_utils import psd, resolve_verbosity
 
 tfb = tfp.bijectors
 
@@ -137,6 +137,7 @@ def preprocess_args(f):
         filter_hyperparams = bound_args.arguments["filter_hyperparams"]
         inputs = bound_args.arguments["inputs"]
         warn = bound_args.arguments["warn"]
+        verbosity = bound_args.arguments["verbosity"]
 
         num_timesteps = len(emissions)
         full_params, inputs = preprocess_params_and_inputs(
@@ -149,7 +150,7 @@ def preprocess_args(f):
             t_emissions,
             filter_hyperparams=filter_hyperparams,
             inputs=inputs,
-            warn=warn,
+            warn=warn, verbosity=verbosity,
         )
 
     return wrapper
@@ -165,6 +166,7 @@ def compute_pushforward(
     t1: Float,
     diffeqsolve_settings: dict = {},
     warn: bool = True,
+    verbosity: Optional[int] = None,
 ) -> Tuple[
     Float[Array, "state_dim state_dim"],
     Float[Array, "state_dim state_dim"],
@@ -190,6 +192,7 @@ def compute_pushforward(
         Q: dynamics covariance from t0 to t1
         C: integrated input matrix from t0 to t1
     """
+    warn, verbosity = resolve_verbosity(warn=warn, verbosity=verbosity)
 
     # Initial conditions
     state_dim = params.dynamics.weights.shape[0]
@@ -230,7 +233,7 @@ def compute_pushforward(
     # Solve the ODE system
     sol = diffeqsolve(rhs_all, t0=t0, t1=t1, y0=y0, **diffeqsolve_settings)
     # Extract final A, Q, and C; ensure PSD covariance
-    A, Q, C = sol[0][-1], psd(sol[1][-1], warn=warn), sol[2][-1]
+    A, Q, C = sol[0][-1], psd(sol[1][-1], warn=warn, verbosity=verbosity), sol[2][-1]
     return A, Q, C
 
 
@@ -246,7 +249,7 @@ class KFHyperParams(NamedTuple):
 
 
 # Predict next mean and covariance under a linear Gaussian model
-def _predict(m, S, F, C, B, b, Q, u, warn: bool = True):
+def _predict(m, S, F, C, B, b, Q, u, warn: bool = True, verbosity: Optional[int] = None):
     r"""Predict next mean and covariance under a linear Gaussian model.
 
         p(z_{t+1}) = int N(z_t \mid m, S) N(z_{t+1} \mid Fz_t + C(Bu + b), Q)
@@ -270,16 +273,17 @@ def _predict(m, S, F, C, B, b, Q, u, warn: bool = True):
         mu_pred (D_hid,): predicted mean.
         Sigma_pred (D_hid,D_hid): predicted covariance.
     """
+    warn, verbosity = resolve_verbosity(warn=warn, verbosity=verbosity)
     # Compute the predicted mean and covariance
     mu_pred = F @ m + C @ (B @ u + b)
-    Sigma_pred = psd(F @ S @ F.T + Q, warn=warn)
+    Sigma_pred = psd(F @ S @ F.T + Q, warn=warn, verbosity=verbosity)
 
     # Return them
     return mu_pred, Sigma_pred
 
 
 # Condition on a new linear Gaussian observation
-def _condition_on(m, P, H, D, d, R, u, y, warn: bool = True):
+def _condition_on(m, P, H, D, d, R, u, y, warn: bool = True, verbosity: Optional[int] = None):
     r"""Condition a Gaussian potential on a new linear Gaussian observation
        p(z_t \mid y_t, u_t, y_{1:t-1}, u_{1:t-1})
          propto p(z_t \mid y_{1:t-1}, u_{1:t-1}) p(y_t \mid z_t, u_t)
@@ -307,6 +311,7 @@ def _condition_on(m, P, H, D, d, R, u, y, warn: bool = True):
          mu_pred (D_hid,): predicted mean.
          Sigma_pred (D_hid,D_hid): predicted covariance.
     """
+    warn, verbosity = resolve_verbosity(warn=warn, verbosity=verbosity)
     # Compute the Kalman gain
     if R.ndim == 2:
         S = R + H @ P @ H.T
@@ -328,7 +333,7 @@ def _condition_on(m, P, H, D, d, R, u, y, warn: bool = True):
         S = jnp.diag(R) + H @ P @ H.T
 
     # Compute the conditional mean and covariance
-    Sigma_cond = psd(P - K @ S @ K.T, warn=warn)
+    Sigma_cond = psd(P - K @ S @ K.T, warn=warn, verbosity=verbosity)
     mu_cond = m + K @ (y - D @ u - d - H @ m)
     # Return them
     return mu_cond, Sigma_cond
@@ -343,6 +348,7 @@ def cdlgssm_filter(
     filter_hyperparams: Optional[KFHyperParams] = KFHyperParams(),
     inputs: Optional[Float[Array, "num_timesteps input_dim"]] = None,
     warn: bool = True,
+    verbosity: Optional[int] = None,
 ) -> PosteriorGSSMFiltered:
     r"""Run a Continuous Discrete Kalman filter
         to produce the marginal likelihood and filtered state estimates.
@@ -358,6 +364,7 @@ def cdlgssm_filter(
     Returns:
         PosteriorGSSMFiltered: filtered posterior object
     """
+    warn, verbosity = resolve_verbosity(warn=warn, verbosity=verbosity)
     # Double-check filter_hyperparams is not None
     if filter_hyperparams is None:
         filter_hyperparams = KFHyperParams()
@@ -410,7 +417,7 @@ def cdlgssm_filter(
 
         # Condition on this emission
         filtered_mean, filtered_cov = _condition_on(
-            pred_mean, pred_cov, H, D, d, R, u, y, warn=warn
+            pred_mean, pred_cov, H, D, d, R, u, y, warn=warn, verbosity=verbosity
         )
 
         # Predict to the next time instant
@@ -420,11 +427,11 @@ def cdlgssm_filter(
             t0,
             t1,
             diffeqsolve_settings=filter_hyperparams.diffeqsolve_settings,
-            warn=warn,
+            warn=warn, verbosity=verbosity,
         )
         # Predict the next state
         pred_mean, pred_cov = _predict(
-            filtered_mean, filtered_cov, F, C, B, b, Q, u, warn=warn
+            filtered_mean, filtered_cov, F, C, B, b, Q, u, warn=warn, verbosity=verbosity
         )
 
         # Return the carry and outputs
@@ -465,6 +472,7 @@ def _smooth(
     u: Float[Array, " input_dim"],
     filter_hyperparams: Optional[KFHyperParams] = KFHyperParams(),
     warn: bool = True,
+    verbosity: Optional[int] = None,
 ):
     r"""Smooth the next mean and covariance using EKF smoothing equations
         where the evolution of m and P are computed based on
@@ -486,6 +494,7 @@ def _smooth(
         mu_smooth (D_hid,): smoothed mean at t0.
         Sigma_smooth (D_hid,D_hid): smoothed covariance at t0.
     """
+    warn, verbosity = resolve_verbosity(warn=warn, verbosity=verbosity)
 
     # Initialize
     y0 = (m_smooth, P_smooth)
@@ -528,7 +537,7 @@ def _smooth(
         **filter_hyperparams.diffeqsolve_settings,
     )
     # Extract and return smoothed mean and covariance, ensure PSD covariance
-    m_smooth, P_smooth = sol[0][-1], psd(sol[1][-1], warn=warn)
+    m_smooth, P_smooth = sol[0][-1], psd(sol[1][-1], warn=warn, verbosity=verbosity)
     return m_smooth, P_smooth
 
 
@@ -542,6 +551,7 @@ def cdlgssm_smoother(
     inputs: Optional[Float[Array, "num_timesteps input_dim"]] = None,
     smoother_type: Optional[str] = "cd_smoother_1",
     warn: bool = True,
+    verbosity: Optional[int] = None,
 ) -> PosteriorGSSMSmoothed:
     r"""Run forward-filtering, backward-smoother to compute expectations
         under the posterior distribution on latent states.
@@ -560,6 +570,7 @@ def cdlgssm_smoother(
     Returns:
         PosteriorGSSMSmoothed: smoothed posterior object.
     """
+    warn, verbosity = resolve_verbosity(warn=warn, verbosity=verbosity)
 
     # Figure out timestamps, as vectors to scan over
     # t_emissions is of shape num_timesteps \times 1
@@ -580,10 +591,13 @@ def cdlgssm_smoother(
 
     # Run the Kalman filter
     filtered_posterior = cdlgssm_filter(
-        params, emissions, t_emissions, filter_hyperparams, inputs, warn=warn
+        params, emissions, t_emissions, filter_hyperparams, inputs, warn=warn, verbosity=verbosity
     )
     # Unpack the filtered posterior
     ll, filtered_means, filtered_covs, *_ = filtered_posterior
+
+    if verbosity >= 2:
+        print(f"Running KF smoother type = {smoother_type}")
 
     # Smoothing step, according to smoother type 1 (Sarkka's Algorithm 3.17)
     def _step_1(carry, args):
@@ -591,13 +605,16 @@ def cdlgssm_smoother(
         smoothed_mean_next, smoothed_cov_next = carry
         t0, t1, t0_idx, filtered_mean, filtered_cov = args
 
+        if verbosity >= 2:
+            print("Running KF smoother type 1")
+
         # Get the discretization matrices
         F, Q, C_input = compute_pushforward(
             params,
             t0,
             t1,
             diffeqsolve_settings=filter_hyperparams.diffeqsolve_settings,
-            warn=warn,
+            warn=warn, verbosity=verbosity,
         )
         # Possibly time-dependent weights
         B = _get_params(params.dynamics.input_weights, 2, t0)
@@ -621,7 +638,7 @@ def cdlgssm_smoother(
         # Compute the smoothed covariance
         smoothed_cov = psd(
             filtered_cov + G @ (smoothed_cov_next - F @ filtered_cov @ F.T - Q) @ G.T,
-            warn=warn,
+            warn=warn, verbosity=verbosity,
         )
 
         # Compute the smoothed expectation of z_t z_{t+1}^T
@@ -642,6 +659,9 @@ def cdlgssm_smoother(
         smoothed_mean_next, smoothed_cov_next = carry
         t0, t1, t0_idx, filtered_mean, filtered_cov = args
 
+        if verbosity >= 2:
+            print("Running KF smoother type 2")
+
         # Compute the smoothed mean and covariance by solving Equation 3.149
         smoothed_mean, smoothed_cov = _smooth(
             m_filter=filtered_mean,
@@ -653,7 +673,7 @@ def cdlgssm_smoother(
             t1=t1,
             u=inputs[t0_idx],
             filter_hyperparams=filter_hyperparams,
-            warn=warn,
+            warn=warn, verbosity=verbosity,
         )
 
         # Smoothed cross-covariance is not computed in this smoother type
@@ -712,6 +732,7 @@ def cdlgssm_joint_sample(
     inputs: Optional[Float[Array, "num_timesteps input_dim"]] = None,
     diffeqsolve_settings={},
     warn: bool = True,
+    verbosity: Optional[int] = None,
 ) -> Tuple[
     Float[Array, "num_timesteps state_dim"], Float[Array, "num_timesteps emission_dim"]
 ]:
@@ -730,6 +751,7 @@ def cdlgssm_joint_sample(
         latent states and observed emissions
 
     """
+    warn, verbosity = resolve_verbosity(warn=warn, verbosity=verbosity)
     # Preprocess parameters and inputs
     params, inputs = preprocess_params_and_inputs(params, num_timesteps, inputs)
 
@@ -781,7 +803,7 @@ def cdlgssm_joint_sample(
         # Get parameters and inputs for time index t
         B = _get_params(params.dynamics.input_weights, 2, t0)
         b = _get_params(params.dynamics.bias, 1, t0)
-        F, Q, C = compute_pushforward(params, t0, t1, diffeqsolve_settings, warn=warn)
+        F, Q, C = compute_pushforward(params, t0, t1, diffeqsolve_settings, warn=warn, verbosity=verbosity)
         H = _get_params(params.emissions.weights, 2, t1)
         D = _get_params(params.emissions.input_weights, 2, t1)
         d = _get_params(params.emissions.bias, 1, t1)
@@ -839,6 +861,7 @@ def cdlgssm_path_sample(
     inputs: Optional[Float[Array, "num_timesteps input_dim"]] = None,
     diffeqsolve_settings={},
     warn: bool = True,
+    verbosity: Optional[int] = None,
 ) -> Tuple[
     Float[Array, "num_timesteps state_dim"], Float[Array, "num_timesteps emission_dim"]
 ]:
@@ -857,6 +880,7 @@ def cdlgssm_path_sample(
         latent states and observed emissions
 
     """
+    warn, verbosity = resolve_verbosity(warn=warn, verbosity=verbosity)
     # Preprocess parameters and inputs
     params, inputs = preprocess_params_and_inputs(params, num_timesteps, inputs)
 
@@ -981,6 +1005,7 @@ def cdlgssm_posterior_sample(
     inputs: Optional[Float[Array, "num_timesteps input_dim"]] = None,
     jitter: Optional[Scalar] = 0,
     warn: bool = True,
+    verbosity: Optional[int] = None,
 ) -> Float[Array, "ntime state_dim"]:
     r"""Run forward-filtering, backward-sampling to draw samples from $p(z_{1:T} \mid y_{1:T}, u_{1:T})$.
 
@@ -997,6 +1022,7 @@ def cdlgssm_posterior_sample(
         Float[Array, "ntime state_dim"]: one sample of $z_{1:T}$ from the posterior distribution on latent states.
 
     """
+    warn, verbosity = resolve_verbosity(warn=warn, verbosity=verbosity)
     # Figure out timestamps, as vectors to scan over
     # t_emissions is of shape num_timesteps \times 1
     # t0 and t1 are num_timesteps-1 \times 0
@@ -1016,7 +1042,7 @@ def cdlgssm_posterior_sample(
 
     # Run the Kalman filter
     filtered_posterior = cdlgssm_filter(
-        params, emissions, t_emissions, filter_hyperparams, inputs, warn=warn
+        params, emissions, t_emissions, filter_hyperparams, inputs, warn=warn, verbosity=verbosity
     )
     # Unpack the filtered posterior
     ll, filtered_means, filtered_covs, *_ = filtered_posterior
@@ -1033,7 +1059,7 @@ def cdlgssm_posterior_sample(
             t0,
             t1,
             diffeqsolve_settings=filter_hyperparams.diffeqsolve_settings,
-            warn=warn,
+            warn=warn, verbosity=verbosity,
         )
         B = _get_params(params.dynamics.input_weights, 2, t0)
         b = _get_params(params.dynamics.bias, 1, t0)
@@ -1044,7 +1070,7 @@ def cdlgssm_posterior_sample(
         B_d = C_input @ B
         b_d = C_input @ b
         smoothed_mean, smoothed_cov = _condition_on(
-            filtered_mean, filtered_cov, F, B_d, b_d, Q, u, next_state, warn=warn
+            filtered_mean, filtered_cov, F, B_d, b_d, Q, u, next_state, warn=warn, verbosity=verbosity
         )
         # Sample the current state
         state = MVN(smoothed_mean, smoothed_cov).sample(seed=key)
@@ -1091,6 +1117,7 @@ def cdlgssm_forecast(
     key: PRNGKey = jr.PRNGKey(0),
     diffeqsolve_settings: dict = {},
     warn: bool = True,
+    verbosity: Optional[int] = None,
 ) -> GSSMForecast:
     r"""Run a Continuous Discrete Kalman filter
         to produce forecasted state estimates.
@@ -1120,6 +1147,7 @@ def cdlgssm_forecast(
         post: forecasted object.
 
     """
+    warn, verbosity = resolve_verbosity(warn=warn, verbosity=verbosity)
 
     # Double-check filter_hyperparams is not None
     if filter_hyperparams is None:
@@ -1159,7 +1187,7 @@ def cdlgssm_forecast(
                 t0,
                 t1,
                 diffeqsolve_settings=filter_hyperparams.diffeqsolve_settings,
-                warn=warn,
+                warn=warn, verbosity=verbosity,
             )
 
             # Predict the next state based on the KF
@@ -1172,7 +1200,7 @@ def cdlgssm_forecast(
                 b,
                 Q,
                 inpt,
-                warn=warn,
+                warn=warn, verbosity=verbosity,
             )
 
             # Build carry and output states
@@ -1263,6 +1291,7 @@ def cdlgssm_emissions(
     inputs: Optional[Float[Array, "num_timesteps input_dim"]] = None,
     key: PRNGKey = jr.PRNGKey(0),
     warn: bool = True,
+    verbosity: Optional[int] = None,
 ) -> Tuple[
     Float[Array, "num_timesteps emission_dim"],
     Float[Array, "num_timesteps emission_dim emission_dim"],
@@ -1285,6 +1314,7 @@ def cdlgssm_emissions(
         emissions_mean: mean of emissions
         emissions_covariance: covariance of emissions
     """
+    warn, verbosity = resolve_verbosity(warn=warn, verbosity=verbosity)
 
     # Emissions based on a linear transformation of the state through
 
@@ -1318,7 +1348,7 @@ def cdlgssm_emissions(
         R = _get_params(params.emissions.cov, 2, t0)
         if this_cov is not None:
             # If we have state covariances, then we compute the emission covariance
-            emission_cov = psd(H @ this_cov @ H.T + +R, warn=warn)
+            emission_cov = psd(H @ this_cov @ H.T + +R, warn=warn, verbosity=verbosity)
         else:
             emission_cov = jnp.diag(R) if R.ndim == 1 else R
 

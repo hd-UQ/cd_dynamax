@@ -37,7 +37,7 @@ from ..continuous_discrete_nonlinear_gaussian_ssm.cdnlgssm_utils import ParamsCD
 from ..utils.diffrax_utils import diffeqsolve
 
 # Debugging utilities
-from ..utils.debug_utils import psd, lax_scan
+from ..utils.debug_utils import psd, lax_scan, resolve_verbosity
 
 tfb = tfp.bijectors
 
@@ -189,6 +189,7 @@ def _condition_on(
     perturb_measurements=True,
     inflation_delta=0.0,
     warn: bool = True,
+    verbosity: Optional[int] = None,
 ):
     """Condition a Gaussian potential on a new observation
         using Ensemble Kalman Filter approximations.
@@ -210,6 +211,7 @@ def _condition_on(
         x_cond (N_particles, D_hid): filtered particles
 
     """
+    warn, verbosity = resolve_verbosity(warn=warn, verbosity=verbosity)
 
     # Number of particles and state dimension
     n_particles, state_dim = x.shape
@@ -231,7 +233,7 @@ def _condition_on(
     y_pred_cov = psd(
         jnp.sum(_outer(y_ensemble - y_pred_mean, y_ensemble - y_pred_mean), axis=0)
         / (n_particles - 1),
-        warn=warn,
+        warn=warn, verbosity=verbosity,
     )
 
     # Compute log-likelihood of observation based on Gaussian distribution,
@@ -254,7 +256,7 @@ def _condition_on(
                 axis=0,
             )
             / (n_particles - 1),
-            warn=warn,
+            warn=warn, verbosity=verbosity,
         )
     else:
         # No inflation, just use original ensemble
@@ -327,6 +329,7 @@ def ensemble_kalman_filter(
     ],
     key: PRNGKey = jr.PRNGKey(0),
     warn: bool = True,
+    verbosity: Optional[int] = None,
 ) -> PosteriorGSSMFiltered:
     r"""Run a ensemble Kalman filter
         to produce the marginal likelihood and filtered state estimates.
@@ -348,6 +351,7 @@ def ensemble_kalman_filter(
         filtered_posterior: posterior object.
 
     """
+    warn, verbosity = resolve_verbosity(warn=warn, verbosity=verbosity)
 
     # Figure out timestamps, as vectors to scan over
     # t_emissions is of shape num_timesteps \times 1
@@ -403,7 +407,7 @@ def ensemble_kalman_filter(
             t0,
             filter_hyperparams.perturb_measurements,
             filter_hyperparams.inflation_delta,
-            warn=warn,
+            warn=warn, verbosity=verbosity,
         )
         # Filtered ensemble
         filtered_x_ens = cond_dict["x_cond"]
@@ -419,7 +423,7 @@ def ensemble_kalman_filter(
                 axis=0,
             )
             / (filter_hyperparams.N_particles - 1),
-            warn=warn,
+            warn=warn, verbosity=verbosity,
         )
 
         # Predict the next state, based on Ensemble prediction
@@ -432,7 +436,7 @@ def ensemble_kalman_filter(
         pred_cov = psd(
             jnp.sum(_outer(pred_x_ens - pred_mean, pred_x_ens - pred_mean), axis=0)
             / (filter_hyperparams.N_particles - 1),
-            warn=warn,
+            warn=warn, verbosity=verbosity,
         )
 
         # Build carry and output states
@@ -507,6 +511,7 @@ def forecast_ensemble_kalman_filter(
     ],
     key: PRNGKey = jr.PRNGKey(0),
     warn: bool = True,
+    verbosity: Optional[int] = None,
 ) -> GSSMForecast:
     r"""Run an Ensemble Kalman filter to forecast states
 
@@ -528,6 +533,7 @@ def forecast_ensemble_kalman_filter(
         forecast: forecast object.
 
     """
+    warn, verbosity = resolve_verbosity(warn=warn, verbosity=verbosity)
 
     # Figure out timestamps, as vectors to scan over
     # t_forecast is of shape num_timesteps \times 1
@@ -574,7 +580,7 @@ def forecast_ensemble_kalman_filter(
                 axis=0,
             )
             / (filter_hyperparams.N_particles - 1),
-            warn=warn,
+            warn=warn, verbosity=verbosity,
         )
 
         # Build carry and output states
@@ -619,6 +625,7 @@ def emissions_ensemble_kalman_filter(
     filter_hyperparams: EnKFHyperParams = EnKFHyperParams(),
     key: PRNGKey = jr.PRNGKey(0),
     warn: bool = True,
+    verbosity: Optional[int] = None,
 ) -> Tuple[
     Float[Array, "num_timesteps emission_dim"],
     Optional[Float[Array, "num_timesteps emission_dim emission_dim"]],
@@ -645,6 +652,7 @@ def emissions_ensemble_kalman_filter(
         emissions_covariance: covariance of emissions, if available
 
     """
+    warn, verbosity = resolve_verbosity(warn=warn, verbosity=verbosity)
 
     # Figure out timestamps, as vectors to scan over
     # t_states is of shape num_timesteps \times 1
@@ -694,7 +702,7 @@ def emissions_ensemble_kalman_filter(
                 _outer(y_ensemble - emission_mean, y_ensemble - emission_mean), axis=0
             )
             / (filter_hyperparams.N_particles - 1),
-            warn=warn,
+            warn=warn, verbosity=verbosity,
         )
 
         # Return carry and output states

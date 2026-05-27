@@ -53,7 +53,7 @@ from .cdnlssm_utils import (
 from ..utils.diffrax_utils import diffeqsolve
 
 # Debugging utilities
-from ..utils.debug_utils import lax_scan
+from ..utils.debug_utils import lax_scan, resolve_verbosity
 
 DEBUG = False  # By default, debugging is off, e.g., no extra checks in lax_scan
 
@@ -301,6 +301,7 @@ class ContDiscreteNonlinearSSM(SSM):
         num_timesteps: int,
         t_emissions: Optional[Array] = None,
         inputs: Optional[Array] = None,
+        verbosity: int = 1,
     ):
         """Sample from the joint distribution to produce state and emission trajectories.
 
@@ -331,6 +332,7 @@ class ContDiscreteNonlinearSSM(SSM):
         num_timesteps: int,
         t_emissions: Optional[Array] = None,
         inputs: Optional[Array] = None,
+        verbosity: int = 1,
     ):
         """Sample states and emissions by integrating the SDE and drawing from the emission distribution.
 
@@ -428,6 +430,7 @@ class ContDiscreteNonlinearSSM(SSM):
         inputs: Optional[Float[Array, "ntime input_dim"]] = None,
         key: PRNGKey = jr.PRNGKey(0),
         warn: bool = True,
+        verbosity: Optional[int] = None,
     ) -> Scalar:
         r"""Compute the marginal log-likelihood of a sequence of emissions under the CD-NLSSM model,
         Args:
@@ -440,6 +443,7 @@ class ContDiscreteNonlinearSSM(SSM):
         Returns:
             Marginal log-likelihood of the emissions, $\log p(y_{1:T})$.
         """
+        warn, verbosity = resolve_verbosity(warn=warn, verbosity=verbosity)
 
         # Run a CD-Differentiable Particle Filter (DPF), as specified via filter_hyperparams, to compute marginal log likelihood
         filtered_posterior = cdnlssm_filter(
@@ -449,7 +453,7 @@ class ContDiscreteNonlinearSSM(SSM):
             filter_hyperparams=filter_hyperparams,
             inputs=inputs,
             key=key,
-            warn=warn,
+            warn=warn, verbosity=verbosity,
         )
         return filtered_posterior.marginal_loglik
 
@@ -472,6 +476,7 @@ class ContDiscreteNonlinearSSM(SSM):
         diffeqsolve_kwargs: Optional[dict] = None,
         extra_filter_kwargs: Optional[dict] = None,
         warn: bool = True,
+        verbosity: Optional[int] = None,
     ):
         """Filters a CD-NLSSM; by default, this runs a bootstrap differentiable particle filter (DPF).
 
@@ -501,6 +506,7 @@ class ContDiscreteNonlinearSSM(SSM):
         Returns:
             PosteriorCDNLSSMFiltered: Posterior distribution of the CDNLSSM.
         """
+        warn, verbosity = resolve_verbosity(warn=warn, verbosity=verbosity)
         filter_hyperparams = build_dpf_hyperparams(
             filter_state_order=filter_state_order,
             filter_state_cov_rescaling=filter_state_cov_rescaling,
@@ -519,7 +525,7 @@ class ContDiscreteNonlinearSSM(SSM):
             inputs=inputs,
             output_fields=output_fields,
             key=key,
-            warn=warn,
+            warn=warn, verbosity=verbosity,
         )
 
     # High-level, user-friendly interface combining filtering and forecasting steps
@@ -543,6 +549,7 @@ class ContDiscreteNonlinearSSM(SSM):
         diffeqsolve_kwargs: Optional[dict] = None,
         extra_filter_kwargs: Optional[dict] = None,
         warn: bool = True,
+        verbosity: Optional[int] = None,
     ):
         """Filters a CD-NLSSM; by default, this runs a bootstrap differentiable particle filter (DPF).
 
@@ -573,6 +580,7 @@ class ContDiscreteNonlinearSSM(SSM):
             filtered_posterior: PosteriorCDNLSSMFiltered, posterior distribution of the CDNLSSM.
             forecasted: Float[Array, "num_timesteps state_dim M"], forecasted states over time.
         """
+        warn, verbosity = resolve_verbosity(warn=warn, verbosity=verbosity)
 
         # Split key for filtering and forecasting steps
         key_filter, key_forecast = jr.split(key)
@@ -596,7 +604,7 @@ class ContDiscreteNonlinearSSM(SSM):
             inputs=inputs_filter,
             output_fields=output_fields,
             key=key,
-            warn=warn,
+            warn=warn, verbosity=verbosity,
         )
 
         # Initialize forecast with last filtered state's particles
@@ -613,7 +621,7 @@ class ContDiscreteNonlinearSSM(SSM):
             inputs=inputs_forecast,
             key=key_forecast,
             diffeqsolve_settings=filter_hyperparams.diffeqsolve_settings,
-            warn=warn,
+            warn=warn, verbosity=verbosity,
         )
 
         return filtered, forecasted
@@ -701,6 +709,7 @@ def cdnlssm_filter(
     output_fields: Optional[List[str]] = None,
     key: PRNGKeyArray = jr.PRNGKey(0),
     warn: bool = True,
+    verbosity: Optional[int] = None,
 ):
     """Run particle filtering (configurable DPF) for a CD-NLSSM and return particles, log-weights, and log-evidence.
 
@@ -717,6 +726,7 @@ def cdnlssm_filter(
     Returns:
         PosteriorCDNLSSMFiltered: Posterior distribution of the CDNLSSM.
     """
+    warn, verbosity = resolve_verbosity(warn=warn, verbosity=verbosity)
     if filter_hyperparams is None:
         filter_hyperparams = DPFHyperParams()
 
@@ -759,6 +769,7 @@ def cdnlssm_forecast(
     key: PRNGKey = jr.PRNGKey(0),
     diffeqsolve_settings: dict = {},
     warn: bool = True,
+    verbosity: Optional[int] = None,
 ) -> Float[Array, "num_timesteps state_dim M"]:
     """Run an continuous-discrete nonlinear model
         to produce the forecasted state estimates.
@@ -783,6 +794,7 @@ def cdnlssm_forecast(
         post: forecasted states over time of shape num_timesteps state_dim M.
 
     """
+    warn, verbosity = resolve_verbosity(warn=warn, verbosity=verbosity)
 
     # Point-estimate forecasting, based on pushing forward the initial condition through the model dynamics, via numerical SDE solving
     def _cdnlssm_forecast(
@@ -870,6 +882,7 @@ def cdnlssm_emissions(
     filter_hyperparams: Optional[DPFHyperParams] = DPFHyperParams(),
     key: PRNGKey = jr.PRNGKey(0),
     warn: bool = True,
+    verbosity: Optional[int] = None,
 ) -> Float[Array, "num_timesteps emission_dim M"]:
     r"""Compute the emissions corresponding to
         - a continuous-discrete nonlinear model, as specified by params
@@ -887,6 +900,7 @@ def cdnlssm_emissions(
     Returns:
         emissions: emissions at time instants t_states, of shape num_timesteps \times emission_dim \times M
     """
+    warn, verbosity = resolve_verbosity(warn=warn, verbosity=verbosity)
 
     # Point-estimate emissions
     def _cdnlssm_emissions(this_states) -> Float[Array, "num_timesteps state_dim"]:

@@ -29,7 +29,7 @@ from cd_dynamax.dynamax.parameters import ParameterSet, PropertySet
 from cd_dynamax.dynamax.utils.utils import ensure_array_has_batch_dim, fallback_hessian
 
 # Imports from the cd-dynamax codebase
-from .utils.debug_utils import lax_scan
+from .utils.debug_utils import lax_scan, resolve_verbosity
 from .utils.optimize_utils import run_sgd
 
 # Utils for optimization
@@ -245,6 +245,7 @@ class SSM(ABC):
         t_emissions: Optional[Float[Array, "num_timesteps 1"]] = None,
         inputs: Optional[Float[Array, "num_timesteps input_dim"]] = None,
         transition_type: Optional[str] = "distribution",
+        verbosity: int = 1,
     ) -> Tuple[
         Float[Array, "num_timesteps state_dim"],
         Float[Array, "num_timesteps emission_dim"],
@@ -268,12 +269,20 @@ class SSM(ABC):
 
         """
         if transition_type == "distribution":
+            if verbosity >= 2:
+                print(
+                    "Sampling from CD distributions: this may be a poor approximation if you're simulating from a non-linear SDE. It is a highly appropriate choice for linear SDEs."
+                )
             states, emissions = self.sample_dist(
-                params, key, num_timesteps, t_emissions, inputs
+                params, key, num_timesteps, t_emissions, inputs, verbosity=verbosity
             )
         elif transition_type == "path":
+            if verbosity >= 2:
+                print(
+                    "Sampling from SDE solver path: this may be an unnecessarily poor approximation if you're simulating from a linear SDE. It is an appropriate choice for non-linear SDEs."
+                )
             states, emissions = self.sample_path(
-                params, key, num_timesteps, t_emissions, inputs
+                params, key, num_timesteps, t_emissions, inputs, verbosity=verbosity
             )
         else:
             raise ValueError(f"Invalid transition_type: {transition_type}")
@@ -290,6 +299,7 @@ class SSM(ABC):
         t_emissions: Optional[Float[Array, "num_timesteps 1"]] = None,
         inputs: Optional[Float[Array, "num_timesteps input_dim"]] = None,
         transition_type: Optional[str] = "distribution",
+        verbosity: int = 1,
     ) -> Tuple[
         Float[Array, "num_sequences num_timesteps state_dim"],
         Float[Array, "num_sequences num_timesteps emission_dim"],
@@ -317,7 +327,13 @@ class SSM(ABC):
         # Sample each sequence using self.sample and stack them
         def _sample_sequence(key):
             return self.sample(
-                params, key, num_timesteps, t_emissions, inputs, transition_type
+                params,
+                key,
+                num_timesteps,
+                t_emissions,
+                inputs,
+                transition_type,
+                verbosity=verbosity,
             )
 
         keys = jr.split(key, num_sequences)
@@ -425,6 +441,7 @@ class SSM(ABC):
         inputs: Optional[Float[Array, "ntime input_dim"]] = None,
         key: PRNGKey = jr.PRNGKey(0),
         warn: bool = True,
+        verbosity: Optional[int] = None,
     ) -> Scalar:
         r"""Compute log marginal likelihood of observations, $\log \sum_{z_{1:T}} p(y_{1:T}, z_{1:T} \mid \theta)$.
 
@@ -440,6 +457,7 @@ class SSM(ABC):
             marginal log probability
 
         """
+        warn, verbosity = resolve_verbosity(warn=warn, verbosity=verbosity)
         raise NotImplementedError
 
     # Compute the score function, i.e., the gradient of the log marginal likelihood
@@ -453,6 +471,7 @@ class SSM(ABC):
         inputs: Optional[Float[Array, "ntime input_dim"]] = None,
         return_log_prob: bool = False,
         warn: bool = True,
+        verbosity: Optional[int] = None,
         key: PRNGKey = jr.PRNGKey(0),
     ) -> Scalar:
         r"""Compute the score function, i.e., the gradient of the log marginal likelihood of observations:
@@ -478,6 +497,7 @@ class SSM(ABC):
         even with stop_gradient applied.
 
         """
+        warn, verbosity = resolve_verbosity(warn=warn, verbosity=verbosity)
         # Extract only trainable parameters
         trainable_params = tree_map(
             lambda p, prop: p if prop.trainable else None, params, props
@@ -499,7 +519,7 @@ class SSM(ABC):
                 filter_hyperparams,
                 inputs,
                 key=key,
-                warn=warn,
+                warn=warn, verbosity=verbosity,
             )
 
         if return_log_prob:
@@ -588,6 +608,7 @@ class SSM(ABC):
         return_param_history: bool = False,
         return_grad_history: bool = False,
         warn: bool = True,
+        verbosity: Optional[int] = None,
         key: PRNGKey = jr.PRNGKey(0),
     ) -> Tuple[ParameterSet, Float[Array, " niter"]]:
         r"""Compute parameter MLE/MAP estimate using Stochastic Gradient Descent (SGD).
@@ -624,6 +645,7 @@ class SSM(ABC):
                 if interested in the history of parameters and gradients, these are returned as well.
 
         """
+        warn, verbosity = resolve_verbosity(warn=warn, verbosity=verbosity)
         # Make sure the emissions and inputs have batch dimensions
         batch_emissions = ensure_array_has_batch_dim(emissions, self.emission_shape)
         batch_t_emissions = ensure_array_has_batch_dim(t_emissions, (1,))
@@ -659,7 +681,7 @@ class SSM(ABC):
                     self.marginal_log_prob,
                     params,
                     filter_hyperparams=filter_hyperparams,
-                    warn=warn,
+                    warn=warn, verbosity=verbosity,
                 )  # partial with fixed params arg and filter_hyperparams kwarg
             )(
                 # arguments to vmap over
@@ -776,6 +798,7 @@ class SSM(ABC):
         options: dict = {"maxiter": 5000},
         return_param_history: bool = False,
         warn: bool = True,
+        verbosity: Optional[int] = None,
     ) -> Tuple[ParameterSet, Float[Array, " niter"], Optional[ParameterSet]]:
         """
         Compute parameter MLE/MAP estimate using SciPy-based chosen method.
@@ -803,6 +826,7 @@ class SSM(ABC):
             losses: array of loss values per iteration
             params_history (optional): constrained parameter history (if requested)
         """
+        warn, verbosity = resolve_verbosity(warn=warn, verbosity=verbosity)
 
         # Ensure batch dims
         batch_emissions = ensure_array_has_batch_dim(emissions, self.emission_shape)
@@ -843,7 +867,7 @@ class SSM(ABC):
                     self.marginal_log_prob,
                     params,
                     filter_hyperparams=filter_hyperparams,
-                    warn=warn,
+                    warn=warn, verbosity=verbosity,
                 )
             )(
                 emissions=batch_emissions,
@@ -1042,7 +1066,8 @@ class SSM(ABC):
             "parameters": {},  # Additional parameters for the MCMC algorithm
         },
         verbose=True,
-        warn=True,
+        warn = True,
+        verbosity: Optional[int] = None,
         key: PRNGKey = jr.PRNGKey(0),
     ) -> Tuple[
         ParameterSet,
@@ -1072,6 +1097,7 @@ class SSM(ABC):
         Returns:
             tuple of samples and log probabilities of the samples
         """
+        warn, verbosity = resolve_verbosity(warn=warn, verbosity=verbosity)
 
         ## cd-dynamax specific code
         # Make sure the emissions and inputs have batch dimensions
@@ -1105,7 +1131,7 @@ class SSM(ABC):
                     self.marginal_log_prob,
                     params,
                     filter_hyperparams=filter_hyperparams,
-                    warn=warn,
+                    warn=warn, verbosity=verbosity,
                 )  # partial with fixed params arg and filter_hyperparams kwarg
             )(
                 # arguments to vmap over
@@ -1440,6 +1466,7 @@ class SSM(ABC):
             ]
         ] = None,
         warn: bool = True,
+        verbosity: Optional[int] = None,
     ):
         r"""Compute the observed Fisher information matrix for the model parameters.
 
@@ -1457,6 +1484,7 @@ class SSM(ABC):
         NOTE:
             The hessian computation requires reverse-mode autodiff.
         """
+        warn, verbosity = resolve_verbosity(warn=warn, verbosity=verbosity)
 
         # Make sure the emissions and inputs have batch dimensions
         batch_emissions = ensure_array_has_batch_dim(emissions, self.emission_shape)
@@ -1488,7 +1516,7 @@ class SSM(ABC):
                     self.marginal_log_prob,
                     params,
                     filter_hyperparams=filter_hyperparams,
-                    warn=warn,
+                    warn=warn, verbosity=verbosity,
                 )  # partial with fixed params arg and filter_hyperparams kwarg
             )(
                 # arguments to vmap over

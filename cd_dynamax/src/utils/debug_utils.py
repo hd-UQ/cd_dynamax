@@ -3,6 +3,28 @@ import jax
 import jax.numpy as jnp
 import jax.scipy.linalg
 from jax import lax
+from typing import Optional, Tuple
+
+
+def resolve_verbosity(warn: bool = True, verbosity: Optional[int] = None) -> Tuple[bool, int]:
+    """Resolve the effective warning/debug verbosity.
+
+    Verbosity levels:
+        0: errors only
+        1: warnings
+        2: debug information
+
+    If ``verbosity`` is omitted, preserve the historical ``warn`` behavior by
+    mapping ``warn=True`` to level 1 and ``warn=False`` to level 0.
+    """
+    if verbosity is None:
+        verbosity = 1 if warn else 0
+    elif verbosity not in (0, 1, 2):
+        raise ValueError(
+            f"Invalid verbosity={verbosity}. Expected one of 0, 1, or 2."
+        )
+
+    return verbosity >= 1, verbosity
 
 
 # PSD checks
@@ -27,6 +49,7 @@ def psd(
     psd_check_cholesky=False,
     tol=1e-8,
     warn=True,
+    verbosity: Optional[int] = None,
     raise_error=False,
 ):
     """
@@ -44,6 +67,7 @@ def psd(
     Returns:
         matrix: array-like, hopefully PSD matrix
     """
+    warn, verbosity = resolve_verbosity(warn=warn, verbosity=verbosity)
 
     def check_cholesky(mat):
         return is_psd_cholesky(mat)

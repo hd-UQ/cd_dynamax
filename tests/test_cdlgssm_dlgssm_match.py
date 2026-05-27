@@ -371,6 +371,37 @@ def test_cdlgssm_lgssm_smoother_equivalence(rng_keys):
             plt.show()
 
 
+def test_cdlgssm_smoother_verbosity(rng_keys, capsys):
+    key_init, key_sample = rng_keys
+    d_model, d_params, _, cd_model, cd_params, _ = init_cdlgssm_lgssm_models(key_init)
+
+    num_timesteps = 10
+    t_emissions = jnp.arange(num_timesteps)[:, None]
+    _, d_emissions = d_model.sample(
+        d_params, key_sample, num_timesteps=num_timesteps, inputs=None
+    )
+    kf_hyperparams = KFHyperParams(dt_final=1.0)
+
+    cd_model.smoother(
+        cd_params,
+        d_emissions,
+        t_emissions,
+        filter_hyperparams=kf_hyperparams,
+    )
+    assert capsys.readouterr().out == ""
+
+    cd_model.smoother(
+        cd_params,
+        d_emissions,
+        t_emissions,
+        filter_hyperparams=kf_hyperparams,
+        verbosity=2,
+    )
+    out = capsys.readouterr().out
+    assert "Running KF smoother type = cd_smoother_1" in out
+    assert "Running KF smoother type 1" in out
+
+
 # Initialization of equivalent models with non-zero controls (inputs and bias)
 def init_cdlgssm_lgssm_models_with_controls(key_init):
     """Initialize equivalent discrete LGSSM and CD-LGSSM with non-zero input weights and dynamics bias."""

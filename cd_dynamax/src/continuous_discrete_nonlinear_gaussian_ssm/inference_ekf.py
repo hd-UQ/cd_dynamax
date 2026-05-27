@@ -38,7 +38,7 @@ from .cdnlgssm_utils import ParamsCDNLGSSM
 from ..utils.diffrax_utils import diffeqsolve
 
 # Debugging utilities
-from ..utils.debug_utils import psd, lax_scan
+from ..utils.debug_utils import psd, lax_scan, resolve_verbosity
 
 tfb = tfp.bijectors
 
@@ -78,6 +78,7 @@ def _predict(
     u,
     filter_hyperparams,
     warn: bool = True,
+    verbosity: Optional[int] = None,
 ):
     r"""Predict next mean and covariance using EKF equations
         p(z_{t+1}) = N(z_{t+1} | m_{t+1}, P_{t+1})
@@ -104,6 +105,7 @@ def _predict(
         Sigma_pred (D_hid,D_hid): predicted covariance.
 
     """
+    warn, verbosity = resolve_verbosity(warn=warn, verbosity=verbosity)
 
     # Predicted mean and covariance evolution
     # using the EKF state order approximations
@@ -207,12 +209,13 @@ def _predict(
         P_final = sol[1][-1]
 
     # Return predicted mean and covariance
-    return m_final, psd(P_final, warn=warn)
+    return m_final, psd(P_final, warn=warn, verbosity=verbosity)
 
 
 # Condition on a new observation, under EKF approximations
 def _condition_on(
-    m, P, h, H, R, u, y, t, num_iter, filter_hyperparams, warn: bool = True
+    m, P, h, H, R, u, y, t, num_iter, filter_hyperparams, warn: bool = True,
+    verbosity: Optional[int] = None
 ):
     r"""Condition a Gaussian potential on a new observation.
         where the update of m and P are computed based on
@@ -247,6 +250,7 @@ def _condition_on(
         mu_cond (D_hid,): filtered mean.
         Sigma_cond (D_hid,D_hid): filtered covariance.
     """
+    warn, verbosity = resolve_verbosity(warn=warn, verbosity=verbosity)
 
     # Define one step of EKF-linearization
     def _step(carry, _):
@@ -256,12 +260,12 @@ def _condition_on(
         # Evaluate Jacobian at prior mean, inputs and time
         H_x = H(prior_mean, u, t)
         # Compute EKF update matrix S
-        S = psd(R + H_x @ prior_cov @ H_x.T, warn=warn)
+        S = psd(R + H_x @ prior_cov @ H_x.T, warn=warn, verbosity=verbosity)
         # Compute Kalman gain K
         K = psd_solve(S, H_x @ prior_cov).T
 
         # Compute posterior mean and covariance
-        posterior_cov = psd(prior_cov - K @ S @ K.T, warn=warn)
+        posterior_cov = psd(prior_cov - K @ S @ K.T, warn=warn, verbosity=verbosity)
         posterior_mean = prior_mean + K @ (y - h(prior_mean, u, t))
         # Return
         return (posterior_mean, posterior_cov), None
@@ -272,7 +276,7 @@ def _condition_on(
     (mu_cond, Sigma_cond), _ = lax_scan(_step, carry, jnp.arange(num_iter), debug=DEBUG)
 
     # Return computed sufficient statistics
-    return mu_cond, psd(Sigma_cond, warn=warn)
+    return mu_cond, psd(Sigma_cond, warn=warn, verbosity=verbosity)
 
 
 # EKF filtering main function
@@ -290,6 +294,7 @@ def extended_kalman_filter(
         "predicted_covariances",
     ],
     warn: bool = True,
+    verbosity: Optional[int] = None,
 ) -> PosteriorGSSMFiltered:
     r"""Run an (iterated) extended Kalman filter
         to produce the marginal likelihood and filtered state estimates.
@@ -317,6 +322,7 @@ def extended_kalman_filter(
         filtered_posterior: posterior object.
 
     """
+    warn, verbosity = resolve_verbosity(warn=warn, verbosity=verbosity)
 
     # Figure out timestamps, as vectors to scan over
     # t_emissions is of shape num_timesteps \times 1
@@ -384,7 +390,7 @@ def extended_kalman_filter(
             t0,
             num_iter,
             filter_hyperparams,
-            warn=warn,
+            warn=warn, verbosity=verbosity,
         )
 
         # Predict the next state based on EKF approximations
@@ -396,7 +402,7 @@ def extended_kalman_filter(
             t1,
             u,
             filter_hyperparams,
-            warn=warn,
+            warn=warn, verbosity=verbosity,
         )
 
         # Build carry and output states
@@ -440,6 +446,7 @@ def iterated_extended_kalman_filter(
         "predicted_covariances",
     ],
     warn: bool = True,
+    verbosity: Optional[int] = None,
 ) -> PosteriorGSSMFiltered:
     r"""Run an iterated extended Kalman filter
         to produce the marginal likelihood and filtered state estimates.
@@ -463,6 +470,7 @@ def iterated_extended_kalman_filter(
         post: posterior object.
 
     """
+    warn, verbosity = resolve_verbosity(warn=warn, verbosity=verbosity)
 
     # Run the extended Kalman filter, iteratively for num_iter times
     filtered_posterior = extended_kalman_filter(
@@ -473,7 +481,7 @@ def iterated_extended_kalman_filter(
         inputs,
         num_iter,
         output_fields,
-        warn=warn,
+        warn=warn, verbosity=verbosity,
     )
     return filtered_posterior
 
@@ -490,6 +498,7 @@ def _smooth(
     u: Float[Array, " D_in"],
     filter_hyperparams: EKFHyperParams = EKFHyperParams(),
     warn: bool = True,
+    verbosity: Optional[int] = None,
 ):
     r"""Smooth the next mean and covariance using EKF smoothing equations
         where the evolution of m and P are computed based on
@@ -516,6 +525,7 @@ def _smooth(
         mu_smooth (D_hid,): smoothed mean at t0.
         Sigma_smooth (D_hid,D_hid): smoothed covariance at t0.
     """
+    warn, verbosity = resolve_verbosity(warn=warn, verbosity=verbosity)
 
     # Initialize
     y0 = (m_smooth, P_smooth)
@@ -588,7 +598,7 @@ def _smooth(
         **filter_hyperparams.diffeqsolve_settings,
     )
     # Extract and return smoothed mean and covariance, ensure PSD covariance
-    m_smooth, P_smooth = sol[0][-1], psd(sol[1][-1], warn=warn)
+    m_smooth, P_smooth = sol[0][-1], psd(sol[1][-1], warn=warn, verbosity=verbosity)
     return m_smooth, P_smooth
 
 
@@ -601,6 +611,7 @@ def extended_kalman_smoother(
     filtered_posterior: Optional[PosteriorGSSMFiltered] = None,
     inputs: Optional[Float[Array, "ntime input_dim"]] = None,
     warn: bool = True,
+    verbosity: Optional[int] = None,
 ) -> PosteriorGSSMSmoothed:
     r"""Run forward-filtering, backward-smoother based on extended Kalman equations,
         to produce the smoothed state estimates.
@@ -622,6 +633,7 @@ def extended_kalman_smoother(
         post: posterior object.
 
     """
+    warn, verbosity = resolve_verbosity(warn=warn, verbosity=verbosity)
 
     # Figure out timestamps, as vectors to scan over
     # t_emissions is of shape num_timesteps \times 1
@@ -647,7 +659,7 @@ def extended_kalman_smoother(
             t_emissions=t_emissions,
             filter_hyperparams=filter_hyperparams,
             inputs=inputs,
-            warn=warn,
+            warn=warn, verbosity=verbosity,
         )
     # Extract filtered sufficient statistics
     ll = filtered_posterior.marginal_loglik
@@ -674,7 +686,7 @@ def extended_kalman_smoother(
             t1=t1,
             u=inputs[t0_idx],
             filter_hyperparams=filter_hyperparams,
-            warn=warn,
+            warn=warn, verbosity=verbosity,
         )
 
         # Return carry and outputs
@@ -711,6 +723,7 @@ def iterated_extended_kalman_smoother(
     num_iter: int = 2,
     inputs: Optional[Float[Array, "ntime input_dim"]] = None,
     warn: bool = True,
+    verbosity: Optional[int] = None,
 ) -> PosteriorGSSMSmoothed:
     r"""Run an iterated extended Kalman smoother (IEKS).
 
@@ -730,6 +743,7 @@ def iterated_extended_kalman_smoother(
         post: posterior object.
 
     """
+    warn, verbosity = resolve_verbosity(warn=warn, verbosity=verbosity)
 
     def _step(carry, _):
         # Relinearize around smoothed posterior from previous iteration
@@ -741,7 +755,7 @@ def iterated_extended_kalman_smoother(
             t_emissions,
             smoothed_prior,
             inputs,
-            warn=warn,
+            warn=warn, verbosity=verbosity,
         )
         return smoothed_posterior, None
 
@@ -750,7 +764,7 @@ def iterated_extended_kalman_smoother(
         "WARNING: We are not running iterated_EKF, until we figure out how to scan over _steps with different input-output carry variables"
     )
     smoothed_posterior = extended_kalman_smoother(
-        params, emissions, filter_hyperparams, t_emissions, None, inputs, warn=warn
+        params, emissions, filter_hyperparams, t_emissions, None, inputs, warn=warn, verbosity=verbosity
     )
 
     return smoothed_posterior
@@ -765,6 +779,7 @@ def extended_kalman_posterior_sample(
     t_emissions: Optional[Float[Array, "num_timesteps 1"]] = None,
     inputs: Optional[Float[Array, "ntime input_dim"]] = None,
     warn: bool = True,
+    verbosity: Optional[int] = None,
 ) -> Float[Array, "ntime state_dim"]:
     r"""Run forward-filtering, backward-sampling to draw samples.
 
@@ -783,6 +798,7 @@ def extended_kalman_posterior_sample(
         Float[Array, "ntime state_dim"]: one sample of $z_{1:T}$ from the posterior distribution on latent states.
 
     """
+    warn, verbosity = resolve_verbosity(warn=warn, verbosity=verbosity)
     # Figure out timestamps, as vectors to scan over
     # t_emissions is of shape num_timesteps \times 1
     # t0 and t1 are num_timesteps \times 0
@@ -808,7 +824,7 @@ def extended_kalman_posterior_sample(
 
     # Get filtered posterior
     filtered_posterior = extended_kalman_filter(
-        params, emissions, t_emissions, inputs=inputs, warn=warn
+        params, emissions, t_emissions, inputs=inputs, warn=warn, verbosity=verbosity
     )
     # Extract filtered sufficient statistics
     filtered_means = filtered_posterior.filtered_means
@@ -834,7 +850,7 @@ def extended_kalman_posterior_sample(
 
         # Condition on next state
         smoothed_mean, smoothed_cov = _condition_on(
-            filtered_mean, filtered_cov, f, F, Q, u, next_state, t0, 1, warn=warn
+            filtered_mean, filtered_cov, f, F, Q, u, next_state, t0, 1, warn=warn, verbosity=verbosity
         )
         # Sample state at time t0
         state = MVN(smoothed_mean, smoothed_cov).sample(seed=key)
@@ -880,6 +896,7 @@ def forecast_extended_kalman_filter(
         "forecasted_state_covariances",
     ],
     warn: bool = True,
+    verbosity: Optional[int] = None,
 ) -> GSSMForecast:
     r"""Run an extended Kalman filter to forecast states
         Two implementations are available,
@@ -903,6 +920,7 @@ def forecast_extended_kalman_filter(
         forecast: forecast object.
 
     """
+    warn, verbosity = resolve_verbosity(warn=warn, verbosity=verbosity)
 
     # Figure out timestamps, as vectors to scan over
     # t_forecast is of shape num_timesteps \times 1
@@ -936,7 +954,7 @@ def forecast_extended_kalman_filter(
             t1,
             inputs[t0_idx],  # Inputs impact state at t0
             filter_hyperparams,
-            warn=warn,
+            warn=warn, verbosity=verbosity,
         )
 
         # Build carry and output states
@@ -971,6 +989,7 @@ def emissions_extended_kalman_filter(
     inputs: Optional[Float[Array, "num_timesteps input_dim"]] = None,
     filter_hyperparams: EKFHyperParams = EKFHyperParams(),
     warn: bool = True,
+    verbosity: Optional[int] = None,
 ) -> Tuple[
     Float[Array, "num_timesteps emission_dim"],
     Optional[Float[Array, "num_timesteps emission_dim emission_dim"]],
@@ -997,6 +1016,7 @@ def emissions_extended_kalman_filter(
         emissions_covariance: covariance of emissions, if available
 
     """
+    warn, verbosity = resolve_verbosity(warn=warn, verbosity=verbosity)
 
     # Figure out timestamps, as vectors to scan over
     # t_states is of shape num_timesteps \times 1
@@ -1034,7 +1054,7 @@ def emissions_extended_kalman_filter(
         if state_cov is None:
             emission_cov = R
         else:
-            emission_cov = psd(H_x @ state_cov @ H_x.T + R, warn=warn)
+            emission_cov = psd(H_x @ state_cov @ H_x.T + R, warn=warn, verbosity=verbosity)
 
         # Return carry and output states
         return (state_mean, state_cov), (emission_mean, emission_cov)

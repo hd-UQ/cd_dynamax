@@ -12,6 +12,7 @@ from typing import Tuple, Optional
 from jaxtyping import Float, Array
 
 from jax.tree_util import tree_map
+from .debug_utils import resolve_verbosity
 
 # For distributional forecasting, import MVN
 from tensorflow_probability.substrates.jax.distributions import (
@@ -132,8 +133,10 @@ def cddynamax_filter(
     stop_idx_filter,
     key=jr.PRNGKey(0),
     filter_spec="model",
-    warn=True,
+    warn = True,
+    verbosity: Optional[int] = None,
 ):
+    warn, verbosity = resolve_verbosity(warn=warn, verbosity=verbosity)
     if filter_spec == "model":
         # Check whether model_params are linear or nonlinear, based on class type
         # To decide what filtering to use
@@ -176,7 +179,7 @@ def cddynamax_filter(
         t_emissions=t_emissions[start_idx_filter:stop_idx_filter],
         filter_hyperparams=filter_hyperparams,
         **extra_args_filter,
-        warn=warn,
+        warn=warn, verbosity=verbosity,
     )
 
     return filtered
@@ -192,9 +195,11 @@ def cddynamax_forecast(
     key,
     filter_spec="model",
     particle_weights=None,
-    warn=True,
+    warn = True,
+    verbosity: Optional[int] = None,
 ):
 
+    warn, verbosity = resolve_verbosity(warn=warn, verbosity=verbosity)
     if filter_spec == "model":
         # Check whether model_params are linear or nonlinear, based on class type
         # To decide what filtering to use
@@ -238,7 +243,7 @@ def cddynamax_forecast(
         t_forecast=t_forecast,
         filter_hyperparams=filter_hyperparams,
         **extra_args_forecast,
-        warn=warn,
+        warn=warn, verbosity=verbosity,
     )
 
     # For DPF, we compute mean and covariance of forecasted particles for evaluation purposes
@@ -281,11 +286,13 @@ def cddynamax_emissions(
     filtering_inputs=None,
     forecasting_inputs=None,
     key=jr.PRNGKey(0),
-    warn=True,
+    warn = True,
+    verbosity: Optional[int] = None,
 ):
 
     # TODO: check emissions_covariance computations
     # Emission generation function based on model type
+    warn, verbosity = resolve_verbosity(warn=warn, verbosity=verbosity)
     if isinstance(model, ContDiscreteLinearGaussianSSM):
         from cd_dynamax.src.continuous_discrete_linear_gaussian_ssm.inference import (
             cdlgssm_emissions,
@@ -321,7 +328,7 @@ def cddynamax_emissions(
             state_covs=filtered_state.filtered_covariances,
             inputs=filtering_inputs,
             key=key,
-            warn=warn,
+            warn=warn, verbosity=verbosity,
         )
 
         # Dictionary with results
@@ -339,7 +346,7 @@ def cddynamax_emissions(
                 state_covs=forecasted_state.forecasted_state_covariances,
                 inputs=forecasting_inputs,
                 key=key,
-                warn=warn,
+                warn=warn, verbosity=verbosity,
             )
 
             # Dictionary with results
@@ -356,7 +363,7 @@ def cddynamax_emissions(
             states=filtered_state.particles,
             inputs=filtering_inputs,
             key=key,
-            warn=warn,
+            warn=warn, verbosity=verbosity,
         )
 
         # We compute mean and covariance of emission particles for evaluation purposes
@@ -391,7 +398,7 @@ def cddynamax_emissions(
                 states=forecasted_state.forecasted_state_path,  # We expect particles to be saved here
                 inputs=forecasting_inputs,
                 key=key,
-                warn=warn,
+                warn=warn, verbosity=verbosity,
             )
 
             # Weight the particles by the particle weights from the last filtering step, and compute weighted mean and covariance
@@ -422,9 +429,11 @@ def filter_and_forecast(
     T_forecast_end=100,
     key=0,
     filter_spec="model",
-    warn=True,
+    warn = True,
+    verbosity: Optional[int] = None,
 ):
     # Create a sequence of keys
+    warn, verbosity = resolve_verbosity(warn=warn, verbosity=verbosity)
     keys = make_key_sequence(key)
 
     # Figure out the time points for filtering
@@ -450,7 +459,7 @@ def filter_and_forecast(
         stop_idx_filter=stop_idx_filter,
         key=next(keys),
         filter_spec=filter_spec,
-        warn=warn,
+        warn=warn, verbosity=verbosity,
     )
 
     # Initialize forecast with last filtered state
@@ -479,7 +488,7 @@ def filter_and_forecast(
         t_forecast=t_emissions[start_idx_forecast:stop_idx_forecast],
         key=next(keys),
         filter_spec=filter_spec,
-        warn=warn,
+        warn=warn, verbosity=verbosity,
     )
 
     return (
