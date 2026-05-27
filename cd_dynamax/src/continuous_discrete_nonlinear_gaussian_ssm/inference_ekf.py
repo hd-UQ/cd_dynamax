@@ -214,8 +214,18 @@ def _predict(
 
 # Condition on a new observation, under EKF approximations
 def _condition_on(
-    m, P, h, H, R, u, y, t, num_iter, filter_hyperparams, warn: bool = True,
-    verbosity: Optional[int] = None
+    m,
+    P,
+    h,
+    H,
+    R,
+    u,
+    y,
+    t,
+    num_iter,
+    filter_hyperparams,
+    warn: bool = True,
+    verbosity: Optional[int] = None,
 ):
     r"""Condition a Gaussian potential on a new observation.
         where the update of m and P are computed based on

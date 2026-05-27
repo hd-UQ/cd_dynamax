@@ -1066,7 +1066,7 @@ class SSM(ABC):
             "parameters": {},  # Additional parameters for the MCMC algorithm
         },
         verbose=True,
-        warn = True,
+        warn=True,
         verbosity: Optional[int] = None,
         key: PRNGKey = jr.PRNGKey(0),
     ) -> Tuple[

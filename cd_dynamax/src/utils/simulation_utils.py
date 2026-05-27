@@ -133,7 +133,7 @@ def cddynamax_filter(
     stop_idx_filter,
     key=jr.PRNGKey(0),
     filter_spec="model",
-    warn = True,
+    warn=True,
     verbosity: Optional[int] = None,
 ):
     warn, verbosity = resolve_verbosity(warn=warn, verbosity=verbosity)
@@ -195,7 +195,7 @@ def cddynamax_forecast(
     key,
     filter_spec="model",
     particle_weights=None,
-    warn = True,
+    warn=True,
     verbosity: Optional[int] = None,
 ):
 
@@ -286,7 +286,7 @@ def cddynamax_emissions(
     filtering_inputs=None,
     forecasting_inputs=None,
     key=jr.PRNGKey(0),
-    warn = True,
+    warn=True,
     verbosity: Optional[int] = None,
 ):
 
@@ -429,7 +429,7 @@ def filter_and_forecast(
     T_forecast_end=100,
     key=0,
     filter_spec="model",
-    warn = True,
+    warn=True,
     verbosity: Optional[int] = None,
 ):
     # Create a sequence of keys
