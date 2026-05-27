@@ -1348,7 +1348,7 @@ def cdlgssm_emissions(
         R = _get_params(params.emissions.cov, 2, t0)
         if this_cov is not None:
             # If we have state covariances, then we compute the emission covariance
-            emission_cov = psd(H @ this_cov @ H.T + +R, warn=warn, verbosity=verbosity)
+            emission_cov = psd(H @ this_cov @ H.T + R, warn=warn, verbosity=verbosity)
         else:
             emission_cov = jnp.diag(R) if R.ndim == 1 else R
 

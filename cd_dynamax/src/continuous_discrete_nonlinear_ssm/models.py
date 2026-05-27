@@ -301,7 +301,7 @@ class ContDiscreteNonlinearSSM(SSM):
         num_timesteps: int,
         t_emissions: Optional[Array] = None,
         inputs: Optional[Array] = None,
-        verbosity: int = 1,
+        verbosity: Optional[int] = None,
     ):
         """Sample from the joint distribution to produce state and emission trajectories.
 
@@ -315,6 +315,8 @@ class ContDiscreteNonlinearSSM(SSM):
         Returns:
             Tuple[Array, Array]: States and emissions.
         """
+        verbosity = 1 if verbosity is None else verbosity
+
         return cdnlssm_joint_sample(
             params=params,
             key=key,
@@ -332,7 +334,7 @@ class ContDiscreteNonlinearSSM(SSM):
         num_timesteps: int,
         t_emissions: Optional[Array] = None,
         inputs: Optional[Array] = None,
-        verbosity: int = 1,
+        verbosity: Optional[int] = None,
     ):
         """Sample states and emissions by integrating the SDE and drawing from the emission distribution.
 
@@ -346,6 +348,8 @@ class ContDiscreteNonlinearSSM(SSM):
         Returns:
             Tuple[Array, Array]: States and emissions.
         """
+        verbosity = 1 if verbosity is None else verbosity
+
         # Splitting keys like this is necessary for consistency with the CDNLGSSM path sampler.
         key0, key_loop = jr.split(key)
         key_state0, key_emit0 = jr.split(key0, 2)

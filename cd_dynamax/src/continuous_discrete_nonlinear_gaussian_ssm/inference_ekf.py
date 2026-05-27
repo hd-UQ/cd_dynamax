@@ -834,7 +834,13 @@ def extended_kalman_posterior_sample(
 
     # Get filtered posterior
     filtered_posterior = extended_kalman_filter(
-        params, emissions, t_emissions, inputs=inputs, warn=warn, verbosity=verbosity
+        params,
+        emissions,
+        t_emissions,
+        filter_hyperparams=filter_hyperparams,
+        inputs=inputs,
+        warn=warn,
+        verbosity=verbosity,
     )
     # Extract filtered sufficient statistics
     filtered_means = filtered_posterior.filtered_means
@@ -860,7 +866,18 @@ def extended_kalman_posterior_sample(
 
         # Condition on next state
         smoothed_mean, smoothed_cov = _condition_on(
-            filtered_mean, filtered_cov, f, F, Q, u, next_state, t0, 1, warn=warn, verbosity=verbosity
+            filtered_mean,
+            filtered_cov,
+            f,
+            F,
+            Q,
+            u,
+            next_state,
+            t0,
+            1,
+            filter_hyperparams,
+            warn=warn,
+            verbosity=verbosity,
         )
         # Sample state at time t0
         state = MVN(smoothed_mean, smoothed_cov).sample(seed=key)

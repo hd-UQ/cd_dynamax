@@ -495,7 +495,7 @@ class ContDiscreteNonlinearGaussianSSM(SSM):
         num_timesteps: int,
         t_emissions: Optional[Float[Array, "num_timesteps 1"]] = None,
         inputs: Optional[Float[Array, "num_timesteps input_dim"]] = None,
-        verbosity: int = 1,
+        verbosity: Optional[int] = None,
     ) -> Tuple[
         Float[Array, "num_timesteps state_dim"],
         Float[Array, "num_timesteps emission_dim"],
@@ -514,6 +514,7 @@ class ContDiscreteNonlinearGaussianSSM(SSM):
             latent states and observed emissions
 
         """
+        verbosity = 1 if verbosity is None else verbosity
         if verbosity >= 2:
             print(
                 "CD-NLGSSM Sampling from continuous-discrete non-linear Gaussian SSM distributions"
@@ -535,7 +536,7 @@ class ContDiscreteNonlinearGaussianSSM(SSM):
         num_timesteps: int,
         t_emissions: Optional[Float[Array, "num_timesteps 1"]] = None,
         inputs: Optional[Float[Array, "num_timesteps input_dim"]] = None,
-        verbosity: int = 1,
+        verbosity: Optional[int] = None,
     ) -> Tuple[
         Float[Array, "num_timesteps state_dim"],
         Float[Array, "num_timesteps emission_dim"],
@@ -553,6 +554,7 @@ class ContDiscreteNonlinearGaussianSSM(SSM):
             latent states and observed emissions
 
         """
+        verbosity = 1 if verbosity is None else verbosity
         if verbosity >= 2:
             print(
                 "CD-NLGSSM Sampling from continuous-discrete non-linear Gaussian SSM path"

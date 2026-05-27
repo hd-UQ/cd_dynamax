@@ -245,7 +245,7 @@ class SSM(ABC):
         t_emissions: Optional[Float[Array, "num_timesteps 1"]] = None,
         inputs: Optional[Float[Array, "num_timesteps input_dim"]] = None,
         transition_type: Optional[str] = "distribution",
-        verbosity: int = 1,
+        verbosity: Optional[int] = None,
     ) -> Tuple[
         Float[Array, "num_timesteps state_dim"],
         Float[Array, "num_timesteps emission_dim"],
@@ -268,6 +268,7 @@ class SSM(ABC):
             latent states and emissions
 
         """
+        verbosity = 1 if verbosity is None else verbosity
         if transition_type == "distribution":
             if verbosity >= 2:
                 print(
@@ -299,7 +300,7 @@ class SSM(ABC):
         t_emissions: Optional[Float[Array, "num_timesteps 1"]] = None,
         inputs: Optional[Float[Array, "num_timesteps input_dim"]] = None,
         transition_type: Optional[str] = "distribution",
-        verbosity: int = 1,
+        verbosity: Optional[int] = None,
     ) -> Tuple[
         Float[Array, "num_sequences num_timesteps state_dim"],
         Float[Array, "num_sequences num_timesteps emission_dim"],
