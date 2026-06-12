@@ -4,7 +4,7 @@ import jax.random as jr
 from jaxtyping import Array, Float
 
 # Type annotations
-from typing import Any, Optional, Tuple, Union
+from typing import Any, List, Optional, Tuple, Union
 from typing_extensions import Protocol
 
 # Distributions, compatible with JAX, from TensorFlow Probability
@@ -510,6 +510,7 @@ class ContDiscreteLinearGaussianSSM(SSM):
         t_emissions: Optional[Float[Array, "ntime 1"]] = None,
         filter_hyperparams: Optional[KFHyperParams] = KFHyperParams(),
         inputs: Optional[Float[Array, "ntime input_dim"]] = None,
+        output_fields: Optional[List[str]] = None,
         warn: bool = True,
     ) -> PosteriorGSSMFiltered:
         r"""Run the CD-Kalman filter to compute the filtered posterior distribution over states.
@@ -519,6 +520,9 @@ class ContDiscreteLinearGaussianSSM(SSM):
             t_emissions: continuous-time specific time instants of observations: if not None, it is an array
             filter_hyperparams: hyperparameters for the Kalman filter.
             inputs: optional sequence of inputs.
+            output_fields: Which top-level posterior fields to return from the
+                filter. Include `"posterior_extras"` to keep predictive
+                emission moments.
             warn: whether to warn about numerical issues.
         Returns:
             filtered posterior distribution over states.
@@ -526,7 +530,13 @@ class ContDiscreteLinearGaussianSSM(SSM):
 
         # Directly run the CD-Kalman filter
         return cdlgssm_filter(
-            params, emissions, t_emissions, filter_hyperparams, inputs, warn=warn
+            params,
+            emissions,
+            t_emissions,
+            filter_hyperparams,
+            inputs,
+            output_fields=output_fields,
+            warn=warn,
         )
 
     # High-level, user-friendly interface combining filtering and forecasting steps

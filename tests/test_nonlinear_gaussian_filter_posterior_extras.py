@@ -73,6 +73,7 @@ def test_ekf_and_ukf_posterior_extras_match_predictive_state_moments(
     filter_fn, filter_hyperparams
 ):
     params, emissions, t_emissions = _make_test_problem()
+    R = params.emissions.emission_cov.f(None, None, None)
 
     posterior = filter_fn(
         params=params,
@@ -91,11 +92,17 @@ def test_ekf_and_ukf_posterior_extras_match_predictive_state_moments(
     assert extras is not None
     assert extras["y_pred_mean"].shape == (3, 1)
     assert extras["y_pred_cov"].shape == (3, 1, 1)
+    assert extras["y_obs_pred_mean"].shape == (3, 1)
+    assert extras["y_obs_pred_cov"].shape == (3, 1, 1)
     assert jnp.all(jnp.isfinite(extras["y_pred_mean"]))
     assert jnp.all(jnp.isfinite(extras["y_pred_cov"]))
+    assert jnp.all(jnp.isfinite(extras["y_obs_pred_mean"]))
+    assert jnp.all(jnp.isfinite(extras["y_obs_pred_cov"]))
 
     assert jnp.allclose(extras["y_pred_mean"][0], params.initial.mean.f())
     assert jnp.allclose(extras["y_pred_cov"][0], params.initial.cov.f())
+    assert jnp.allclose(extras["y_obs_pred_mean"], extras["y_pred_mean"])
+    assert jnp.allclose(extras["y_obs_pred_cov"], extras["y_pred_cov"] + R)
     assert jnp.allclose(extras["y_pred_mean"][1:], posterior.predicted_means[:-1])
     assert jnp.allclose(extras["y_pred_cov"][1:], posterior.predicted_covariances[:-1])
 

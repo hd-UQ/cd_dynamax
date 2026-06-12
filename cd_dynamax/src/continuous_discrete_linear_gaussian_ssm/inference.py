@@ -137,19 +137,26 @@ def preprocess_args(f):
         filter_hyperparams = bound_args.arguments["filter_hyperparams"]
         inputs = bound_args.arguments["inputs"]
         warn = bound_args.arguments["warn"]
+        output_fields = bound_args.arguments.get("output_fields")
 
         num_timesteps = len(emissions)
         full_params, inputs = preprocess_params_and_inputs(
             params, num_timesteps, inputs
         )
 
-        return f(
-            full_params,
-            emissions,
-            t_emissions,
+        call_kwargs = dict(
+            params=full_params,
+            emissions=emissions,
+            t_emissions=t_emissions,
             filter_hyperparams=filter_hyperparams,
             inputs=inputs,
             warn=warn,
+        )
+        if output_fields is not None:
+            call_kwargs["output_fields"] = output_fields
+
+        return f(
+            **call_kwargs,
         )
 
     return wrapper
@@ -334,6 +341,14 @@ def _condition_on(m, P, H, D, d, R, u, y, warn: bool = True):
     return mu_cond, Sigma_cond
 
 
+def _emission_predicted_moments(m, P, H, D, d, u, warn: bool = True):
+    """Compute the predictive emission moments under the linear Gaussian model."""
+
+    y_pred_mean = H @ m + D @ u + d
+    y_pred_cov = psd(H @ P @ H.T, warn=warn)
+    return y_pred_mean, y_pred_cov
+
+
 # CD-LGSSM filtering implementation: Kalman filter
 @preprocess_args
 def cdlgssm_filter(
@@ -342,6 +357,13 @@ def cdlgssm_filter(
     t_emissions: Optional[Float[Array, "num_timesteps 1"]] = None,
     filter_hyperparams: Optional[KFHyperParams] = KFHyperParams(),
     inputs: Optional[Float[Array, "num_timesteps input_dim"]] = None,
+    output_fields: Optional[List[str]] = [
+        "filtered_means",
+        "filtered_covariances",
+        "predicted_means",
+        "predicted_covariances",
+        "posterior_extras",
+    ],
     warn: bool = True,
 ) -> PosteriorGSSMFiltered:
     r"""Run a Continuous Discrete Kalman filter
@@ -353,6 +375,14 @@ def cdlgssm_filter(
         t_emissions: continuous-time specific time instants of observations: if not None, it is an array
         filter_hyperparams: hyperparameters for the filter.
         inputs: optional array of inputs.
+        output_fields: list of top-level posterior fields to return.
+            These can include "filtered_means", "filtered_covariances",
+            "predicted_means", "predicted_covariances", "marginal_loglik",
+            and "posterior_extras". For the linear Kalman filter,
+            `posterior_extras` stores per-step noiseless predictive emission
+            moments `y_pred_mean` / `y_pred_cov`, and data-facing predictive
+            moments `y_obs_pred_mean` / `y_obs_pred_cov`, where
+            `y_obs_pred_cov = y_pred_cov + R`.
         warn: whether to issue warnings during filtering (e.g., PSD issues).
 
     Returns:
@@ -405,8 +435,14 @@ def cdlgssm_filter(
         u = inputs[t0_idx]
         y = emissions[t0_idx]
 
+        y_pred_mean, y_pred_cov = _emission_predicted_moments(
+            pred_mean, pred_cov, H, D, d, u, warn=warn
+        )
+        y_obs_pred_mean = y_pred_mean
+        y_obs_pred_cov = psd(y_pred_cov + R, warn=warn)
+
         # Update the log likelihood
-        ll += MVN(H @ pred_mean + D @ u + d, H @ pred_cov @ H.T + R).log_prob(y)
+        ll += MVN(y_obs_pred_mean, y_obs_pred_cov).log_prob(y)
 
         # Condition on this emission
         filtered_mean, filtered_cov = _condition_on(
@@ -427,30 +463,32 @@ def cdlgssm_filter(
             filtered_mean, filtered_cov, F, C, B, b, Q, u, warn=warn
         )
 
+        outputs = {
+            "filtered_means": filtered_mean,
+            "filtered_covariances": filtered_cov,
+            "predicted_means": pred_mean,
+            "predicted_covariances": pred_cov,
+            "posterior_extras": {
+                "y_pred_mean": y_pred_mean,
+                "y_pred_cov": y_pred_cov,
+                "y_obs_pred_mean": y_obs_pred_mean,
+                "y_obs_pred_cov": y_obs_pred_cov,
+            },
+        }
+        outputs = {key: val for key, val in outputs.items() if key in output_fields}
+
         # Return the carry and outputs
-        return (ll, pred_mean, pred_cov), (
-            filtered_mean,
-            filtered_cov,
-            pred_mean,
-            pred_cov,
-        )
+        return (ll, pred_mean, pred_cov), outputs
 
     # The Kalman filter
     # Initial carry
     carry = (0.0, params.initial.mean, params.initial.cov)
     # Scan over all time steps
-    (ll, _, _), (filtered_means, filtered_covs, pred_means, pred_covs) = lax.scan(
-        _step, carry, (t0, t1, t0_idx)
-    )
+    (ll, _, _), outputs = lax.scan(_step, carry, (t0, t1, t0_idx))
+    outputs = {"marginal_loglik": ll, **outputs}
 
     # Return the posterior object
-    return PosteriorGSSMFiltered(
-        marginal_loglik=ll,
-        filtered_means=filtered_means,
-        filtered_covariances=filtered_covs,
-        predicted_means=pred_means,
-        predicted_covariances=pred_covs,
-    )
+    return PosteriorGSSMFiltered(**outputs)
 
 
 # Kalmam Smoothing equations, in continuous-time

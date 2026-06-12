@@ -343,7 +343,10 @@ def ensemble_kalman_filter(
         inputs: optional array of inputs.
         output_fields: list of top-level posterior fields to include in the output.
             `posterior_extras` stores filter-specific diagnostics including
-            `y_ens_pred`.
+            `y_ens_pred`. The innovation covariance `S` is the observation-
+            predictive covariance used for data scoring and assimilation,
+            corresponding to the ensemble predictive covariance plus the
+            observation covariance `R`.
         key: random generator key.
         warn: whether to warn about PSD issues.
 

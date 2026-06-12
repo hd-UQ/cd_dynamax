@@ -322,7 +322,10 @@ def extended_kalman_filter(
             These can include "filtered_means", "filtered_covariances",
             "predicted_means", "predicted_covariances", "marginal_loglik",
             and "posterior_extras". For EKF, `posterior_extras` stores
-            per-step `y_pred_mean` and `y_pred_cov`.
+            per-step noiseless predictive emission moments
+            `y_pred_mean` / `y_pred_cov`, and data-facing predictive moments
+            `y_obs_pred_mean` / `y_obs_pred_cov`, where
+            `y_obs_pred_cov = y_pred_cov + R`.
         warn: whether to issue warnings during filtering (e.g., PSD issues).
 
     Returns:
@@ -378,9 +381,11 @@ def extended_kalman_filter(
         y_pred_mean, y_pred_cov = _emission_predicted_moments(
             pred_mean, pred_cov, h, H, u, t0, warn=warn
         )
+        y_obs_pred_mean = y_pred_mean
+        y_obs_pred_cov = psd(y_pred_cov + R, warn=warn)
 
         # Log likelihood increment under the Gaussianized predictive emission model.
-        ll += MVN(y_pred_mean, y_pred_cov + R).log_prob(jnp.atleast_1d(y))
+        ll += MVN(y_obs_pred_mean, y_obs_pred_cov).log_prob(jnp.atleast_1d(y))
 
         # Condition on this emission
         filtered_mean, filtered_cov = _condition_on(
@@ -420,6 +425,8 @@ def extended_kalman_filter(
             "posterior_extras": {
                 "y_pred_mean": y_pred_mean,
                 "y_pred_cov": y_pred_cov,
+                "y_obs_pred_mean": y_obs_pred_mean,
+                "y_obs_pred_cov": y_obs_pred_cov,
             },
         }
         outputs = {key: val for key, val in outputs.items() if key in output_fields}
@@ -473,7 +480,8 @@ def iterated_extended_kalman_filter(
         inputs: optional array of inputs.
         num_iter: number of linearizations around posterior for update step (default 2).
         output_fields: list of top-level posterior fields to return.
-            `posterior_extras` stores per-step `y_pred_mean` and `y_pred_cov`.
+            `posterior_extras` stores both noiseless predictive emission
+            moments and data-facing predictive moments with observation noise.
         warn: whether to issue warnings during filtering (e.g., PSD issues).
     Returns:
         post: posterior object.

@@ -320,24 +320,27 @@ def _condition_on(m, P, h, R, lamb, w_mean, w_cov, u, y, t, warn: bool = True):
         P_cond (D_hid,D_hid): filtered covariance.
         y_pred_mean (D_obs,): predictive emission mean before conditioning.
         y_pred_cov (D_obs,D_obs): predictive emission covariance before adding R.
+        y_obs_pred_mean (D_obs,): predictive observation mean.
+        y_obs_pred_cov (D_obs,D_obs): predictive observation covariance including R.
 
     """
     y_pred_mean, y_pred_cov, pred_cross = _emission_predicted_moments(
         m, P, h, lamb, w_mean, w_cov, u, t, warn=warn
     )
-    pred_cov = psd(y_pred_cov + R, warn=warn)
+    y_obs_pred_mean = y_pred_mean
+    y_obs_pred_cov = psd(y_pred_cov + R, warn=warn)
 
     # Compute log-likelihood of observation based on Gaussian distribution,
     # using predicted mean and covariance
-    ll = MVN(y_pred_mean, pred_cov).log_prob(y)
+    ll = MVN(y_obs_pred_mean, y_obs_pred_cov).log_prob(y)
 
     # UKF gain
-    K = psd_solve(pred_cov, pred_cross.T).T
+    K = psd_solve(y_obs_pred_cov, pred_cross.T).T
     # Compute UKF filtered mean and covariance
     m_cond = m + K @ (y - y_pred_mean)
-    P_cond = psd(P - K @ pred_cov @ K.T, warn=warn)
+    P_cond = psd(P - K @ y_obs_pred_cov @ K.T, warn=warn)
     # Return log-likelihood, filtered mean/covariance, and predictive emission moments
-    return ll, m_cond, P_cond, y_pred_mean, y_pred_cov
+    return ll, m_cond, P_cond, y_pred_mean, y_pred_cov, y_obs_pred_mean, y_obs_pred_cov
 
 
 # UKF filtering main function
@@ -369,7 +372,10 @@ def unscented_kalman_filter(
         filter_hyperparams: hyper-parameters.
         inputs: optional array of inputs.
         output_fields: list of top-level posterior fields to include in the output.
-            `posterior_extras` stores per-step `y_pred_mean` and `y_pred_cov`.
+            `posterior_extras` stores per-step noiseless predictive emission
+            moments `y_pred_mean` / `y_pred_cov`, and data-facing predictive
+            moments `y_obs_pred_mean` / `y_obs_pred_cov`, where
+            `y_obs_pred_cov = y_pred_cov + R`.
         warn: whether to issue warnings (e.g., about PSD issues)
 
     Returns:
@@ -427,10 +433,16 @@ def unscented_kalman_filter(
         R = params.emissions.emission_cov.f(None, u, t0)
 
         # Condition on this emission
-        log_likelihood, filtered_mean, filtered_cov, y_pred_mean, y_pred_cov = (
-            _condition_on(
-                pred_mean, pred_cov, h, R, lamb, w_mean, w_cov, u, y, t0, warn=warn
-            )
+        (
+            log_likelihood,
+            filtered_mean,
+            filtered_cov,
+            y_pred_mean,
+            y_pred_cov,
+            y_obs_pred_mean,
+            y_obs_pred_cov,
+        ) = _condition_on(
+            pred_mean, pred_cov, h, R, lamb, w_mean, w_cov, u, y, t0, warn=warn
         )
 
         # Update the log likelihood
@@ -463,6 +475,8 @@ def unscented_kalman_filter(
             "posterior_extras": {
                 "y_pred_mean": y_pred_mean,
                 "y_pred_cov": y_pred_cov,
+                "y_obs_pred_mean": y_obs_pred_mean,
+                "y_obs_pred_cov": y_obs_pred_cov,
             },
         }
         outputs = {key: val for key, val in outputs.items() if key in output_fields}
