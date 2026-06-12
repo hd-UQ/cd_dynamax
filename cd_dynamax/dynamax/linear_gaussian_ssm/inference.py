@@ -115,6 +115,9 @@ class PosteriorGSSMFiltered(NamedTuple):
     :param marginal_loglik: marginal log likelihood, $p(y_{1:T} \mid u_{1:T})$
     :param filtered_means: array of filtered means $\mathbb{E}[z_t \mid y_{1:t}, u_{1:t}]$
     :param filtered_covariances: array of filtered covariances $\mathrm{Cov}[z_t \mid y_{1:t}, u_{1:t}]$
+    :param predicted_means: optional array of one-step-ahead state means $\mathbb{E}[z_{t+1} \mid y_{1:t}, u_{1:t}]$
+    :param predicted_covariances: optional array of one-step-ahead state covariances $\mathrm{Cov}[z_{t+1} \mid y_{1:t}, u_{1:t}]$
+    :param posterior_extras: optional dictionary of filter-specific per-step diagnostics
 
     """
     # Default attributes

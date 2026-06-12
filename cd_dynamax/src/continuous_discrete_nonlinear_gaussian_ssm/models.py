@@ -639,7 +639,9 @@ class ContDiscreteNonlinearGaussianSSM(SSM):
             enkf_inflation_delta: EnKF covariance inflation (ignored by EKF/UKF).
             diffeqsolve_max_steps: Max steps for ODE solver between observations.
             diffeqsolve_dt0: Initial step size for ODE/SDE solver (default is fixed step size).
-            output_fields: Which fields to return from the filter.
+            output_fields: Which top-level posterior fields to return from the
+                filter. Include `"posterior_extras"` to keep filter-specific
+                diagnostics such as predictive emission moments.
             key: Random number generator key.
             diffeqsolve_kwargs: Extra kwargs for the ODE solver
                 (e.g., {"solver": diffrax.Heun(), "dt0": 1e-2}).
@@ -1052,9 +1054,12 @@ def cdnlgssm_filter(
         filter_hyperparams: hyper-parameters of the filter
         inputs: optional array of inputs.
         num_iter: number of linearizations around posterior for update step (default 1).
-        output_fields: list of fields to return in posterior object.
-            These can take the values "filtered_means", "filtered_covariances",
-            "predicted_means", "predicted_covariances", and "marginal_loglik".
+        output_fields: list of top-level posterior fields to return.
+            These can include "filtered_means", "filtered_covariances",
+            "predicted_means", "predicted_covariances", "marginal_loglik",
+            and "posterior_extras". For EKF/UKF/EnKF, `posterior_extras`
+            contains filter-specific per-step diagnostics such as predictive
+            emission moments.
         key: random key (e.g., for EnKF).
         warn: whether to issue warnings during filtering.
 

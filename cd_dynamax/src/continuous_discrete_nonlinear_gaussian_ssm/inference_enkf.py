@@ -301,6 +301,7 @@ def _condition_on(
     return {
         "loglik_step": ll_step,
         "x_cond": x_cond,
+        "y_ens_pred": y_ensemble,
         "S": S,
         "K": K,
         "innovation": innovation,
@@ -340,7 +341,9 @@ def ensemble_kalman_filter(
         t_emissions: continuous-time specific time instants of observations: if not None, it is an array
         filter_hyperparams: hyper-parameters.
         inputs: optional array of inputs.
-        output_fields: list of fields to include in the output.
+        output_fields: list of top-level posterior fields to include in the output.
+            `posterior_extras` stores filter-specific diagnostics including
+            `y_ens_pred`.
         key: random generator key.
         warn: whether to warn about PSD issues.
 
@@ -443,6 +446,7 @@ def ensemble_kalman_filter(
             # Filtered/predicted particles here.
             "x_ens_filtered": filtered_x_ens,
             "x_ens_predicted": pred_x_ens,
+            "y_ens_pred": cond_dict["y_ens_pred"],
             # Other diagnostics
             "loglik_step": cond_dict["loglik_step"],
             "S": cond_dict["S"],
