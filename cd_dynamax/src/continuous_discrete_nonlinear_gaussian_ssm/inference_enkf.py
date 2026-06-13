@@ -208,6 +208,13 @@ def _condition_on(
     Returns:
         ll (float): log-likelihood of observation
         x_cond (N_particles, D_hid): filtered particles
+        dict containing:
+            - y_ens_pred: noiseless predictive observation ensemble
+            - y_obs_ens_pred: observation-predictive ensemble with sampled observation noise
+            - S: innovation covariance used for assimilation. This equals the
+              covariance of the predictive observation ensemble used in the
+              update, plus `R`. When inflation is enabled, that covariance is
+              computed from the inflated ensemble.
 
     """
 
@@ -232,6 +239,15 @@ def _condition_on(
         jnp.sum(_outer(y_ensemble - y_pred_mean, y_ensemble - y_pred_mean), axis=0)
         / (n_particles - 1),
         warn=warn,
+    )
+
+    # Observation-predictive ensemble obtained by adding observation noise.
+    key_obs_pred, key_assim = jr.split(key)
+    y_obs_ens_pred = y_ensemble + jr.multivariate_normal(
+        key=key_obs_pred,
+        mean=jnp.zeros_like(y_pred_mean),
+        cov=R,
+        shape=(n_particles,),
     )
 
     # Compute log-likelihood of observation based on Gaussian distribution,
@@ -274,7 +290,6 @@ def _condition_on(
         axis=0,
     ) / (n_particles - 1)
 
-    # Kalman gain
     S = y_pred_cov_infl + R
     K = psd_solve(S, cross_cov.T).T
 
@@ -282,7 +297,7 @@ def _condition_on(
     if perturb_measurements:
         # Add noise to the ensemble
         y_data_perturbed = jr.multivariate_normal(
-            key=key, mean=y, cov=R, shape=(n_particles,)
+            key=key_assim, mean=y, cov=R, shape=(n_particles,)
         )
     else:
         y_data_perturbed = y
@@ -302,6 +317,7 @@ def _condition_on(
         "loglik_step": ll_step,
         "x_cond": x_cond,
         "y_ens_pred": y_ensemble,
+        "y_obs_ens_pred": y_obs_ens_pred,
         "S": S,
         "K": K,
         "innovation": innovation,
@@ -343,10 +359,14 @@ def ensemble_kalman_filter(
         inputs: optional array of inputs.
         output_fields: list of top-level posterior fields to include in the output.
             `posterior_extras` stores filter-specific diagnostics including
-            `y_ens_pred`. The innovation covariance `S` is the observation-
-            predictive covariance used for data scoring and assimilation,
-            corresponding to the ensemble predictive covariance plus the
-            observation covariance `R`.
+            `y_ens_pred` and `y_obs_ens_pred`. The latter adds sampled
+            observation noise to the predicted observation ensemble. The
+            innovation covariance `S` is the observation-predictive covariance
+            used for data scoring and assimilation:
+            `S = Cov(y_pred_update_ens) + R`, where `y_pred_update_ens` is the
+            predictive observation ensemble used in the update. When inflation
+            is enabled, this is the inflated ensemble rather than the raw
+            `y_ens_pred`.
         key: random generator key.
         warn: whether to warn about PSD issues.
 
@@ -450,6 +470,7 @@ def ensemble_kalman_filter(
             "x_ens_filtered": filtered_x_ens,
             "x_ens_predicted": pred_x_ens,
             "y_ens_pred": cond_dict["y_ens_pred"],
+            "y_obs_ens_pred": cond_dict["y_obs_ens_pred"],
             # Other diagnostics
             "loglik_step": cond_dict["loglik_step"],
             "S": cond_dict["S"],

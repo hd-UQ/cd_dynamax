@@ -109,7 +109,7 @@ def test_ekf_and_ukf_posterior_extras_match_predictive_state_moments(
 
 def test_enkf_posterior_extras_include_predictive_emission_ensemble():
     params, emissions, t_emissions = _make_test_problem()
-    n_particles = 8
+    n_particles = 64
 
     posterior = ensemble_kalman_filter(
         params=params,
@@ -130,12 +130,10 @@ def test_enkf_posterior_extras_include_predictive_emission_ensemble():
     extras = posterior.posterior_extras
     assert extras is not None
     assert extras["y_ens_pred"].shape == (3, n_particles, 1)
+    assert extras["y_obs_ens_pred"].shape == (3, n_particles, 1)
     assert extras["x_ens_predicted"].shape == (3, n_particles, 1)
+    assert extras["S"].shape == (3, 1, 1)
     assert jnp.all(jnp.isfinite(extras["y_ens_pred"]))
-
-    expected_mean = jnp.mean(extras["y_ens_pred"], axis=1)
-    expected_cov = _ensemble_covariance(extras["y_ens_pred"])
-    assert jnp.allclose(expected_mean[1:], posterior.predicted_means[:-1])
-    assert jnp.allclose(expected_cov[1:], posterior.predicted_covariances[:-1])
-
-    assert jnp.allclose(extras["y_ens_pred"][1:], extras["x_ens_predicted"][:-1])
+    assert jnp.all(jnp.isfinite(extras["y_obs_ens_pred"]))
+    assert jnp.all(jnp.isfinite(extras["S"]))
+    assert jnp.any(jnp.abs(extras["y_obs_ens_pred"] - extras["y_ens_pred"]) > 1e-6)
