@@ -11,7 +11,7 @@ from tensorflow_probability.substrates.jax.distributions import (
 
 from jax.tree_util import tree_map
 from jaxtyping import Array, Float
-from typing import NamedTuple, Optional, Union, Tuple
+from typing import Collection, NamedTuple, Optional, Union, Tuple
 from ..utils.utils import psd_solve, symmetrize
 from ..parameters import ParameterProperties
 from ..types import PRNGKey, Scalar
@@ -112,12 +112,27 @@ class ParamsLGSSM(NamedTuple):
 class PosteriorGSSMFiltered(NamedTuple):
     r"""Marginals of the Gaussian filtering posterior.
 
+    Time indexing convention:
+    `filtered_*[t]` corresponds to $x_{t \mid t}$,
+    `predicted_*[t]` corresponds to $x_{t+1 \mid t}$,
+    and predictive observation quantities such as `y_pred_*[t]` and
+    `y_obs_pred_*[t]` correspond to the observation-time prior
+    $p(y_t \mid y_{1:t-1})$, i.e. they are computed from $x_{t \mid t-1}$.
+
     :param marginal_loglik: marginal log likelihood, $p(y_{1:T} \mid u_{1:T})$
-    :param filtered_means: array of filtered means $\mathbb{E}[z_t \mid y_{1:t}, u_{1:t}]$
-    :param filtered_covariances: array of filtered covariances $\mathrm{Cov}[z_t \mid y_{1:t}, u_{1:t}]$
-    :param predicted_means: optional array of one-step-ahead state means $\mathbb{E}[z_{t+1} \mid y_{1:t}, u_{1:t}]$
-    :param predicted_covariances: optional array of one-step-ahead state covariances $\mathrm{Cov}[z_{t+1} \mid y_{1:t}, u_{1:t}]$
-    :param posterior_extras: optional dictionary of filter-specific per-step diagnostics
+    :param filtered_means: array of filtered means $\mathbb{E}[x_t \mid y_{1:t}, u_{1:t}]$
+    :param filtered_covariances: array of filtered covariances $\mathrm{Cov}[x_t \mid y_{1:t}, u_{1:t}]$
+    :param predicted_means: optional array of one-step-ahead state means $\mathbb{E}[x_{t+1} \mid y_{1:t}, u_{1:t}]$
+    :param predicted_covariances: optional array of one-step-ahead state covariances $\mathrm{Cov}[x_{t+1} \mid y_{1:t}, u_{1:t}]$
+    :param filtered_ensembles: optional array of filtered state ensembles approximating $p(x_t \mid y_{1:t}, u_{1:t})$
+    :param predicted_ensembles: optional array of one-step-ahead predicted state ensembles approximating $p(x_{t+1} \mid y_{1:t}, u_{1:t})$
+    :param y_pred_mean: optional array of predictive emission means for $p(y_t \mid y_{1:t-1}, u_{1:t})$, before adding observation noise
+    :param y_pred_cov: optional array of predictive emission covariances for $p(y_t \mid y_{1:t-1}, u_{1:t})$, before adding observation noise
+    :param y_obs_pred_mean: optional array of predictive observation means for $p(y_t \mid y_{1:t-1}, u_{1:t})$
+    :param y_obs_pred_cov: optional array of predictive observation covariances for $p(y_t \mid y_{1:t-1}, u_{1:t})$, including observation noise
+    :param y_ens_pred: optional array of predictive emission ensembles for observation time $t$, obtained from the predicted state ensemble for $x_{t \mid t-1}$
+    :param y_obs_ens_pred: optional array of predictive observation ensembles for observation time $t$, obtained by adding sampled observation noise to `y_ens_pred`
+    :param posterior_extras: optional dictionary of filter-specific per-step diagnostics that do not fit the standard filtered posterior schema
 
     """
     # Default attributes
@@ -126,8 +141,63 @@ class PosteriorGSSMFiltered(NamedTuple):
     filtered_covariances: Optional[Float[Array, "ntime state_dim state_dim"]] = None
     predicted_means: Optional[Float[Array, "ntime state_dim"]] = None
     predicted_covariances: Optional[Float[Array, "ntime state_dim state_dim"]] = None
+    filtered_ensembles: Optional[Float[Array, "ntime ensemble_size state_dim"]] = None
+    predicted_ensembles: Optional[Float[Array, "ntime ensemble_size state_dim"]] = None
+    y_pred_mean: Optional[Float[Array, "ntime emission_dim"]] = None
+    y_pred_cov: Optional[Float[Array, "ntime emission_dim emission_dim"]] = None
+    y_obs_pred_mean: Optional[Float[Array, "ntime emission_dim"]] = None
+    y_obs_pred_cov: Optional[Float[Array, "ntime emission_dim emission_dim"]] = None
+    y_ens_pred: Optional[Float[Array, "ntime ensemble_size emission_dim"]] = None
+    y_obs_ens_pred: Optional[Float[Array, "ntime ensemble_size emission_dim"]] = None
     # Additional extras
     posterior_extras: Optional[dict] = None
+
+
+FILTERED_POSTERIOR_FIELD_NAMES = (
+    "marginal_loglik",
+    "filtered_means",
+    "filtered_covariances",
+    "predicted_means",
+    "predicted_covariances",
+    "filtered_ensembles",
+    "predicted_ensembles",
+    "y_pred_mean",
+    "y_pred_cov",
+    "y_obs_pred_mean",
+    "y_obs_pred_cov",
+    "y_ens_pred",
+    "y_obs_ens_pred",
+    "posterior_extras",
+)
+
+
+def validate_filtered_posterior_output_fields(
+    filter_name: str,
+    output_fields: Optional[Collection[str]],
+    supported_fields: Collection[str],
+):
+    """Validate requested top-level filtered posterior fields."""
+
+    if output_fields is None:
+        return
+
+    valid_fields = set(FILTERED_POSTERIOR_FIELD_NAMES)
+    supported_fields = set(supported_fields)
+    requested_fields = list(output_fields)
+
+    unknown_fields = sorted(set(requested_fields) - valid_fields)
+    if unknown_fields:
+        raise ValueError(
+            f"Unknown output_fields for {filter_name}: {unknown_fields}. "
+            f"Valid top-level filtered posterior fields are: {sorted(valid_fields)}."
+        )
+
+    unsupported_fields = sorted(set(requested_fields) - supported_fields)
+    if unsupported_fields:
+        raise ValueError(
+            f"output_fields {unsupported_fields} are not available for {filter_name}. "
+            f"Available fields are: {sorted(supported_fields)}."
+        )
 
 class PosteriorGSSMSmoothed(NamedTuple):
     r"""Marginals of the Gaussian filtering and smoothing posterior.

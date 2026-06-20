@@ -22,6 +22,7 @@ from cd_dynamax.dynamax.utils.utils import psd_solve
 # We import those posterior filtering and smoothing equivalent classes that can be reused from dynamax
 from cd_dynamax.dynamax.linear_gaussian_ssm.inference import (
     PosteriorGSSMFiltered,
+    validate_filtered_posterior_output_fields,
 )
 
 # Our codebase
@@ -40,6 +41,19 @@ from ..utils.debug_utils import psd, lax_scan
 tfb = tfp.bijectors
 
 DEBUG = False
+
+
+UKF_FILTER_OUTPUT_FIELDS = (
+    "marginal_loglik",
+    "filtered_means",
+    "filtered_covariances",
+    "predicted_means",
+    "predicted_covariances",
+    "y_pred_mean",
+    "y_pred_cov",
+    "y_obs_pred_mean",
+    "y_obs_pred_cov",
+)
 
 #### Helper functions
 # Helper functions --- from dynamax
@@ -318,10 +332,10 @@ def _condition_on(m, P, h, R, lamb, w_mean, w_cov, u, y, t, warn: bool = True):
         ll (float): log-likelihood of observation
         m_cond (D_hid,): filtered mean.
         P_cond (D_hid,D_hid): filtered covariance.
-        y_pred_mean (D_obs,): predictive emission mean before conditioning.
-        y_pred_cov (D_obs,D_obs): predictive emission covariance before adding R.
-        y_obs_pred_mean (D_obs,): predictive observation mean.
-        y_obs_pred_cov (D_obs,D_obs): predictive observation covariance including R.
+        y_pred_mean (D_obs,): predictive emission mean for observation time $t$ from $x_{t|t-1}$.
+        y_pred_cov (D_obs,D_obs): predictive emission covariance for observation time $t$ before adding $R$.
+        y_obs_pred_mean (D_obs,): predictive observation mean for $p(y_t \mid y_{1:t-1})$.
+        y_obs_pred_cov (D_obs,D_obs): predictive observation covariance for $p(y_t \mid y_{1:t-1})$, including $R$.
 
     """
     y_pred_mean, y_pred_cov, pred_cross = _emission_predicted_moments(
@@ -355,7 +369,6 @@ def unscented_kalman_filter(
         "filtered_covariances",
         "predicted_means",
         "predicted_covariances",
-        "posterior_extras",
     ],
     warn: bool = True,
 ) -> PosteriorGSSMFiltered:
@@ -372,16 +385,26 @@ def unscented_kalman_filter(
         filter_hyperparams: hyper-parameters.
         inputs: optional array of inputs.
         output_fields: list of top-level posterior fields to include in the output.
-            `posterior_extras` stores per-step noiseless predictive emission
-            moments `y_pred_mean` / `y_pred_cov`, and data-facing predictive
-            moments `y_obs_pred_mean` / `y_obs_pred_cov`, where
-            `y_obs_pred_cov = y_pred_cov + R`.
+            Options:
+            `"filtered_means"` (default)
+            `"filtered_covariances"` (default)
+            `"predicted_means"` (default)
+            `"predicted_covariances"` (default)
+            `"marginal_loglik"`
+            `"y_pred_mean"`
+            `"y_pred_cov"`
+            `"y_obs_pred_mean"`
+            `"y_obs_pred_cov"`
         warn: whether to issue warnings (e.g., about PSD issues)
 
     Returns:
         filtered_posterior: posterior object.
 
     """
+    validate_filtered_posterior_output_fields(
+        "unscented_kalman_filter", output_fields, UKF_FILTER_OUTPUT_FIELDS
+    )
+
     # Figure out timestamps, as vectors to scan over
     # t_emissions is of shape num_timesteps \times 1
     # t0 and t1 are num_timesteps \times 0
@@ -472,12 +495,10 @@ def unscented_kalman_filter(
             "predicted_means": pred_mean,
             "predicted_covariances": pred_cov,
             "marginal_loglik": ll,
-            "posterior_extras": {
-                "y_pred_mean": y_pred_mean,
-                "y_pred_cov": y_pred_cov,
-                "y_obs_pred_mean": y_obs_pred_mean,
-                "y_obs_pred_cov": y_obs_pred_cov,
-            },
+            "y_pred_mean": y_pred_mean,
+            "y_pred_cov": y_pred_cov,
+            "y_obs_pred_mean": y_obs_pred_mean,
+            "y_obs_pred_cov": y_obs_pred_cov,
         }
         outputs = {key: val for key, val in outputs.items() if key in output_fields}
 
@@ -522,7 +543,10 @@ def forecast_unscented_kalman_filter(
         t_forecast: continuous-time specific time instants to forecast
         filter_hyperparams: hyper-parameters of the UKF, related to the approximation order
         inputs: optional array of inputs.
-        output_fields: list of fields to return
+        output_fields: list of fields to return.
+            Options:
+            `"forecasted_state_means"` (default)
+            `"forecasted_state_covariances"` (default)
         warn: whether to issue warnings (e.g., about PSD issues)
 
     Returns:

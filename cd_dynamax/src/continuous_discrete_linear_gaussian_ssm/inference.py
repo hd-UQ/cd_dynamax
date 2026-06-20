@@ -27,6 +27,7 @@ from cd_dynamax.dynamax.utils.utils import psd_solve
 from cd_dynamax.dynamax.linear_gaussian_ssm.inference import (
     PosteriorGSSMFiltered,
     PosteriorGSSMSmoothed,
+    validate_filtered_posterior_output_fields,
 )
 
 # Initial and emission parameter classes are equivalent
@@ -52,6 +53,19 @@ from ..utils.debug_utils import psd
 tfb = tfp.bijectors
 
 DEBUG = False
+
+
+CDLGSSM_FILTER_OUTPUT_FIELDS = (
+    "marginal_loglik",
+    "filtered_means",
+    "filtered_covariances",
+    "predicted_means",
+    "predicted_covariances",
+    "y_pred_mean",
+    "y_pred_cov",
+    "y_obs_pred_mean",
+    "y_obs_pred_cov",
+)
 
 
 #### Helper functions
@@ -362,7 +376,6 @@ def cdlgssm_filter(
         "filtered_covariances",
         "predicted_means",
         "predicted_covariances",
-        "posterior_extras",
     ],
     warn: bool = True,
 ) -> PosteriorGSSMFiltered:
@@ -376,13 +389,16 @@ def cdlgssm_filter(
         filter_hyperparams: hyperparameters for the filter.
         inputs: optional array of inputs.
         output_fields: list of top-level posterior fields to return.
-            These can include "filtered_means", "filtered_covariances",
-            "predicted_means", "predicted_covariances", "marginal_loglik",
-            and "posterior_extras". For the linear Kalman filter,
-            `posterior_extras` stores per-step noiseless predictive emission
-            moments `y_pred_mean` / `y_pred_cov`, and data-facing predictive
-            moments `y_obs_pred_mean` / `y_obs_pred_cov`, where
-            `y_obs_pred_cov = y_pred_cov + R`.
+            Options:
+            `"filtered_means"` (default)
+            `"filtered_covariances"` (default)
+            `"predicted_means"` (default)
+            `"predicted_covariances"` (default)
+            `"marginal_loglik"`
+            `"y_pred_mean"`
+            `"y_pred_cov"`
+            `"y_obs_pred_mean"`
+            `"y_obs_pred_cov"`
         warn: whether to issue warnings during filtering (e.g., PSD issues).
 
     Returns:
@@ -391,6 +407,10 @@ def cdlgssm_filter(
     # Double-check filter_hyperparams is not None
     if filter_hyperparams is None:
         filter_hyperparams = KFHyperParams()
+
+    validate_filtered_posterior_output_fields(
+        "cdlgssm_filter", output_fields, CDLGSSM_FILTER_OUTPUT_FIELDS
+    )
 
     # Figure out timestamps, as vectors to scan over
     # t_emissions is of shape num_timesteps \times 1
@@ -468,12 +488,10 @@ def cdlgssm_filter(
             "filtered_covariances": filtered_cov,
             "predicted_means": pred_mean,
             "predicted_covariances": pred_cov,
-            "posterior_extras": {
-                "y_pred_mean": y_pred_mean,
-                "y_pred_cov": y_pred_cov,
-                "y_obs_pred_mean": y_obs_pred_mean,
-                "y_obs_pred_cov": y_obs_pred_cov,
-            },
+            "y_pred_mean": y_pred_mean,
+            "y_pred_cov": y_pred_cov,
+            "y_obs_pred_mean": y_obs_pred_mean,
+            "y_obs_pred_cov": y_obs_pred_cov,
         }
         outputs = {key: val for key, val in outputs.items() if key in output_fields}
 
@@ -1148,12 +1166,10 @@ def cdlgssm_forecast(
         inputs: optional array of inputs, of shape (1 + num_timesteps) \times input_dim
             - The extra input is needed for the initial emission, i.e., it should be at time t_init
         output_fields: list of fields to return in posterior object.
-            These can take the values
-                If we forecast Gaussian distributions, based on filtering methods
-                    "forecasted_state_means",
-                    "forecasted_state_covariances",
-                If we forecast paths, based on solving the SDE
-                    "forecasted_state_path".
+            Options:
+            `"forecasted_state_means"` (default for Gaussian forecasts)
+            `"forecasted_state_covariances"` (default for Gaussian forecasts)
+            `"forecasted_state_path"` (for point-initialized path forecasts)
         key: random key (e.g., for Ensemble Kalman).
         diffeqsolve_settings: settings for the SDE solver
         warn: whether to issue warnings during filtering (e.g., PSD issues).

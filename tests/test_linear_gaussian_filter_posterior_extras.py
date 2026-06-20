@@ -1,4 +1,5 @@
 import jax.numpy as jnp
+import pytest
 
 from cd_dynamax import (
     ContDiscreteLinearGaussianSSM,
@@ -15,7 +16,7 @@ def _make_test_problem():
     return model, params, emissions, t_emissions
 
 
-def test_cdlgssm_filter_posterior_extras_match_predictive_state_moments():
+def test_cdlgssm_filter_predictive_observation_fields_match_predictive_state_moments():
     _, params, emissions, t_emissions = _make_test_problem()
     H = params.emissions.weights
     D = (
@@ -39,36 +40,37 @@ def test_cdlgssm_filter_posterior_extras_match_predictive_state_moments():
         output_fields=[
             "predicted_means",
             "predicted_covariances",
-            "posterior_extras",
+            "y_pred_mean",
+            "y_pred_cov",
+            "y_obs_pred_mean",
+            "y_obs_pred_cov",
         ],
         warn=False,
     )
 
-    extras = posterior.posterior_extras
-    assert extras is not None
-    assert extras["y_pred_mean"].shape == (3, 1)
-    assert extras["y_pred_cov"].shape == (3, 1, 1)
-    assert extras["y_obs_pred_mean"].shape == (3, 1)
-    assert extras["y_obs_pred_cov"].shape == (3, 1, 1)
-    assert jnp.all(jnp.isfinite(extras["y_pred_mean"]))
-    assert jnp.all(jnp.isfinite(extras["y_pred_cov"]))
-    assert jnp.all(jnp.isfinite(extras["y_obs_pred_mean"]))
-    assert jnp.all(jnp.isfinite(extras["y_obs_pred_cov"]))
+    assert posterior.y_pred_mean.shape == (3, 1)
+    assert posterior.y_pred_cov.shape == (3, 1, 1)
+    assert posterior.y_obs_pred_mean.shape == (3, 1)
+    assert posterior.y_obs_pred_cov.shape == (3, 1, 1)
+    assert jnp.all(jnp.isfinite(posterior.y_pred_mean))
+    assert jnp.all(jnp.isfinite(posterior.y_pred_cov))
+    assert jnp.all(jnp.isfinite(posterior.y_obs_pred_mean))
+    assert jnp.all(jnp.isfinite(posterior.y_obs_pred_cov))
 
-    assert jnp.allclose(extras["y_pred_mean"][0], H @ params.initial.mean + D @ u + d)
-    assert jnp.allclose(extras["y_pred_cov"][0], H @ params.initial.cov @ H.T)
-    assert jnp.allclose(extras["y_obs_pred_mean"], extras["y_pred_mean"])
-    assert jnp.allclose(extras["y_obs_pred_cov"], extras["y_pred_cov"] + R)
+    assert jnp.allclose(posterior.y_pred_mean[0], H @ params.initial.mean + D @ u + d)
+    assert jnp.allclose(posterior.y_pred_cov[0], H @ params.initial.cov @ H.T)
+    assert jnp.allclose(posterior.y_obs_pred_mean, posterior.y_pred_mean)
+    assert jnp.allclose(posterior.y_obs_pred_cov, posterior.y_pred_cov + R)
     assert jnp.allclose(
-        extras["y_pred_mean"][1:], posterior.predicted_means[:-1] @ H.T + D @ u + d
+        posterior.y_pred_mean[1:], posterior.predicted_means[:-1] @ H.T + D @ u + d
     )
     assert jnp.allclose(
-        extras["y_pred_cov"][1:],
+        posterior.y_pred_cov[1:],
         jnp.einsum("ij,tjk,kl->til", H, posterior.predicted_covariances[:-1], H.T),
     )
 
 
-def test_linear_model_filter_can_return_only_posterior_extras():
+def test_linear_model_filter_can_return_only_predictive_observation_field():
     model, params, emissions, t_emissions = _make_test_problem()
 
     posterior = model.filter(
@@ -76,13 +78,30 @@ def test_linear_model_filter_can_return_only_posterior_extras():
         emissions=emissions,
         t_emissions=t_emissions,
         filter_hyperparams=KFHyperParams(),
-        output_fields=["posterior_extras"],
+        output_fields=["y_pred_mean"],
         warn=False,
     )
 
-    assert posterior.posterior_extras is not None
+    assert posterior.y_pred_mean is not None
     assert posterior.filtered_means is None
     assert posterior.filtered_covariances is None
     assert posterior.predicted_means is None
     assert posterior.predicted_covariances is None
+    assert posterior.y_pred_cov is None
+    assert posterior.y_obs_pred_mean is None
+    assert posterior.y_obs_pred_cov is None
     assert jnp.isfinite(posterior.marginal_loglik)
+
+
+def test_linear_filter_rejects_unsupported_output_field():
+    _, params, emissions, t_emissions = _make_test_problem()
+
+    with pytest.raises(ValueError, match="cdlgssm_filter"):
+        cdlgssm_filter(
+            params=params,
+            emissions=emissions,
+            t_emissions=t_emissions,
+            filter_hyperparams=KFHyperParams(),
+            output_fields=["y_ens_pred"],
+            warn=False,
+        )

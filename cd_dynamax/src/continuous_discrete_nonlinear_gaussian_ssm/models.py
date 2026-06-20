@@ -616,7 +616,12 @@ class ContDiscreteNonlinearGaussianSSM(SSM):
         enkf_inflation_delta: float = 0.0,
         diffeqsolve_max_steps: int = 100,
         diffeqsolve_dt0: float = 1e-2,
-        output_fields=None,
+        output_fields=[
+            "filtered_means",
+            "filtered_covariances",
+            "predicted_means",
+            "predicted_covariances",
+        ],
         key=jr.PRNGKey(0),
         diffeqsolve_kwargs: Optional[dict] = {},
         extra_filter_kwargs: Optional[dict] = {},
@@ -640,8 +645,25 @@ class ContDiscreteNonlinearGaussianSSM(SSM):
             diffeqsolve_max_steps: Max steps for ODE solver between observations.
             diffeqsolve_dt0: Initial step size for ODE/SDE solver (default is fixed step size).
             output_fields: Which top-level posterior fields to return from the
-                filter. Include `"posterior_extras"` to keep filter-specific
-                diagnostics such as predictive emission moments.
+                filter. Predictive emission outputs and EnKF state-ensemble
+                outputs are available directly as top-level filtered posterior
+                fields. Options:
+                `"filtered_means"` (default for EKF/UKF/EnKF)
+                `"filtered_covariances"` (default for EKF/UKF/EnKF)
+                `"predicted_means"` (default for EKF/UKF/EnKF)
+                `"predicted_covariances"` (default for EKF/UKF/EnKF)
+                `"marginal_loglik"`
+                `"posterior_extras"`
+                `"filtered_ensembles"`
+                `"predicted_ensembles"`
+                `"y_pred_mean"`
+                `"y_pred_cov"`
+                `"y_obs_pred_mean"`
+                `"y_obs_pred_cov"`
+                `"y_ens_pred"`
+                `"y_obs_ens_pred"`
+                Filter-specific diagnostics remain in `"posterior_extras"`
+                when applicable. Unsupported fields raise a `ValueError`.
             key: Random number generator key.
             diffeqsolve_kwargs: Extra kwargs for the ODE solver
                 (e.g., {"solver": diffrax.Heun(), "dt0": 1e-2}).
@@ -1055,11 +1077,23 @@ def cdnlgssm_filter(
         inputs: optional array of inputs.
         num_iter: number of linearizations around posterior for update step (default 1).
         output_fields: list of top-level posterior fields to return.
-            These can include "filtered_means", "filtered_covariances",
-            "predicted_means", "predicted_covariances", "marginal_loglik",
-            and "posterior_extras". For EKF/UKF/EnKF, `posterior_extras`
-            contains filter-specific per-step diagnostics such as predictive
-            emission moments.
+            Defaults to `None`, which requests the defaults of the chosen
+            filter. Options:
+            `"filtered_means"` (default for EKF/UKF/EnKF)
+            `"filtered_covariances"` (default for EKF/UKF/EnKF)
+            `"predicted_means"` (default for EKF/UKF/EnKF)
+            `"predicted_covariances"` (default for EKF/UKF/EnKF)
+            `"marginal_loglik"` (default for EnKF)
+            `"posterior_extras"`
+            `"filtered_ensembles"`
+            `"predicted_ensembles"`
+            `"y_pred_mean"`
+            `"y_pred_cov"`
+            `"y_obs_pred_mean"`
+            `"y_obs_pred_cov"`
+            `"y_ens_pred"`
+            `"y_obs_ens_pred"`
+            Unsupported fields for the chosen filter raise a `ValueError`.
         key: random key (e.g., for EnKF).
         warn: whether to issue warnings during filtering.
 
@@ -1133,8 +1167,12 @@ def cdnlgssm_smoother(
         inputs: optional array of inputs.
         num_iter: optinal, number of linearizations around posterior for update step (default 1).
         output_fields: list of fields to return in posterior object.
-            These can take the values "filtered_means", "filtered_covariances",
-            "smoothed_means", "smoothed_covariances", and "marginal_loglik".
+            Options:
+            `"filtered_means"` (default)
+            `"filtered_covariances"` (default)
+            `"smoothed_means"` (default)
+            `"smoothed_covariances"` (default)
+            `"marginal_loglik"` (default)
         key: random key (e.g., for EnKS).
         warn: whether to issue warnings during smoothing (e.g., PSD issues).
 
@@ -1197,12 +1235,10 @@ def cdnlgssm_forecast(
         inputs: optional array of inputs, of shape (1 + num_timesteps) \times input_dim
             - The extra input is needed for the initial emission, i.e., it should be at time t_init
         output_fields: list of fields to return in posterior object.
-            These can take the values
-                If we forecast Gaussian distributions, based on filtering methods
-                    "forecasted_state_means",
-                    "forecasted_state_covariances",
-                If we forecast paths, based on solving the SDE
-                    "forecasted_state_path".
+            Options:
+            `"forecasted_state_means"` (default for Gaussian forecasts)
+            `"forecasted_state_covariances"` (default for Gaussian forecasts)
+            `"forecasted_state_path"` (for point-initialized path forecasts)
         key: random key (e.g., for Ensemble Kalman).
         diffeqsolve_settings: settings for the SDE solver
         warn: whether to issue warnings during forecasting (e.g., PSD issues).

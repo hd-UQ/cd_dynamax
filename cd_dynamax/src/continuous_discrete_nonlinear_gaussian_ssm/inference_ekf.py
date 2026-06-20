@@ -25,6 +25,7 @@ from cd_dynamax.dynamax.utils.utils import psd_solve
 from cd_dynamax.dynamax.linear_gaussian_ssm.inference import (
     PosteriorGSSMFiltered,
     PosteriorGSSMSmoothed,
+    validate_filtered_posterior_output_fields,
 )
 
 # Our codebase
@@ -43,6 +44,19 @@ from ..utils.debug_utils import psd, lax_scan
 tfb = tfp.bijectors
 
 DEBUG = False
+
+
+EKF_FILTER_OUTPUT_FIELDS = (
+    "marginal_loglik",
+    "filtered_means",
+    "filtered_covariances",
+    "predicted_means",
+    "predicted_covariances",
+    "y_pred_mean",
+    "y_pred_cov",
+    "y_obs_pred_mean",
+    "y_obs_pred_cov",
+)
 
 #### Helper functions
 # Helper functions --- from dynamax
@@ -297,7 +311,6 @@ def extended_kalman_filter(
         "filtered_covariances",
         "predicted_means",
         "predicted_covariances",
-        "posterior_extras",
     ],
     warn: bool = True,
 ) -> PosteriorGSSMFiltered:
@@ -319,19 +332,27 @@ def extended_kalman_filter(
         inputs: optional array of inputs.
         num_iter: number of linearizations around posterior for update step (default 1).
         output_fields: list of top-level posterior fields to return.
-            These can include "filtered_means", "filtered_covariances",
-            "predicted_means", "predicted_covariances", "marginal_loglik",
-            and "posterior_extras". For EKF, `posterior_extras` stores
-            per-step noiseless predictive emission moments
-            `y_pred_mean` / `y_pred_cov`, and data-facing predictive moments
-            `y_obs_pred_mean` / `y_obs_pred_cov`, where
-            `y_obs_pred_cov = y_pred_cov + R`.
+            Options:
+            `"filtered_means"` (default)
+            `"filtered_covariances"` (default)
+            `"predicted_means"` (default)
+            `"predicted_covariances"` (default)
+            `"marginal_loglik"`
+            `"y_pred_mean"`
+            `"y_pred_cov"`
+            `"y_obs_pred_mean"`
+            `"y_obs_pred_cov"`
         warn: whether to issue warnings during filtering (e.g., PSD issues).
 
     Returns:
         filtered_posterior: posterior object.
 
     """
+
+    # Figure out timestamps, as vectors to scan over
+    validate_filtered_posterior_output_fields(
+        "extended_kalman_filter", output_fields, EKF_FILTER_OUTPUT_FIELDS
+    )
 
     # Figure out timestamps, as vectors to scan over
     # t_emissions is of shape num_timesteps \times 1
@@ -422,12 +443,10 @@ def extended_kalman_filter(
             "predicted_means": pred_mean,
             "predicted_covariances": pred_cov,
             "marginal_loglik": ll,
-            "posterior_extras": {
-                "y_pred_mean": y_pred_mean,
-                "y_pred_cov": y_pred_cov,
-                "y_obs_pred_mean": y_obs_pred_mean,
-                "y_obs_pred_cov": y_obs_pred_cov,
-            },
+            "y_pred_mean": y_pred_mean,
+            "y_pred_cov": y_pred_cov,
+            "y_obs_pred_mean": y_obs_pred_mean,
+            "y_obs_pred_cov": y_obs_pred_cov,
         }
         outputs = {key: val for key, val in outputs.items() if key in output_fields}
 
@@ -459,7 +478,6 @@ def iterated_extended_kalman_filter(
         "filtered_covariances",
         "predicted_means",
         "predicted_covariances",
-        "posterior_extras",
     ],
     warn: bool = True,
 ) -> PosteriorGSSMFiltered:
@@ -480,8 +498,16 @@ def iterated_extended_kalman_filter(
         inputs: optional array of inputs.
         num_iter: number of linearizations around posterior for update step (default 2).
         output_fields: list of top-level posterior fields to return.
-            `posterior_extras` stores both noiseless predictive emission
-            moments and data-facing predictive moments with observation noise.
+            Options:
+            `"filtered_means"` (default)
+            `"filtered_covariances"` (default)
+            `"predicted_means"` (default)
+            `"predicted_covariances"` (default)
+            `"marginal_loglik"`
+            `"y_pred_mean"`
+            `"y_pred_cov"`
+            `"y_obs_pred_mean"`
+            `"y_obs_pred_cov"`
         warn: whether to issue warnings during filtering (e.g., PSD issues).
     Returns:
         post: posterior object.
@@ -920,7 +946,10 @@ def forecast_extended_kalman_filter(
         t_forecast: continuous-time specific time instants to forecast
         filter_hyperparams: hyper-parameters of the EKF, related to the approximation order
         inputs: optional array of inputs.
-        output_fields: list of fields to return
+        output_fields: list of fields to return.
+            Options:
+            `"forecasted_state_means"` (default)
+            `"forecasted_state_covariances"` (default)
         warn: whether to issue warnings (e.g., about PSD issues)
 
     Returns:
