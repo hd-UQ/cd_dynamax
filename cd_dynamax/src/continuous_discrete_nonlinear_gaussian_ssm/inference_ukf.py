@@ -22,6 +22,7 @@ from cd_dynamax.dynamax.utils.utils import psd_solve
 # We import those posterior filtering and smoothing equivalent classes that can be reused from dynamax
 from cd_dynamax.dynamax.linear_gaussian_ssm.inference import (
     PosteriorGSSMFiltered,
+    validate_filtered_posterior_output_fields,
 )
 
 # Our codebase
@@ -40,6 +41,19 @@ from ..utils.debug_utils import psd, lax_scan
 tfb = tfp.bijectors
 
 DEBUG = False
+
+
+UKF_FILTER_OUTPUT_FIELDS = (
+    "marginal_loglik",
+    "filtered_means",
+    "filtered_covariances",
+    "predicted_means",
+    "predicted_covariances",
+    "y_pred_mean",
+    "y_pred_cov",
+    "y_obs_pred_mean",
+    "y_obs_pred_cov",
+)
 
 #### Helper functions
 # Helper functions --- from dynamax
@@ -274,6 +288,29 @@ def _predict(
 
 
 # Condition on a new observation, under UKF approximations
+def _emission_predicted_moments(m, P, h, lamb, w_mean, w_cov, u, t, warn: bool = True):
+    """Compute the UKF Gaussian approximation to the predictive emission moments."""
+
+    n = len(m)
+    sigmas_cond = _compute_sigmas(m, P, n, lamb)
+    u_s = jnp.array([u] * len(sigmas_cond))
+    sigmas_cond_prop = vmap(h, in_axes=(0, None, None))(sigmas_cond, u_s, t)
+
+    y_pred_mean = jnp.tensordot(w_mean, sigmas_cond_prop, axes=1)
+    y_pred_cov = psd(
+        jnp.tensordot(
+            w_cov,
+            _outer(sigmas_cond_prop - y_pred_mean, sigmas_cond_prop - y_pred_mean),
+            axes=1,
+        ),
+        warn=warn,
+    )
+    pred_cross = jnp.tensordot(
+        w_cov, _outer(sigmas_cond - m, sigmas_cond_prop - y_pred_mean), axes=1
+    )
+    return y_pred_mean, y_pred_cov, pred_cross
+
+
 def _condition_on(m, P, h, R, lamb, w_mean, w_cov, u, y, t, warn: bool = True):
     """Condition a Gaussian potential on a new observation,
         using additive UKF approximations.
@@ -295,44 +332,29 @@ def _condition_on(m, P, h, R, lamb, w_mean, w_cov, u, y, t, warn: bool = True):
         ll (float): log-likelihood of observation
         m_cond (D_hid,): filtered mean.
         P_cond (D_hid,D_hid): filtered covariance.
+        y_pred_mean (D_obs,): predictive emission mean for observation time $t$ from $x_{t|t-1}$.
+        y_pred_cov (D_obs,D_obs): predictive emission covariance for observation time $t$ before adding $R$.
+        y_obs_pred_mean (D_obs,): predictive observation mean for $p(y_t \mid y_{1:t-1})$.
+        y_obs_pred_cov (D_obs,D_obs): predictive observation covariance for $p(y_t \mid y_{1:t-1})$, including $R$.
 
     """
-    # Dimensions
-    n = len(m)
-
-    # Form sigma points and propagate
-    sigmas_cond = _compute_sigmas(m, P, n, lamb)
-    # Replicate inputs for each sigma point
-    u_s = jnp.array([u] * len(sigmas_cond))
-    # Propagate sigma points through emission function at time t with input u
-    sigmas_cond_prop = vmap(h, in_axes=(0, None, None))(sigmas_cond, u_s, t)
-
-    # Compute predicted mean, covariance, and cross-covariance
-    pred_mean = jnp.tensordot(w_mean, sigmas_cond_prop, axes=1)
-    pred_cov = psd(
-        R
-        + jnp.tensordot(
-            w_cov,
-            _outer(sigmas_cond_prop - pred_mean, sigmas_cond_prop - pred_mean),
-            axes=1,
-        ),
-        warn=warn,
+    y_pred_mean, y_pred_cov, pred_cross = _emission_predicted_moments(
+        m, P, h, lamb, w_mean, w_cov, u, t, warn=warn
     )
-    pred_cross = jnp.tensordot(
-        w_cov, _outer(sigmas_cond - m, sigmas_cond_prop - pred_mean), axes=1
-    )
+    y_obs_pred_mean = y_pred_mean
+    y_obs_pred_cov = psd(y_pred_cov + R, warn=warn)
 
     # Compute log-likelihood of observation based on Gaussian distribution,
     # using predicted mean and covariance
-    ll = MVN(pred_mean, pred_cov).log_prob(y)
+    ll = MVN(y_obs_pred_mean, y_obs_pred_cov).log_prob(y)
 
     # UKF gain
-    K = psd_solve(pred_cov, pred_cross.T).T
+    K = psd_solve(y_obs_pred_cov, pred_cross.T).T
     # Compute UKF filtered mean and covariance
-    m_cond = m + K @ (y - pred_mean)
-    P_cond = psd(P - K @ pred_cov @ K.T, warn=warn)
-    # Return log-likelihood, filtered mean and covariance
-    return ll, m_cond, P_cond
+    m_cond = m + K @ (y - y_pred_mean)
+    P_cond = psd(P - K @ y_obs_pred_cov @ K.T, warn=warn)
+    # Return log-likelihood, filtered mean/covariance, and predictive emission moments
+    return ll, m_cond, P_cond, y_pred_mean, y_pred_cov, y_obs_pred_mean, y_obs_pred_cov
 
 
 # UKF filtering main function
@@ -362,13 +384,27 @@ def unscented_kalman_filter(
         t_emissions: continuous-time specific time instants of observations: if not None, it is an array
         filter_hyperparams: hyper-parameters.
         inputs: optional array of inputs.
-        output_fields: list of fields to include in the output.
+        output_fields: list of top-level posterior fields to include in the output.
+            Options:
+            `"filtered_means"` (default)
+            `"filtered_covariances"` (default)
+            `"predicted_means"` (default)
+            `"predicted_covariances"` (default)
+            `"marginal_loglik"`
+            `"y_pred_mean"`
+            `"y_pred_cov"`
+            `"y_obs_pred_mean"`
+            `"y_obs_pred_cov"`
         warn: whether to issue warnings (e.g., about PSD issues)
 
     Returns:
         filtered_posterior: posterior object.
 
     """
+    validate_filtered_posterior_output_fields(
+        "unscented_kalman_filter", output_fields, UKF_FILTER_OUTPUT_FIELDS
+    )
+
     # Figure out timestamps, as vectors to scan over
     # t_emissions is of shape num_timesteps \times 1
     # t0 and t1 are num_timesteps \times 0
@@ -420,7 +456,15 @@ def unscented_kalman_filter(
         R = params.emissions.emission_cov.f(None, u, t0)
 
         # Condition on this emission
-        log_likelihood, filtered_mean, filtered_cov = _condition_on(
+        (
+            log_likelihood,
+            filtered_mean,
+            filtered_cov,
+            y_pred_mean,
+            y_pred_cov,
+            y_obs_pred_mean,
+            y_obs_pred_cov,
+        ) = _condition_on(
             pred_mean, pred_cov, h, R, lamb, w_mean, w_cov, u, y, t0, warn=warn
         )
 
@@ -451,6 +495,10 @@ def unscented_kalman_filter(
             "predicted_means": pred_mean,
             "predicted_covariances": pred_cov,
             "marginal_loglik": ll,
+            "y_pred_mean": y_pred_mean,
+            "y_pred_cov": y_pred_cov,
+            "y_obs_pred_mean": y_obs_pred_mean,
+            "y_obs_pred_cov": y_obs_pred_cov,
         }
         outputs = {key: val for key, val in outputs.items() if key in output_fields}
 
@@ -495,7 +543,10 @@ def forecast_unscented_kalman_filter(
         t_forecast: continuous-time specific time instants to forecast
         filter_hyperparams: hyper-parameters of the UKF, related to the approximation order
         inputs: optional array of inputs.
-        output_fields: list of fields to return
+        output_fields: list of fields to return.
+            Options:
+            `"forecasted_state_means"` (default)
+            `"forecasted_state_covariances"` (default)
         warn: whether to issue warnings (e.g., about PSD issues)
 
     Returns:

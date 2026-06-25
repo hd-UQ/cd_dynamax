@@ -491,6 +491,13 @@ class ContDiscreteNonlinearSSM(SSM):
             diffeqsolve_max_steps: Max steps for ODE solver between observations.
             diffeqsolve_dt0: Initial step size for ODE/SDE solver (default is fixed step size).
             output_fields: Which fields to return from the filter.
+                Defaults to `None`. This argument is currently ignored by
+                `cdnlssm_filter`. Always returned:
+                `"filtered_means"`
+                `"filtered_covariances"`
+                `"particles"`
+                `"log_weights"`
+                `"marginal_loglik"`
             key: Random key.
             diffeqsolve_kwargs: Extra kwargs for the ODE solver
                 (e.g., {"solver": diffrax.Heun(), "dt0": 1e-2}).
@@ -562,6 +569,10 @@ class ContDiscreteNonlinearSSM(SSM):
             diffeqsolve_max_steps: Max steps for ODE solver between observations.
             diffeqsolve_dt0: Initial step size for ODE/SDE solver (default is fixed step size).
             output_fields: Which fields to return from the filter.
+                Defaults to `None`. This argument is currently ignored by
+                `cdnlssm_filter`, which always returns
+                `"filtered_means"`, `"filtered_covariances"`, `"particles"`,
+                `"log_weights"`, and `"marginal_loglik"`.
             key: Random key.
             diffeqsolve_kwargs: Extra kwargs for the ODE solver
                 (e.g., {"solver": diffrax.Heun(), "dt0": 1e-2}).
@@ -711,6 +722,13 @@ def cdnlssm_filter(
         filter_hyperparams: Hyperparameters of the filter.
         inputs: Inputs.
         output_fields: Fields to return.
+            Defaults to `None`. This argument is currently ignored; the
+            returned posterior always includes:
+            `"filtered_means"`
+            `"filtered_covariances"`
+            `"particles"`
+            `"log_weights"`
+            `"marginal_loglik"`
         key: Random key.
         warn: Whether to warn.
 

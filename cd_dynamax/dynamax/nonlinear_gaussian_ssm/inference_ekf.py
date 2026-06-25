@@ -101,8 +101,12 @@ def extended_kalman_filter(
         num_iter: number of linearizations around posterior for update step (default 1).
         inputs: optional array of inputs.
         output_fields: list of fields to return in posterior object.
-            These can take the values "filtered_means", "filtered_covariances",
-            "predicted_means", "predicted_covariances", and "marginal_loglik".
+            Options:
+            `"filtered_means"` (default)
+            `"filtered_covariances"` (default)
+            `"predicted_means"` (default)
+            `"predicted_covariances"` (default)
+            `"marginal_loglik"`
 
     Returns:
         post: posterior object.

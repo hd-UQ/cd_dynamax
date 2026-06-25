@@ -24,6 +24,7 @@ from cd_dynamax.dynamax.utils.utils import psd_solve
 # We import those posterior filtering and smoothing equivalent classes that can be reused from dynamax
 from cd_dynamax.dynamax.linear_gaussian_ssm.inference import (
     PosteriorGSSMFiltered,
+    validate_filtered_posterior_output_fields,
 )
 
 # Our codebase
@@ -42,6 +43,24 @@ from ..utils.debug_utils import psd, lax_scan
 tfb = tfp.bijectors
 
 DEBUG = False
+
+
+ENKF_FILTER_OUTPUT_FIELDS = (
+    "marginal_loglik",
+    "filtered_means",
+    "filtered_covariances",
+    "predicted_means",
+    "predicted_covariances",
+    "filtered_ensembles",
+    "predicted_ensembles",
+    "y_pred_mean",
+    "y_pred_cov",
+    "y_obs_pred_mean",
+    "y_obs_pred_cov",
+    "y_ens_pred",
+    "y_obs_ens_pred",
+    "posterior_extras",
+)
 
 #### Helper functions
 # Helper functions --- from dynamax
@@ -208,6 +227,14 @@ def _condition_on(
     Returns:
         ll (float): log-likelihood of observation
         x_cond (N_particles, D_hid): filtered particles
+        dict containing:
+            - y_ens_pred: noiseless predictive observation ensemble for observation time $t$, obtained from the prior ensemble approximating $x_{t|t-1}$
+            - y_obs_ens_pred: observation-predictive ensemble for observation time $t$, obtained by adding sampled observation noise to `y_ens_pred`
+            - S: innovation covariance used for assimilation and innovation-based
+              diagnostics. This equals the covariance of the predictive
+              observation ensemble used in the update, plus `R`. When
+              inflation is enabled, that covariance is computed from the
+              inflated ensemble.
 
     """
 
@@ -232,6 +259,15 @@ def _condition_on(
         jnp.sum(_outer(y_ensemble - y_pred_mean, y_ensemble - y_pred_mean), axis=0)
         / (n_particles - 1),
         warn=warn,
+    )
+
+    # Observation-predictive ensemble obtained by adding observation noise.
+    key_obs_pred, key_assim = jr.split(key)
+    y_obs_ens_pred = y_ensemble + jr.multivariate_normal(
+        key=key_obs_pred,
+        mean=jnp.zeros_like(y_pred_mean),
+        cov=R,
+        shape=(n_particles,),
     )
 
     # Compute log-likelihood of observation based on Gaussian distribution,
@@ -274,7 +310,6 @@ def _condition_on(
         axis=0,
     ) / (n_particles - 1)
 
-    # Kalman gain
     S = y_pred_cov_infl + R
     K = psd_solve(S, cross_cov.T).T
 
@@ -282,7 +317,7 @@ def _condition_on(
     if perturb_measurements:
         # Add noise to the ensemble
         y_data_perturbed = jr.multivariate_normal(
-            key=key, mean=y, cov=R, shape=(n_particles,)
+            key=key_assim, mean=y, cov=R, shape=(n_particles,)
         )
     else:
         y_data_perturbed = y
@@ -301,6 +336,12 @@ def _condition_on(
     return {
         "loglik_step": ll_step,
         "x_cond": x_cond,
+        "y_pred_mean": y_pred_mean,
+        "y_pred_cov": y_pred_cov,
+        "y_obs_pred_mean": y_pred_mean,
+        "y_obs_pred_cov": psd(y_pred_cov + R, warn=warn),
+        "y_ens_pred": y_ensemble,
+        "y_obs_ens_pred": y_obs_ens_pred,
         "S": S,
         "K": K,
         "innovation": innovation,
@@ -323,7 +364,6 @@ def ensemble_kalman_filter(
         "predicted_means",
         "predicted_covariances",
         "marginal_loglik",
-        "posterior_extras",
     ],
     key: PRNGKey = jr.PRNGKey(0),
     warn: bool = True,
@@ -340,7 +380,35 @@ def ensemble_kalman_filter(
         t_emissions: continuous-time specific time instants of observations: if not None, it is an array
         filter_hyperparams: hyper-parameters.
         inputs: optional array of inputs.
-        output_fields: list of fields to include in the output.
+        output_fields: list of top-level posterior fields to include in the output.
+            Options:
+            `"filtered_means"` (default)
+            `"filtered_covariances"` (default)
+            `"predicted_means"` (default)
+            `"predicted_covariances"` (default)
+            `"marginal_loglik"` (default)
+            `"posterior_extras"`
+            `"filtered_ensembles"`
+            `"predicted_ensembles"`
+            `"y_pred_mean"`
+            `"y_pred_cov"`
+            `"y_obs_pred_mean"`
+            `"y_obs_pred_cov"`
+            `"y_ens_pred"`
+            `"y_obs_ens_pred"`
+            `y_pred_*` / `y_obs_pred_*` use the raw, non-inflated predictive
+            ensemble moments, while `y_obs_ens_pred` adds sampled
+            observation noise to `y_ens_pred`.
+            Note on `posterior_extras`:
+            `S` is the innovation covariance used for assimilation and
+            innovation-based diagnostics, with
+            `S = Cov(y_pred_update_ens) + R`, where `y_pred_update_ens` is the
+            predictive observation ensemble used in the update. When inflation
+            is enabled, `S` is computed from the inflated ensemble rather than
+            the raw `y_ens_pred`, so `S` need not equal `y_obs_pred_cov`.
+            For data scoring, use `y_obs_pred_mean`, `y_obs_pred_cov`, and
+            `marginal_loglik`, which are computed from the raw, non-inflated
+            predictive moments.
         key: random generator key.
         warn: whether to warn about PSD issues.
 
@@ -348,6 +416,10 @@ def ensemble_kalman_filter(
         filtered_posterior: posterior object.
 
     """
+
+    validate_filtered_posterior_output_fields(
+        "ensemble_kalman_filter", output_fields, ENKF_FILTER_OUTPUT_FIELDS
+    )
 
     # Figure out timestamps, as vectors to scan over
     # t_emissions is of shape num_timesteps \times 1
@@ -440,10 +512,6 @@ def ensemble_kalman_filter(
 
         # EnKF extras
         posterior_extras = {
-            # Filtered/predicted particles here.
-            "x_ens_filtered": filtered_x_ens,
-            "x_ens_predicted": pred_x_ens,
-            # Other diagnostics
             "loglik_step": cond_dict["loglik_step"],
             "S": cond_dict["S"],
             "K": cond_dict["K"],
@@ -461,6 +529,14 @@ def ensemble_kalman_filter(
             "filtered_covariances": filtered_cov,
             "predicted_means": pred_mean,
             "predicted_covariances": pred_cov,
+            "filtered_ensembles": filtered_x_ens,
+            "predicted_ensembles": pred_x_ens,
+            "y_pred_mean": cond_dict["y_pred_mean"],
+            "y_pred_cov": cond_dict["y_pred_cov"],
+            "y_obs_pred_mean": cond_dict["y_obs_pred_mean"],
+            "y_obs_pred_cov": cond_dict["y_obs_pred_cov"],
+            "y_ens_pred": cond_dict["y_ens_pred"],
+            "y_obs_ens_pred": cond_dict["y_obs_ens_pred"],
             # Extras
             "posterior_extras": posterior_extras,
         }
@@ -520,7 +596,10 @@ def forecast_ensemble_kalman_filter(
         t_forecast: continuous-time specific time instants to forecast
         filter_hyperparams: hyper-parameters of the EnKF, related to the approximation order
         inputs: optional array of inputs.
-        output_fields: list of fields to return
+        output_fields: list of fields to return.
+            Options:
+            `"forecasted_state_means"` (default)
+            `"forecasted_state_covariances"` (default)
         key: random key.
         warn: whether to warn about PSD issues.
 

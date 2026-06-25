@@ -376,8 +376,8 @@ def plot_drift_field(
 
 def plot_particle_diagnostics(
     t_emissions,  # shape (T,) time vector
-    x_ens_filtered,  # shape (T, N, D) ensemble after update
-    x_ens_predicted,  # shape (T, N, D) ensemble before update (forecast)
+    filtered_ensembles,  # shape (T, N, D) ensemble after update
+    predicted_ensembles,  # shape (T, N, D) ensemble before update (forecast)
     observations,  # shape (T, D_obs) -- assume D_obs == D for now
     start_idx=0,
     stop_idx=None,
@@ -389,14 +389,14 @@ def plot_particle_diagnostics(
 
     Args:
         t_emissions: (T,) time vector
-        x_ens_filtered: (T, N, D) ensemble after update
-        x_ens_predicted: (T, N, D) ensemble before update (forecast)
+        filtered_ensembles: (T, N, D) ensemble after update
+        predicted_ensembles: (T, N, D) ensemble before update (forecast)
         observations: (T, D) true observations
         start_idx: int, start timestep
         stop_idx: int, stop timestep (exclusive)
         figsize: tuple, figure size
     """
-    T, N, D = x_ens_filtered.shape
+    T, N, D = filtered_ensembles.shape
     if stop_idx is None:
         stop_idx = T
 
@@ -423,8 +423,8 @@ def plot_particle_diagnostics(
             t0 = t_emissions[t]
             t1 = t_emissions[t + 1]
 
-            xf = x_ens_filtered[t, :, d]
-            xp = x_ens_predicted[t + 1, :, d]
+            xf = filtered_ensembles[t, :, d]
+            xp = predicted_ensembles[t + 1, :, d]
 
             ax.scatter(
                 np.full(N, t0),

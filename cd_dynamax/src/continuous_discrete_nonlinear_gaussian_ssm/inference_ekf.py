@@ -25,6 +25,7 @@ from cd_dynamax.dynamax.utils.utils import psd_solve
 from cd_dynamax.dynamax.linear_gaussian_ssm.inference import (
     PosteriorGSSMFiltered,
     PosteriorGSSMSmoothed,
+    validate_filtered_posterior_output_fields,
 )
 
 # Our codebase
@@ -43,6 +44,19 @@ from ..utils.debug_utils import psd, lax_scan
 tfb = tfp.bijectors
 
 DEBUG = False
+
+
+EKF_FILTER_OUTPUT_FIELDS = (
+    "marginal_loglik",
+    "filtered_means",
+    "filtered_covariances",
+    "predicted_means",
+    "predicted_covariances",
+    "y_pred_mean",
+    "y_pred_cov",
+    "y_obs_pred_mean",
+    "y_obs_pred_cov",
+)
 
 #### Helper functions
 # Helper functions --- from dynamax
@@ -275,6 +289,15 @@ def _condition_on(
     return mu_cond, psd(Sigma_cond, warn=warn)
 
 
+def _emission_predicted_moments(m, P, h, H, u, t, warn: bool = True):
+    """Compute the EKF Gaussian approximation to the predictive emission moments."""
+
+    H_x = H(m, u, t)
+    y_pred_mean = h(m, u, t)
+    y_pred_cov = psd(H_x @ P @ H_x.T, warn=warn)
+    return y_pred_mean, y_pred_cov
+
+
 # EKF filtering main function
 def extended_kalman_filter(
     params: ParamsCDNLGSSM,
@@ -308,15 +331,28 @@ def extended_kalman_filter(
         filter_hyperparams: hyper-parameters of the EKF, related to the approximation order
         inputs: optional array of inputs.
         num_iter: number of linearizations around posterior for update step (default 1).
-        output_fields: list of fields to return in posterior object.
-            These can take the values "filtered_means", "filtered_covariances",
-            "predicted_means", "predicted_covariances", and "marginal_loglik".
+        output_fields: list of top-level posterior fields to return.
+            Options:
+            `"filtered_means"` (default)
+            `"filtered_covariances"` (default)
+            `"predicted_means"` (default)
+            `"predicted_covariances"` (default)
+            `"marginal_loglik"`
+            `"y_pred_mean"`
+            `"y_pred_cov"`
+            `"y_obs_pred_mean"`
+            `"y_obs_pred_cov"`
         warn: whether to issue warnings during filtering (e.g., PSD issues).
 
     Returns:
         filtered_posterior: posterior object.
 
     """
+
+    # Figure out timestamps, as vectors to scan over
+    validate_filtered_posterior_output_fields(
+        "extended_kalman_filter", output_fields, EKF_FILTER_OUTPUT_FIELDS
+    )
 
     # Figure out timestamps, as vectors to scan over
     # t_emissions is of shape num_timesteps \times 1
@@ -363,14 +399,14 @@ def extended_kalman_filter(
         y = emissions[t0_idx]
         R = params.emissions.emission_cov.f(None, u, t0)
 
-        # Update the log likelihood
-        # According to first order EKF update,
-        # using Jacobian at predicted mean, inputs and time
-        H_x = H(pred_mean, u, t0)
-        # Log likelihood increment, given by Gaussian at observed emission
-        ll += MVN(h(pred_mean, u, t0), H_x @ pred_cov @ H_x.T + R).log_prob(
-            jnp.atleast_1d(y)
+        y_pred_mean, y_pred_cov = _emission_predicted_moments(
+            pred_mean, pred_cov, h, H, u, t0, warn=warn
         )
+        y_obs_pred_mean = y_pred_mean
+        y_obs_pred_cov = psd(y_pred_cov + R, warn=warn)
+
+        # Log likelihood increment under the Gaussianized predictive emission model.
+        ll += MVN(y_obs_pred_mean, y_obs_pred_cov).log_prob(jnp.atleast_1d(y))
 
         # Condition on this emission
         filtered_mean, filtered_cov = _condition_on(
@@ -407,6 +443,10 @@ def extended_kalman_filter(
             "predicted_means": pred_mean,
             "predicted_covariances": pred_cov,
             "marginal_loglik": ll,
+            "y_pred_mean": y_pred_mean,
+            "y_pred_cov": y_pred_cov,
+            "y_obs_pred_mean": y_obs_pred_mean,
+            "y_obs_pred_cov": y_obs_pred_cov,
         }
         outputs = {key: val for key, val in outputs.items() if key in output_fields}
 
@@ -457,7 +497,17 @@ def iterated_extended_kalman_filter(
         filter_hyperparams: hyper-parameters of the EKF, related to the approximation order
         inputs: optional array of inputs.
         num_iter: number of linearizations around posterior for update step (default 2).
-        output_fields: list of fields to return in posterior object.
+        output_fields: list of top-level posterior fields to return.
+            Options:
+            `"filtered_means"` (default)
+            `"filtered_covariances"` (default)
+            `"predicted_means"` (default)
+            `"predicted_covariances"` (default)
+            `"marginal_loglik"`
+            `"y_pred_mean"`
+            `"y_pred_cov"`
+            `"y_obs_pred_mean"`
+            `"y_obs_pred_cov"`
         warn: whether to issue warnings during filtering (e.g., PSD issues).
     Returns:
         post: posterior object.
@@ -896,7 +946,10 @@ def forecast_extended_kalman_filter(
         t_forecast: continuous-time specific time instants to forecast
         filter_hyperparams: hyper-parameters of the EKF, related to the approximation order
         inputs: optional array of inputs.
-        output_fields: list of fields to return
+        output_fields: list of fields to return.
+            Options:
+            `"forecasted_state_means"` (default)
+            `"forecasted_state_covariances"` (default)
         warn: whether to issue warnings (e.g., about PSD issues)
 
     Returns:

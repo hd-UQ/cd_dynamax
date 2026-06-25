@@ -151,6 +151,13 @@ def unscented_kalman_filter(
         emissions: array of observations.
         hyperparams: hyper-parameters.
         inputs: optional array of inputs.
+        output_fields: list of fields to return in posterior object.
+            Options:
+            `"filtered_means"` (default)
+            `"filtered_covariances"` (default)
+            `"predicted_means"` (default)
+            `"predicted_covariances"` (default)
+            `"marginal_loglik"`
 
     Returns:
         filtered_posterior: posterior object.
