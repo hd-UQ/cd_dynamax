@@ -312,7 +312,7 @@ def _emission_predicted_moments(m, P, h, lamb, w_mean, w_cov, u, t, warn: bool =
 
 
 def _condition_on(m, P, h, R, lamb, w_mean, w_cov, u, y, t, warn: bool = True):
-    """Condition a Gaussian potential on a new observation,
+    r"""Condition a Gaussian potential on a new observation,
         using additive UKF approximations.
 
     Args:
@@ -494,7 +494,6 @@ def unscented_kalman_filter(
             "filtered_covariances": filtered_cov,
             "predicted_means": pred_mean,
             "predicted_covariances": pred_cov,
-            "marginal_loglik": ll,
             "y_pred_mean": y_pred_mean,
             "y_pred_cov": y_pred_cov,
             "y_obs_pred_mean": y_obs_pred_mean,
@@ -510,7 +509,7 @@ def unscented_kalman_filter(
     # Run the UKF filter, via lax.scan
     (ll, *_), outputs = lax.scan(_step, carry, (t0, t1, t0_idx))
     # Build and return posterior object
-    outputs = {"marginal_loglik": ll, **outputs}
+    outputs = {**outputs, "marginal_loglik": ll}
     posterior_filtered = PosteriorGSSMFiltered(
         **outputs,
     )

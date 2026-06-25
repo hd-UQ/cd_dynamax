@@ -105,3 +105,30 @@ def test_linear_filter_rejects_unsupported_output_field():
             output_fields=["y_ens_pred"],
             warn=False,
         )
+
+
+def test_linear_filter_requested_marginal_loglik_is_scalar_total():
+    _, params, emissions, t_emissions = _make_test_problem()
+
+    posterior_default = cdlgssm_filter(
+        params=params,
+        emissions=emissions,
+        t_emissions=t_emissions,
+        filter_hyperparams=KFHyperParams(),
+        warn=False,
+    )
+    posterior_requested = cdlgssm_filter(
+        params=params,
+        emissions=emissions,
+        t_emissions=t_emissions,
+        filter_hyperparams=KFHyperParams(),
+        output_fields=["marginal_loglik", "filtered_means"],
+        warn=False,
+    )
+
+    assert jnp.shape(posterior_requested.marginal_loglik) == ()
+    assert jnp.ndim(posterior_requested.marginal_loglik) == 0
+    assert jnp.allclose(
+        posterior_requested.marginal_loglik, posterior_default.marginal_loglik
+    )
+    assert posterior_requested.filtered_means.shape == (3, 1)

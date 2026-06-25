@@ -146,7 +146,6 @@ def extended_kalman_filter(
             "filtered_covariances": filtered_cov,
             "predicted_means": pred_mean,
             "predicted_covariances": pred_cov,
-            "marginal_loglik": ll,
         }
         outputs = {key: val for key, val in outputs.items() if key in output_fields}
 
@@ -155,7 +154,7 @@ def extended_kalman_filter(
     # Run the extended Kalman filter
     carry = (0.0, params.initial_mean, params.initial_covariance)
     (ll, *_), outputs = lax.scan(_step, carry, jnp.arange(num_timesteps))
-    outputs = {"marginal_loglik": ll, **outputs}
+    outputs = {**outputs, "marginal_loglik": ll}
     posterior_filtered = PosteriorGSSMFiltered(
         **outputs,
     )

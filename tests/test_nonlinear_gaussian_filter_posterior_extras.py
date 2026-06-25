@@ -202,6 +202,79 @@ def test_enkf_posterior_extras_are_not_returned_by_default():
 
 
 @pytest.mark.parametrize(
+    ("filter_fn", "filter_hyperparams"),
+    [
+        (extended_kalman_filter, EKFHyperParams(state_order="first")),
+        (unscented_kalman_filter, UKFHyperParams(state_order="first")),
+        (
+            ensemble_kalman_filter,
+            EnKFHyperParams(N_particles=32, perturb_measurements=False),
+        ),
+    ],
+)
+def test_requested_marginal_loglik_is_scalar_total(filter_fn, filter_hyperparams):
+    params, emissions, t_emissions = _make_test_problem()
+
+    default_kwargs = dict(
+        params=params,
+        emissions=emissions,
+        t_emissions=t_emissions,
+        filter_hyperparams=filter_hyperparams,
+        warn=False,
+    )
+    requested_kwargs = dict(
+        params=params,
+        emissions=emissions,
+        t_emissions=t_emissions,
+        filter_hyperparams=filter_hyperparams,
+        output_fields=["marginal_loglik", "filtered_means"],
+        warn=False,
+    )
+    if filter_fn is ensemble_kalman_filter:
+        default_kwargs["key"] = jr.PRNGKey(0)
+        requested_kwargs["key"] = jr.PRNGKey(0)
+
+    posterior_default = filter_fn(**default_kwargs)
+    posterior_requested = filter_fn(**requested_kwargs)
+
+    assert jnp.shape(posterior_requested.marginal_loglik) == ()
+    assert jnp.ndim(posterior_requested.marginal_loglik) == 0
+    assert jnp.allclose(
+        posterior_requested.marginal_loglik, posterior_default.marginal_loglik
+    )
+    assert posterior_requested.filtered_means.shape == (3, 1)
+
+
+def test_cdnlgssm_filter_requested_marginal_loglik_is_scalar_total():
+    params, emissions, t_emissions = _make_test_problem()
+
+    posterior_default = cdnlgssm_filter(
+        params=params,
+        emissions=emissions,
+        t_emissions=t_emissions,
+        filter_hyperparams=EKFHyperParams(state_order="first"),
+        key=jr.PRNGKey(0),
+        warn=False,
+    )
+    posterior_requested = cdnlgssm_filter(
+        params=params,
+        emissions=emissions,
+        t_emissions=t_emissions,
+        filter_hyperparams=EKFHyperParams(state_order="first"),
+        output_fields=["marginal_loglik", "filtered_means"],
+        key=jr.PRNGKey(0),
+        warn=False,
+    )
+
+    assert jnp.shape(posterior_requested.marginal_loglik) == ()
+    assert jnp.ndim(posterior_requested.marginal_loglik) == 0
+    assert jnp.allclose(
+        posterior_requested.marginal_loglik, posterior_default.marginal_loglik
+    )
+    assert posterior_requested.filtered_means.shape == (3, 1)
+
+
+@pytest.mark.parametrize(
     ("filter_fn", "filter_hyperparams", "output_field", "filter_name"),
     [
         (

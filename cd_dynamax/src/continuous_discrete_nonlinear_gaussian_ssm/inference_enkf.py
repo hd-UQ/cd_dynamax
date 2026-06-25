@@ -562,7 +562,7 @@ def ensemble_kalman_filter(
     # Run the Ensemble Kalman Filter, via lax.scan
     (ll_total, *_), outputs = lax.scan(_step, carry, (key_times, t0, t1, t0_idx))
     # Build and return posterior object
-    outputs = {"marginal_loglik": ll_total, **outputs}
+    outputs = {**outputs, "marginal_loglik": ll_total}
     posterior_filtered = PosteriorGSSMFiltered(
         **outputs,
     )

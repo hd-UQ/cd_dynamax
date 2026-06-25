@@ -503,7 +503,7 @@ def cdlgssm_filter(
     carry = (0.0, params.initial.mean, params.initial.cov)
     # Scan over all time steps
     (ll, _, _), outputs = lax.scan(_step, carry, (t0, t1, t0_idx))
-    outputs = {"marginal_loglik": ll, **outputs}
+    outputs = {**outputs, "marginal_loglik": ll}
 
     # Return the posterior object
     return PosteriorGSSMFiltered(**outputs)
