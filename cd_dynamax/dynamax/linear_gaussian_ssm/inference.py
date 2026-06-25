@@ -124,15 +124,15 @@ class PosteriorGSSMFiltered(NamedTuple):
     :param filtered_covariances: array of filtered covariances $\mathrm{Cov}[x_t \mid y_{1:t}, u_{1:t}]$
     :param predicted_means: optional array of one-step-ahead state means $\mathbb{E}[x_{t+1} \mid y_{1:t}, u_{1:t}]$
     :param predicted_covariances: optional array of one-step-ahead state covariances $\mathrm{Cov}[x_{t+1} \mid y_{1:t}, u_{1:t}]$
-    :param filtered_ensembles: optional array of filtered state ensembles approximating $p(x_t \mid y_{1:t}, u_{1:t})$
-    :param predicted_ensembles: optional array of one-step-ahead predicted state ensembles approximating $p(x_{t+1} \mid y_{1:t}, u_{1:t})$
-    :param y_pred_mean: optional array of predictive emission means for $p(y_t \mid y_{1:t-1}, u_{1:t})$, before adding observation noise
-    :param y_pred_cov: optional array of predictive emission covariances for $p(y_t \mid y_{1:t-1}, u_{1:t})$, before adding observation noise
+    :param filtered_ensembles: When filtering with EnKF, optional array of filtered state ensembles approximating $p(x_t \mid y_{1:t}, u_{1:t})$
+    :param predicted_ensembles: When filtering with EnKF, optional array of one-step-ahead predicted state ensembles approximating $p(x_{t+1} \mid y_{1:t}, u_{1:t})$
+    :param y_pred_mean: optional array of predictive emission means for $p(h(x_t) \mid y_{1:t-1}, u_{1:t})$,  i.e., before adding observation noise to h(x_t)
+    :param y_pred_cov: optional array of predictive emission covariances for $p(h(x_t) \mid y_{1:t-1}, u_{1:t})$, i.e., before adding observation noise to h(x_t)
     :param y_obs_pred_mean: optional array of predictive observation means for $p(y_t \mid y_{1:t-1}, u_{1:t})$
     :param y_obs_pred_cov: optional array of predictive observation covariances for $p(y_t \mid y_{1:t-1}, u_{1:t})$, including observation noise
-    :param y_ens_pred: optional array of predictive emission ensembles for observation time $t$, obtained from the predicted state ensemble for $x_{t \mid t-1}$
-    :param y_obs_ens_pred: optional array of predictive observation ensembles for observation time $t$, obtained by adding sampled observation noise to `y_ens_pred`
-    :param posterior_extras: optional dictionary of filter-specific per-step diagnostics that do not fit the standard filtered posterior schema
+    :param y_ens_pred: When filtering with EnKF, optional array of predictive emission ensembles for observation time $t$, obtained from the predicted state ensemble for $x_{t \mid t-1}$
+    :param y_obs_ens_pred: When filtering with EnKF, optional array of predictive observation ensembles for observation time $t$, obtained by adding sampled observation noise to `y_ens_pred`
+    :param posterior_extras: When filtering with EnKF, optional dictionary of filter-specific per-step diagnostics that do not fit the standard filtered posterior schema
 
     """
     # Default attributes
