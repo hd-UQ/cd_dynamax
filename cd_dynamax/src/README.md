@@ -41,6 +41,18 @@ We provide the following modifications of the dynamax codebase, to accommodate c
 - Parameter (point)-estimation is possible via stochastic gradient descent based MLE
     - the marginal log-likelihood can be computed according to different implemented filtering methods (EKF, UKF, EnKF)
 
+## [Continuous-Discrete Nonlinear State Space Models](./continuous_discrete_nonlinear_ssm)
+
+- We define a [ContDiscreteNonlinearSSM model](./continuous_discrete_nonlinear_ssm/models.py#L102)
+    - This interface supports generic initial conditions and generic observation distributions, not just Gaussian ones
+    - Dynamics and emission laws can depend on state, optional inputs, and time
+    - It is the nonlinear CD-SSM entry point to use when $p(x_0; \varphi_{x_0})$ or $p(y_{t_k} \mid x_{t_k}, u_{t_k}, t_k; \varphi_y)$ is non-Gaussian
+
+- We implement [differentiable particle filtering](./continuous_discrete_nonlinear_ssm/inference_dpf.py) for this model family
+    - This is the inference path currently used for nonlinear CD-SSMs with generic observation distributions
+
+- The codebase includes utilities for non-Gaussian emissions such as [LearnablePoissonEmission](./continuous_discrete_nonlinear_ssm/cdnlssm_utils.py#L81)
+
 ## [utils](./utils)
 
 - cd-dynamax example model defintions:
@@ -71,4 +83,3 @@ We provide the following modifications of the dynamax codebase, to accommodate c
     - [simulation_utils.py](./utils/simulation_utils.py)
     - [prior_utils.py](./utils/prior_utils.py)
     - [likelihood_eval_utils.py](./utils/likelihood_eval_utils.py)
-

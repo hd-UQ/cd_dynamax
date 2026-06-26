@@ -7,12 +7,13 @@ The codebase is organized into several key directories:
 ├── src/                       # Source code for cd-dynamax library
 │   ├── continuous_discrete_linear_gaussian_ssm/  # CD-LGSSM models and algorithms
 │   ├── continuous_discrete_nonlinear_gaussian_ssm/ # CD-NLGSSM models and algorithms
+│   ├── continuous_discrete_nonlinear_ssm/ # CD-NLSSM models with generic initial/emission distributions
 │   ├── ssm_temissions.py      # Modified SSM class for discrete emissions
 │   └── utils/               # Utility functions and example models
 ├── dynamax/                     # Original dynamax library (as a submodule)
 ```
 
-The `src` directory contains the main implementation of continuous-discrete state space models, including both linear and nonlinear Gaussian models, along with their associated filtering and smoothing algorithms.
+The `src` directory contains the main implementation of continuous-discrete state space models, including linear Gaussian models, nonlinear Gaussian models, and nonlinear models with generic initial/emission distributions, along with their associated filtering and smoothing algorithms.
 
 The `dynamax` directory contains the original `dynamax` library, which is used as a foundation for building the `cd-dynamax` extensions.
     - Precisely, we have included `dynamax` as in git submodule, to ensure compatibility and ease of updates.
