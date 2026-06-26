@@ -442,7 +442,6 @@ def extended_kalman_filter(
             "filtered_covariances": filtered_cov,
             "predicted_means": pred_mean,
             "predicted_covariances": pred_cov,
-            "marginal_loglik": ll,
             "y_pred_mean": y_pred_mean,
             "y_pred_cov": y_pred_cov,
             "y_obs_pred_mean": y_obs_pred_mean,
