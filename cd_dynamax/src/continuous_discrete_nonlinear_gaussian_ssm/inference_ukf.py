@@ -509,7 +509,7 @@ def unscented_kalman_filter(
     # Run the UKF filter, via lax.scan
     (ll, *_), outputs = lax.scan(_step, carry, (t0, t1, t0_idx))
     # Build and return posterior object
-    outputs = {**outputs, "marginal_loglik": ll}
+    outputs = {"marginal_loglik": ll, **outputs}
     posterior_filtered = PosteriorGSSMFiltered(
         **outputs,
     )

@@ -211,7 +211,7 @@ def unscented_kalman_filter(
     # Run the Unscented Kalman Filter
     carry = (0.0, params.initial_mean, params.initial_covariance)
     (ll, *_), outputs = lax.scan(_step, carry, jnp.arange(num_timesteps))
-    outputs = {**outputs, "marginal_loglik": ll}
+    outputs = {"marginal_loglik": ll, **outputs}
     posterior_filtered = PosteriorGSSMFiltered(
         **outputs,
     )

@@ -457,7 +457,7 @@ def extended_kalman_filter(
     # Run the extended Kalman filter, via lax.scan
     (ll, *_), outputs = lax_scan(_step, carry, (t0, t1, t0_idx), debug=DEBUG)
     # Build and return posterior object
-    outputs = {**outputs, "marginal_loglik": ll}
+    outputs = {"marginal_loglik": ll, **outputs}
     posterior_filtered = PosteriorGSSMFiltered(
         **outputs,
     )
