@@ -1,5 +1,10 @@
 # Overview of cd-dynamax
 
+[![PyPI version](https://img.shields.io/pypi/v/cd-dynamax.svg)](https://pypi.org/project/cd-dynamax/)
+[![Python versions](https://img.shields.io/badge/python-3.11%2B-blue.svg)](https://pypi.org/project/cd-dynamax/)
+[![Tests](https://img.shields.io/github/actions/workflow/status/hd-UQ/cd_dynamax/tests.yml?branch=public&label=tests)](https://github.com/hd-UQ/cd_dynamax/actions/workflows/tests.yml)
+[![License: MIT](https://img.shields.io/github/license/hd-UQ/cd_dynamax)](https://github.com/hd-UQ/cd_dynamax/blob/public/LICENSE)
+
 The primary goal of this codebase is to extend [dynamax](https://github.com/probml/dynamax) to a continuous-discrete (CD) state-space-modeling setting, that is, to problems where 
 
 - the underlying dynamics are continuous in time,
