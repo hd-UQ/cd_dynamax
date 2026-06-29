@@ -20,26 +20,30 @@ We move towards this goal by working with the following flexible mathematical se
 
 - We assume there exists a (possibly unknown) stochastic dynamical system of form
 
-$$dx(t) = f(x(t),t)dt + L(x(t),t) dw(t)$$
+$$dx(t) = f(x(t), u(t), t)dt + L(x(t), u(t), t) dw(t)$$
 
-where $x \in \mathbb{R}^{d_x}$, $x(0) \sim \mathcal{N}(\mu_0, \Sigma_0)$, $f$ a possibly time-dependent drift function, $L$ a possibly state and/or time-dependent diffusion coefficient, and $dw$ is the derivative of a $d_x$-dimensional Brownian motion with a covariance $Q$.
+where $x \in \mathbb{R}^{d_x}$, $x(0) \sim p(x_0; \varphi_{x_0})$, $f$ is a possibly time-dependent drift function, $L$ is a possibly state and/or time-dependent diffusion coefficient, $u(t)$ denotes optional input covariates, and $dw$ is the derivative of a $d_x$-dimensional Brownian motion with covariance $Q$.
 
 - We assume data are available at arbitrary times $\\{t_k\\}_{k=1}^K$ and observed via a measurement process dictated by
 
-$$y(t) = h(x(t)) + \eta(t)$$
+$$p(y(t_k) \mid x(t_k), u(t_k), t_k; \varphi_y)$$
 
-where $h: \mathbb{R}^{d_x} \mapsto \mathbb{R}^{d_y}$ creates a $d_y$-dimensional observation from the $d_x$-dimensional state of the dynamical system $x(t)$ (a realization of the above SDE), and $\eta(t)$ applies additive Gaussian noise to the observation.
+The library provides the Gaussian model classes `ContDiscreteLinearGaussianSSM` and `ContDiscreteNonlinearGaussianSSM`, together with a `ContDiscreteNonlinearSSM` class for generic initial conditions and observation distributions.
 
-We denote the collection of all parameters as $\theta = \\{f,\\  L,\\  \mu_0,\\  \Sigma_0,\\  Q,\\  h,\\  \textrm{Law}(\eta) \\}$.
+We denote the collection of all parameters as $\theta = \\{f,\\  L,\\  \varphi_{x_0},\\  Q,\\  \varphi_y \\}$.
 
 Note:
 
-- We assume $\eta(t)$ i.i.d. w.r.t. $t$:
-    - This assumption places us in the *continuous (dynamics) - discrete (observation)* setting.
-    - If $\eta(t)$ had temporal correlations, we would likely adopt a mathematical setting that defines the observation process continuously in time via its own SDE.
+- The Gaussian model classes `ContDiscreteLinearGaussianSSM` and `ContDiscreteNonlinearGaussianSSM` use Gaussian observation noise.
+    - At a high level, $\varphi_y$ collects the corresponding emission mean and covariance parameters.
+    - These models remain in the standard *continuous (dynamics) - discrete (observation)* setting with conditionally independent observation noise across observation times.
 
-- Other extensions of the above paradigm include categorical state-spaces and non-additive observation noise distributions
-    - These can fit into our code framework (indeed, some are covered in `dynamax`), but have not been our focus.
+- `ContDiscreteNonlinearSSM` supports generic initial conditions and generic observation distributions for nonlinear CD-SSMs.
+    - These observation distributions can depend on state, inputs, and time.
+    - This includes non-Gaussian emissions such as Poisson observations.
+
+- Other extensions of the overall framework include categorical state spaces and additional non-Gaussian observation models.
+    - These can fit into our broader code framework, and some related cases are already covered in `dynamax`, but they have not been our main focus here.
 
 ## cd-dynamax goals and approach
 
@@ -70,7 +74,7 @@ The `cd-dynamax` codebase extends the `dynamax` library to support continuous-di
 - We leverage [dynamax](https://github.com/probml/dynamax) code
     - Currently, based on a local directory with [Dynamax release 0.1.5](https://github.com/probml/dynamax/releases/tag/0.1.5)
 
-- We have implemented the [`cd-dynamax` codebase](./cd_dynamax/README.md) to deal with [continuous-discrete linear and non-linear models](./cd_dynamax/src/README.md), along with several filtering and smoothing algorithms.
+- We have implemented the [`cd-dynamax` codebase](./cd_dynamax/README.md) to deal with [continuous-discrete linear, nonlinear Gaussian, and generic nonlinear models](./cd_dynamax/src/README.md), along with several filtering and smoothing algorithms.
 
 - The codebase is organized into several key directories:
 ```
@@ -79,6 +83,7 @@ The `cd-dynamax` codebase extends the `dynamax` library to support continuous-di
 │   ├── src/                     # Core source code
 │   │   ├── continuous_discrete_linear_gaussian_ssm/  # CD-LGSSM models and algorithms
 │   │   ├── continuous_discrete_nonlinear_gaussian_ssm/ # CD-NLGSSM models and algorithms
+│   │   ├── continuous_discrete_nonlinear_ssm/ # CD-NLSSM models with generic initial/emission distributions
 │   │   ├── ssm_temissions.py    # Modified SSM class for discrete emissions
 │   │   └── utils/               # Utility functions and example models
 │   └── dynamax/                 # Original dynamax library (as a submodule)
@@ -205,4 +210,3 @@ Check the [JAX installation docs](https://jax.readthedocs.io/en/latest/installat
     ```bash
     pytest
     ```
-

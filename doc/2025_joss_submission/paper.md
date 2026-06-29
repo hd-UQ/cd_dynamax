@@ -56,19 +56,17 @@ Dynamical systems describe complex phenomena in fields including engineering, ec
 - A (possibly unknown) stochastic dynamical system, i.e.,
   $$dx(t) = f\left(x(t), u(t), t\right),\ dt + L\left(x(t), u(t), t\right),\ dw(t) \;,$$
   where:
-    - $x(t) \in \mathbb{R}^{d_x}$ and $x(0) \sim P(x_0)$,
+    - $x(t) \in \mathbb{R}^{d_x}$ and $x(0) \sim p(x_0; \varphi_{x_0})$,
     - $u(t) \in \mathbb{R}^{d_u}$ is an external input (i.e., control) signal,
     - $f: \mathbb{R}^{d_x} \times \mathbb{R}^{d_u} \times \mathbb{R} \to \mathbb{R}^{d_x}$ is the drift function,
     - $L: \mathbb{R}^{d_x} \times \mathbb{R}^{d_u} \times \mathbb{R} \to \mathbb{R}^{d_x \times d_w}$ is the diffusion coefficient, and
     - $dw$ is the derivative of a $d_w$-dimensional Brownian motion with covariance $Q$.
 
-- Data observed at arbitrary times $\{t_k\}_{k=1}^K$ via a measurement process
-  $$y(t) = h(x(t), u(t), t) + \eta(t) \;,$$
-  where:
-    - $h: \mathbb{R}^{d_x} \times \mathbb{R}^{d_u} \times \mathbb{R} \to \mathbb{R}^{d_y}$ transforms the $d_x$-dimensional latent state to a $d_y$-dimensional observation, and
-    - $\eta(t)$ is an independent and identically distributed noise process corrupting the observations.
+- Data observed at arbitrary times $\{t_k\}_{k=1}^K$ via
+  $$p\left(y(t_k) \mid x(t_k), u(t_k), t_k; \varphi_y\right) \;.$$
+  Gaussian subclasses recover $y(t_k) = h(x(t_k), u(t_k), t_k) + \eta_k$, where $h: \mathbb{R}^{d_x} \times \mathbb{R}^{d_u} \times \mathbb{R} \to \mathbb{R}^{d_y}$ and $\eta_k$ are conditionally independent Gaussian noises.
 
-We denote the collection of all parameters --- including those of the initial state distribution $P(x_0)$, latent dynamics $f$, $L$, and $Q$, and observation model $h$ and $p(\eta(t))$ --- as the vector $\theta$.
+We denote the collection of all parameters as $\theta = \{f,\ L,\ \varphi_{x_0},\ Q,\ \varphi_y\}$.
 
 For discrete-time observations $Y_K = [y(t_1),\ \dots ,\ y(t_K)]$ and inputs $U_K = [u(t_1), \dots, u(t_K)]$ of a CD-SSM, where inputs are assumed piecewise constant between observation instants, i.e., $u(t) = u(t_k)$ for $t \in [t_k, t_{k+1})$, the main inference and learning objectives are:
 
