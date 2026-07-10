@@ -87,13 +87,13 @@ class RBPFiltered(NamedTuple):
     :param weights: weights of the particles.
     :param means: array of filtered means $\mathbb{E}[z_t \mid y_{1:t}, u_{1:t}]$
     :param covariances: array of filtered covariances $\mathrm{Cov}[z_t \mid y_{1:t}, u_{1:t}]$
-    :param states: array of sampled discrete state sequences (particles) $$.
+    :param states: integer array of sampled discrete states with shape $(\mathrm{ntime}, \mathrm{num\_particles})$.
     """
     marginal_loglik: Optional[Float[Array, ""]] = None
-    weights: Optional[Float[Array, "num_particles ntime"]] = None
-    states: Optional[Int[Array, "num_particles ntime num_states"]] = None
-    means: Optional[Float[Array, "num_particles ntime state_dim"]] = None
-    covariances: Optional[Float[Array, "num_particles ntime state_dim state_dim"]] = None
+    weights: Optional[Float[Array, "ntime num_particles"]] = None
+    states: Optional[Int[Array, "ntime num_particles"]] = None
+    means: Optional[Float[Array, "ntime num_particles state_dim"]] = None
+    covariances: Optional[Float[Array, "ntime num_particles state_dim state_dim"]] = None
 
     def __getitem__(self, key):
         return getattr(self, key) if isinstance(key, str) else tuple.__getitem__(self, key)
