@@ -1,6 +1,7 @@
 import jax.numpy as jnp
 import jax.random as jr
 from jax import lax, vmap, jit
+from jax.scipy.special import logsumexp
 from tensorflow_probability.substrates.jax.distributions import MultivariateNormalFullCovariance as MVN
 from functools import partial
 from jaxtyping import Array, Float, Int
@@ -82,15 +83,20 @@ class ParamsSLDS(NamedTuple):
 
 class RBPFiltered(NamedTuple):
     r"""RBPF posterior.
+    :param marginal_loglik: approximate marginal log likelihood from the particle-filter normalizers.
     :param weights: weights of the particles.
     :param means: array of filtered means $\mathbb{E}[z_t \mid y_{1:t}, u_{1:t}]$
     :param covariances: array of filtered covariances $\mathrm{Cov}[z_t \mid y_{1:t}, u_{1:t}]$
-    :param states: array of sampled discrete state sequences (particles) $$.
+    :param states: integer array of sampled discrete states with shape $(\mathrm{ntime}, \mathrm{num\_particles})$.
     """
-    weights: Optional[Float[Array, "num_particles ntime"]] = None
-    states: Optional[Int[Array, "num_particles ntime num_states"]] = None
-    means: Optional[Float[Array, "num_particles ntime state_dim"]] = None
-    covariances: Optional[Float[Array, "num_particles ntime state_dim state_dim"]] = None
+    marginal_loglik: Optional[Float[Array, ""]] = None
+    weights: Optional[Float[Array, "ntime num_particles"]] = None
+    states: Optional[Int[Array, "ntime num_particles"]] = None
+    means: Optional[Float[Array, "ntime num_particles state_dim"]] = None
+    covariances: Optional[Float[Array, "ntime num_particles state_dim state_dim"]] = None
+
+    def __getitem__(self, key):
+        return getattr(self, key) if isinstance(key, str) else tuple.__getitem__(self, key)
    
 
 def resampling(weights, states, means, covariances, key):                                                                  
@@ -208,6 +214,7 @@ def rbpfilter(
         lls, filtered_means, filtered_covs = vmap(_conditional_kalman_step, in_axes = (0, 0, 0, None, None, None))(new_states, filtered_means, filtered_covs, params.linear_gaussian, u, y)
 
         # Compute weights
+        marginal_loglik = logsumexp(jnp.log(weights) + lls)
         lls -= jnp.max(lls)
         loglik_weights = jnp.exp(lls)
         weights = jnp.multiply(loglik_weights.T, weights)
@@ -219,10 +226,11 @@ def rbpfilter(
                                                                                 weights, new_states, filtered_means, filtered_covs, next_key)
 
         # Build carry and output states
-        carry = (weights, prev_states, filtered_means, filtered_covs, next_key)
+        carry = (weights, new_states, filtered_means, filtered_covs, next_key)
         outputs = {
+            "marginal_loglik": marginal_loglik,
             "weights": weights,
-            "states": prev_states,
+            "states": new_states,
             "means": filtered_means,
             "covariances": filtered_covs
         }
@@ -247,7 +255,12 @@ def rbpfilter(
     
     _, out = lax.scan(_step, carry, jnp.arange(num_timesteps))
 
-    return out
+    return RBPFiltered(
+        marginal_loglik=out["marginal_loglik"].sum(),
+        weights=out["weights"],
+        states=out["states"],
+        means=out["means"],
+        covariances=out["covariances"])
 
 def rbpfilter_optimal(
     num_particles: int,
@@ -289,6 +302,9 @@ def rbpfilter_optimal(
         lls, filtered_means, filtered_covs = vmap(_vec_kalman_step, in_axes=(0, 0))(filtered_means, filtered_covs)
 
         # Compute weights
+        marginal_loglik = logsumexp(
+            jnp.log(weights)[:, None] + jnp.log(params.discrete.transition_matrix[prev_states, :]) + lls
+        )
         lls -= jnp.max(lls)
         loglik_weights = jnp.exp(lls)
         trans_weights = params.discrete.transition_matrix[prev_states, :]
@@ -310,6 +326,7 @@ def rbpfilter_optimal(
         # Build carry and output states
         carry = (res_weights, new_states, filtered_means, filtered_covs, next_key)
         outputs = {
+            "marginal_loglik": marginal_loglik,
             "weights": res_weights,
             "states": new_states,
             "means": filtered_means,
@@ -336,4 +353,9 @@ def rbpfilter_optimal(
     
     _, out = lax.scan(_step, carry, jnp.arange(num_timesteps))
 
-    return out
+    return RBPFiltered(
+        marginal_loglik=out["marginal_loglik"].sum(),
+        weights=out["weights"],
+        states=out["states"],
+        means=out["means"],
+        covariances=out["covariances"])
