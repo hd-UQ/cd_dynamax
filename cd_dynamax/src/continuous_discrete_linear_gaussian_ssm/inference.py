@@ -152,6 +152,7 @@ def preprocess_args(f):
         inputs = bound_args.arguments["inputs"]
         warn = bound_args.arguments["warn"]
         output_fields = bound_args.arguments.get("output_fields")
+        emission_mask = bound_args.arguments.get("emission_mask")
 
         num_timesteps = len(emissions)
         full_params, inputs = preprocess_params_and_inputs(
@@ -165,6 +166,7 @@ def preprocess_args(f):
             filter_hyperparams=filter_hyperparams,
             inputs=inputs,
             warn=warn,
+            emission_mask=emission_mask,
         )
         if output_fields is not None:
             call_kwargs["output_fields"] = output_fields
@@ -378,6 +380,7 @@ def cdlgssm_filter(
         "predicted_covariances",
     ],
     warn: bool = True,
+    emission_mask: Optional[Array] = None,
 ) -> PosteriorGSSMFiltered:
     r"""Run a Continuous Discrete Kalman filter
         to produce the marginal likelihood and filtered state estimates.
@@ -388,6 +391,10 @@ def cdlgssm_filter(
         t_emissions: continuous-time specific time instants of observations: if not None, it is an array
         filter_hyperparams: hyperparameters for the filter.
         inputs: optional array of inputs.
+        emission_mask: optional Boolean mask with shape `(num_timesteps,)`,
+            `(num_timesteps, 1)`, or the same shape as `emissions`. False
+            coordinates are excluded from the update and likelihood; their
+            emission values may be arbitrary, including `NaN`.
         output_fields: list of top-level posterior fields to return.
             Options:
             `"filtered_means"` (default)
@@ -411,6 +418,19 @@ def cdlgssm_filter(
     validate_filtered_posterior_output_fields(
         "cdlgssm_filter", output_fields, CDLGSSM_FILTER_OUTPUT_FIELDS
     )
+    if emission_mask is None:
+        emission_mask = jnp.ones_like(emissions, dtype=bool)
+    else:
+        emission_mask = jnp.asarray(emission_mask, dtype=bool)
+        if emission_mask.shape == (len(emissions),):
+            emission_mask = emission_mask[:, None]
+        if emission_mask.shape not in ((len(emissions), 1), emissions.shape):
+            raise ValueError(
+                "emission_mask must have shape (num_timesteps,), "
+                "(num_timesteps, 1), or match emissions; "
+                f"got {emission_mask.shape}."
+            )
+        emission_mask = jnp.broadcast_to(emission_mask, emissions.shape)
 
     # Figure out timestamps, as vectors to scan over
     # t_emissions is of shape num_timesteps \times 1
@@ -454,6 +474,7 @@ def cdlgssm_filter(
         # Get inputs and emissions at this time
         u = inputs[t0_idx]
         y = emissions[t0_idx]
+        mask = emission_mask[t0_idx]
 
         y_pred_mean, y_pred_cov = _emission_predicted_moments(
             pred_mean, pred_cov, H, D, d, u, warn=warn
@@ -461,12 +482,35 @@ def cdlgssm_filter(
         y_obs_pred_mean = y_pred_mean
         y_obs_pred_cov = psd(y_pred_cov + R, warn=warn)
 
-        # Update the log likelihood
-        ll += MVN(y_obs_pred_mean, y_obs_pred_cov).log_prob(y)
+        # Missing observations are replaced with 0.
+        # We then take M = diag(mask), and project observation-related quantities
+        # accordingly:
+        # H -> MH, D -> MD, d -> Md, R -> MRM+(I-M)/2π.
+        # By constructing $ R = MRM + (I - M) / 2\pi, missing observations
+        # are scored as \log N(0; 0, 1/2\pi) = 0, and no special ll correction is needed. 
+        masked_y = jnp.where(mask, y, 0.0)
+        M = jnp.diag(mask.astype(H.dtype))
+        identity = jnp.eye(len(mask), dtype=H.dtype)
+        R_full = jnp.diag(R) if R.ndim == 1 else R
+        masked_H, masked_D, masked_d = M @ H, M @ D, M @ d
+        masked_R = M @ R_full @ M + (identity - M) / (2.0 * jnp.pi)
 
-        # Condition on this emission
+        masked_y_pred_mean, masked_y_pred_cov = _emission_predicted_moments(
+            pred_mean, pred_cov, masked_H, masked_D, masked_d, u, warn=warn
+        )
+        masked_y_obs_pred_cov = psd(masked_y_pred_cov + masked_R, warn=warn)
+        ll += MVN(masked_y_pred_mean, masked_y_obs_pred_cov).log_prob(masked_y)
+
         filtered_mean, filtered_cov = _condition_on(
-            pred_mean, pred_cov, H, D, d, R, u, y, warn=warn
+            pred_mean,
+            pred_cov,
+            masked_H,
+            masked_D,
+            masked_d,
+            masked_R,
+            u,
+            masked_y,
+            warn=warn,
         )
 
         # Predict to the next time instant
@@ -598,6 +642,7 @@ def cdlgssm_smoother(
     inputs: Optional[Float[Array, "num_timesteps input_dim"]] = None,
     smoother_type: Optional[str] = "cd_smoother_1",
     warn: bool = True,
+    emission_mask: Optional[Array] = None,
 ) -> PosteriorGSSMSmoothed:
     r"""Run forward-filtering, backward-smoother to compute expectations
         under the posterior distribution on latent states.
@@ -608,6 +653,8 @@ def cdlgssm_smoother(
         emissions: array of observations.
         t_emissions: continuous-time specific time instants of observations: if not None, it is an array
         inputs: array of inputs.
+        emission_mask: optional Boolean mask indicating observed emission
+            entries. Accepted shapes and semantics match `cdlgssm_filter`.
         smoother_type:
             cd_smoother_1: Sarkka's Algorithm 3.17
             cd_smoother_2: Sarkka's Algorithm 3.18
@@ -636,7 +683,13 @@ def cdlgssm_smoother(
 
     # Run the Kalman filter
     filtered_posterior = cdlgssm_filter(
-        params, emissions, t_emissions, filter_hyperparams, inputs, warn=warn
+        params,
+        emissions,
+        t_emissions,
+        filter_hyperparams,
+        inputs,
+        warn=warn,
+        emission_mask=emission_mask,
     )
     # Unpack the filtered posterior
     ll, filtered_means, filtered_covs, *_ = filtered_posterior

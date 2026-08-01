@@ -482,6 +482,7 @@ class ContDiscreteLinearGaussianSSM(SSM):
         inputs: Optional[Float[Array, "ntime input_dim"]] = None,
         key: PRNGKey = jr.PRNGKey(0),
         warn: bool = True,
+        emission_mask: Optional[Array] = None,
     ) -> Scalar:
         r"""Compute the marginal log likelihood of a sequence of emissions under the CD-LGSSM model.
 
@@ -493,12 +494,20 @@ class ContDiscreteLinearGaussianSSM(SSM):
             inputs: optional sequence of inputs.
             key: random number generator.
             warn: whether to warn about numerical issues.
+            emission_mask: optional Boolean mask indicating observed emission
+                entries. Accepted shapes and semantics match `cdlgssm_filter`.
         Returns:
             Marginal log likelihood of the emissions, $\log p(y_{1:T})$.
         """
         # Run CD-Kalman filter to compute marginal log likelihood
         filtered_posterior = cdlgssm_filter(
-            params, emissions, t_emissions, filter_hyperparams, inputs, warn=warn
+            params,
+            emissions,
+            t_emissions,
+            filter_hyperparams,
+            inputs,
+            warn=warn,
+            emission_mask=emission_mask,
         )
         return filtered_posterior.marginal_loglik
 
@@ -517,6 +526,7 @@ class ContDiscreteLinearGaussianSSM(SSM):
             "predicted_covariances",
         ],
         warn: bool = True,
+        emission_mask: Optional[Array] = None,
     ) -> PosteriorGSSMFiltered:
         r"""Run the CD-Kalman filter to compute the filtered posterior distribution over states.
         Args:
@@ -540,6 +550,8 @@ class ContDiscreteLinearGaussianSSM(SSM):
                 top-level filtered posterior outputs. Unsupported fields raise
                 a `ValueError`.
             warn: whether to warn about numerical issues.
+            emission_mask: optional Boolean mask indicating observed emission
+                entries. Accepted shapes and semantics match `cdlgssm_filter`.
         Returns:
             filtered posterior distribution over states.
         """
@@ -553,6 +565,7 @@ class ContDiscreteLinearGaussianSSM(SSM):
             inputs,
             output_fields=output_fields,
             warn=warn,
+            emission_mask=emission_mask,
         )
 
     # High-level, user-friendly interface combining filtering and forecasting steps
@@ -565,6 +578,7 @@ class ContDiscreteLinearGaussianSSM(SSM):
         inputs_filter=None,
         inputs_forecast=None,
         warn: bool = True,
+        emission_mask_filter: Optional[Array] = None,
     ):
         r"""Run the CD-Kalman filter to compute the filtered posterior distributions over states,
         and then run forecasting from the last filtered state.
@@ -577,6 +591,9 @@ class ContDiscreteLinearGaussianSSM(SSM):
             inputs_filter: optional sequence of inputs for filtering.
             inputs_forecast: optional sequence of inputs for forecasting.
             warn: whether to warn about numerical issues.
+            emission_mask_filter: optional Boolean mask for the filtering
+                emissions. Accepted shapes and semantics match
+                `cdlgssm_filter`.
 
         Returns:
             filtered and forecasted posterior distributions over states.
@@ -589,6 +606,7 @@ class ContDiscreteLinearGaussianSSM(SSM):
             t_emissions=t_emissions_filter,
             inputs=inputs_filter,
             warn=warn,
+            emission_mask=emission_mask_filter,
         )
 
         # Initialize forecast with last filtered state
@@ -619,6 +637,7 @@ class ContDiscreteLinearGaussianSSM(SSM):
         filter_hyperparams: Optional[KFHyperParams] = KFHyperParams(),
         inputs: Optional[Float[Array, "ntime input_dim"]] = None,
         warn: bool = True,
+        emission_mask: Optional[Array] = None,
     ) -> PosteriorGSSMSmoothed:
         r"""Compute the smoothing distribution over states using the CD-Kalman smoother.
 
@@ -628,13 +647,21 @@ class ContDiscreteLinearGaussianSSM(SSM):
             t_emissions: continuous-time specific time instants of observations: if not None, it is an array
             filter_hyperparams: hyperparameters for the Kalman filter.
             inputs: optional sequence of inputs.
+            emission_mask: optional Boolean mask indicating observed emission
+                entries. Accepted shapes and semantics match `cdlgssm_filter`.
 
         Returns:
             smoothed posterior distributions over states.
         """
 
         return cdlgssm_smoother(
-            params, emissions, t_emissions, filter_hyperparams, inputs, warn=warn
+            params,
+            emissions,
+            t_emissions,
+            filter_hyperparams,
+            inputs,
+            warn=warn,
+            emission_mask=emission_mask,
         )
 
     # Sampling from the posterior distribution of states given emissions
@@ -667,6 +694,7 @@ class ContDiscreteLinearGaussianSSM(SSM):
         t_emissions: Optional[Float[Array, "ntime 1"]] = None,
         filter_hyperparams: Optional[KFHyperParams] = KFHyperParams(),
         inputs: Optional[Float[Array, "ntime input_dim"]] = None,
+        emission_mask: Optional[Array] = None,
     ) -> Tuple[Float[Array, "ntime emission_dim"], Float[Array, "ntime emission_dim"]]:
         r"""Compute marginal posterior predictive smoothing distribution for each observation.
 
@@ -676,6 +704,8 @@ class ContDiscreteLinearGaussianSSM(SSM):
             t_emissions: continuous-time specific time instants of observations: if not None, it is an array
             filter_hyperparams: hyperparameters for the Kalman filter.
             inputs: optional sequence of inputs.
+            emission_mask: optional Boolean mask indicating observed emission
+                entries. Accepted shapes and semantics match `cdlgssm_filter`.
 
         Returns:
             :posterior predictive means $\mathbb{E}[y_{t,d} \mid y_{1:T}]$ and standard deviations $\mathrm{std}[y_{t,d} \mid y_{1:T}]$
@@ -683,7 +713,12 @@ class ContDiscreteLinearGaussianSSM(SSM):
         """
         # Run CD-Kalman smoother to compute smoothed states
         posterior = cdlgssm_smoother(
-            params, emissions, t_emissions, filter_hyperparams, inputs
+            params,
+            emissions,
+            t_emissions,
+            filter_hyperparams,
+            inputs,
+            emission_mask=emission_mask,
         )
         # Compute posterior predictive for emissions
         H = params.emissions.weights
