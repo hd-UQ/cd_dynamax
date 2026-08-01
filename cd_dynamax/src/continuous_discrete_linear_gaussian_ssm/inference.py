@@ -487,7 +487,7 @@ def cdlgssm_filter(
         # accordingly:
         # H -> MH, D -> MD, d -> Md, R -> MRM+(I-M)/2π.
         # By constructing $ R = MRM + (I - M) / 2\pi, missing observations
-        # are scored as \log N(0; 0, 1/2\pi) = 0, and no special ll correction is needed. 
+        # are scored as \log N(0; 0, 1/2\pi) = 0, and no special ll correction is needed.
         masked_y = jnp.where(mask, y, 0.0)
         M = jnp.diag(mask.astype(H.dtype))
         identity = jnp.eye(len(mask), dtype=H.dtype)
