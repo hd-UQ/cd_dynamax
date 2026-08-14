@@ -53,7 +53,7 @@ include = ["cd_dynamax*"]
 [project.optional-dependencies]
 dev = [
     "pytest>=8.0",
-    "ruff",
+    "ruff<0.16.0",
     "mkdocs-material>=9.7.1",
     "mkdocs>=1.6.1,<2",
     "mypy>=1.19.1",
