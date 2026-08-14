@@ -30,7 +30,7 @@ dependencies = [
     "jaxlib>=0.6.2",
     "optax>=0.2.2",
     "equinox>=0.13",
-    "diffrax==0.6.2",
+    "diffrax>=0.7.2",
     "lineax>=0.0.8",
     "flax>=0.11",
     "blackjax>=1.2",
