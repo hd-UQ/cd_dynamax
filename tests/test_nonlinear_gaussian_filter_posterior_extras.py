@@ -1,3 +1,4 @@
+import jax
 import jax.numpy as jnp
 import jax.random as jr
 import pytest
@@ -13,6 +14,7 @@ from cd_dynamax.src.continuous_discrete_nonlinear_gaussian_ssm.inference_ekf imp
     extended_kalman_filter,
 )
 from cd_dynamax.src.continuous_discrete_nonlinear_gaussian_ssm.inference_enkf import (
+    _condition_on,
     ensemble_kalman_filter,
 )
 from cd_dynamax.src.continuous_discrete_nonlinear_gaussian_ssm.inference_ukf import (
@@ -181,6 +183,30 @@ def test_enkf_predictive_observation_moments_are_top_level_outputs():
     assert jnp.all(jnp.isfinite(posterior.y_obs_pred_cov))
     assert jnp.allclose(posterior.y_obs_pred_mean, posterior.y_pred_mean)
     assert jnp.allclose(posterior.y_obs_pred_cov, posterior.y_pred_cov + R)
+
+
+def test_enkf_covariance_inflation_is_autodifferentiable():
+    x = jnp.array([[-1.0], [0.0], [2.0]])
+
+    def loss(inflation_delta):
+        result = _condition_on(
+            key=jr.PRNGKey(0),
+            x=x,
+            h=lambda state, inputs, time: state,
+            R=jnp.array([[0.5]]),
+            u=jnp.zeros(1),
+            y=jnp.array([0.25]),
+            t=0.0,
+            perturb_measurements=False,
+            inflation_delta=inflation_delta,
+            warn=False,
+        )
+        return jnp.sum(result["x_cond"] ** 2)
+
+    gradient = jax.jit(jax.grad(loss))(jnp.array(0.0))
+
+    assert jnp.isfinite(gradient)
+    assert not jnp.isclose(gradient, 0.0)
 
 
 def test_enkf_posterior_extras_are_not_returned_by_default():
