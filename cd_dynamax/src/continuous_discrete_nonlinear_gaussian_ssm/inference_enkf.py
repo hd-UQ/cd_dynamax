@@ -81,7 +81,7 @@ class EnKFHyperParams(NamedTuple):
     N_particles: float = 25
     perturb_measurements: bool = True
     cov_rescaling: float = 1.0
-    inflation_delta: float = 0.0  # Inflation factor for ensemble spread
+    inflation_delta: Optional[float] = None  # Inflation factor for ensemble spread
     diffeqsolve_settings: dict = {}
     state_order: str = "first"
     dt_average: float = 0.1  # Average timestep for discrete state order, if applicable
@@ -206,7 +206,7 @@ def _condition_on(
     y,
     t,
     perturb_measurements=True,
-    inflation_delta=0.0,
+    inflation_delta=None,
     warn: bool = True,
 ):
     """Condition a Gaussian potential on a new observation
@@ -221,7 +221,8 @@ def _condition_on(
         y (D_obs,): observation.black
         t: time-instant of conditioning
         perturb_measurements: whether to perturb the measurements.
-        inflation_delta: inflation factor for ensemble spread.
+        inflation_delta: inflation factor for ensemble spread. If `None`,
+            inflation is disabled.
         warn: whether to warn about PSD issues.
 
     Returns:
@@ -275,7 +276,7 @@ def _condition_on(
     ll_step = MVN(y_pred_mean, y_pred_cov + R).log_prob(y)
 
     # === Inflate ensemble for assimilation if requested ===
-    if inflation_delta > 0.0:
+    if inflation_delta is not None:
         x_mean = jnp.mean(x, axis=0)
         x_inflated = x_mean + (1.0 + inflation_delta) * (x - x_mean)
         # re-propagate inflated ensemble through emission fn for assimilation

@@ -613,7 +613,7 @@ class ContDiscreteNonlinearGaussianSSM(SSM):
         filter_state_cov_rescaling: float = 1.0,
         filter_dt_average: float = 0.1,
         enkf_N_particles: int = 25,
-        enkf_inflation_delta: float = 0.0,
+        enkf_inflation_delta: Optional[float] = None,
         diffeqsolve_max_steps: int = 100,
         diffeqsolve_dt0: float = 1e-2,
         output_fields=[
@@ -641,7 +641,8 @@ class ContDiscreteNonlinearGaussianSSM(SSM):
             filter_state_cov_rescaling: Rescale state covariance by this factor after each update (inflation delta is better for accurate likelihoods)
             filter_dt_average: [Only for state_order="Discrete"] Average step size to determine constant state noise cov in filter.
             enkf_N_particles: Number of particles (for EnKF only).
-            enkf_inflation_delta: EnKF covariance inflation (ignored by EKF/UKF).
+            enkf_inflation_delta: EnKF covariance inflation; `None` disables it
+                (ignored by EKF/UKF).
             diffeqsolve_max_steps: Max steps for ODE solver between observations.
             diffeqsolve_dt0: Initial step size for ODE/SDE solver (default is fixed step size).
             output_fields: Which top-level posterior fields to return from the
@@ -716,7 +717,7 @@ class ContDiscreteNonlinearGaussianSSM(SSM):
         filter_state_cov_rescaling: float = 1.0,
         filter_dt_average: float = 0.1,
         enkf_N_particles: int = 25,
-        enkf_inflation_delta: float = 0.0,
+        enkf_inflation_delta: Optional[float] = None,
         diffeqsolve_max_steps: int = 100,
         diffeqsolve_dt0: float = 1e-2,
         key=jr.PRNGKey(0),
@@ -742,7 +743,8 @@ class ContDiscreteNonlinearGaussianSSM(SSM):
             filter_state_cov_rescaling: Rescale state covariance by this factor after each update (inflation delta is better for accurate likelihoods)
             filter_dt_average: [Only for state_order="Discrete"] Average step size to determine constant state noise cov in filter.
             enkf_N_particles: Number of particles (for EnKF only).
-            enkf_inflation_delta: EnKF covariance inflation (ignored by EKF/UKF).
+            enkf_inflation_delta: EnKF covariance inflation; `None` disables it
+                (ignored by EKF/UKF).
             diffeqsolve_max_steps: Max steps for ODE solver between observations.
             diffeqsolve_dt0: Initial step size for ODE/SDE solver (default is fixed step size).
             key: Random number generator key.
@@ -1458,7 +1460,7 @@ def build_filter_hyperparams(
     filter_state_cov_rescaling: float = 1.0,
     filter_dt_average: float = 0.1,
     enkf_N_particles: int = 25,
-    enkf_inflation_delta: float = 0.0,
+    enkf_inflation_delta: Optional[float] = None,
     diffeqsolve_max_steps: int = 100,
     diffeqsolve_dt0: float = 1e-2,
     diffeqsolve_kwargs: Optional[dict] = {},
