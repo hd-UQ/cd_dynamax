@@ -54,7 +54,7 @@ bibliography: paper.bib
 Dynamical systems describe complex phenomena in fields including engineering, economics, neuroscience, ecology, and climate science. Continuous-discrete state space models (CD-SSMs) provide a probabilistic framework for systems where noisy observations are collected at irregular intervals while the latent process evolves as a stochastic differential equation (SDE) [@sarkka2019applied]. A CD-SSM is described by:
 
 - A (possibly unknown) stochastic dynamical system, i.e.,
-  $$dx(t) = f\left(x(t), u(t), t\right),\ dt + L\left(x(t), u(t), t\right),\ dw(t) \;,$$
+  $$dx(t) = f\left(x(t), u(t), t\right)\, dt + L\left(x(t), u(t), t\right)\, dw(t) \;,$$
   where:
     - $x(t) \in \mathbb{R}^{d_x}$ and $x(0) \sim p(x_0; \varphi_{x_0})$,
     - $u(t) \in \mathbb{R}^{d_u}$ is an external input (i.e., control) signal,
