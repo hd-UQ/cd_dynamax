@@ -77,7 +77,7 @@ For discrete-time observations $Y_K = [y(t_1),\ \dots ,\ y(t_K)]$ and inputs $U_
 
 # Statement of need
 
-`cd-dynamax` is a JAX-based [@jax] open-source Python package that provides a **low-level library** for continuous-discrete state space modeling, inference, and learning.
+`cd-dynamax` is a JAX-based [@jax] open-source Python package that provides a **low-level library** for inference and learning using CD-SSMs.
 
 Scientists modeling complex dynamical systems must capture continuous-time dynamics while accounting for the discrete and noisy nature of real-world observations. CD-SSMs provide a powerful framework for this, but the associated inference algorithms can be complex, numerically fragile, and computationally demanding, especially for nonlinear CD-SSMs [@murphy2023probabilistic; @sarkka2019applied; @sarkka2023bayesian].
 
@@ -85,13 +85,13 @@ Existing JAX-native SSM libraries, such as `dynamax` [@dynamax] and `cuthbert` [
 
 # State of the field
 
-Dynamical systems and state space models (SSMs) are core tools across many scientific disciplines. Python libraries for state space modeling [@pyhsmm; @ssm; @eeasensors; @hmmlearn; @sgmcmc2025nlssm; @torchfilter] focus primarily on Hidden Markov Models, discrete-time SSMs, and corresponding Bayesian inference algorithms.
+Dynamical systems and state space models (SSMs) are core tools across many scientific disciplines. Python libraries for SSMs [@pyhsmm; @ssm; @eeasensors; @hmmlearn; @sgmcmc2025nlssm; @torchfilter] focus primarily on Hidden Markov Models, discrete-time SSMs, and corresponding Bayesian inference algorithms.
 
-Amongst JAX-native libraries, `dynamax` [@dynamax], `cuthbert` [@cuthbert], and `pfjax` [@pfjax] are low-level codebases for discrete-time state space modeling and inference. `dynestyx` [@dynestyx] is a high-level library that integrates many of these packages, including `cd-dynamax`, for end-to-end Bayesian dynamical systems inference via NumPyro [@numpyro].
+Amongst JAX-native libraries, `dynamax` [@dynamax], `cuthbert` [@cuthbert], and `pfjax` [@pfjax] are low-level codebases for inference of discrete-time SSMs. `dynestyx` [@dynestyx] is a high-level library that integrates many of these packages, including `cd-dynamax`, for end-to-end Bayesian dynamical systems inference via NumPyro [@numpyro].
 
 The `rodeo` [@rodeo] library provides JAX-based probabilistic numerics tools for inference under deterministic dynamics (i.e., ordinary differential equations), but does not address stochastic dynamics. The `GPJax` [@pinder2022gpjax] library provides utilities for linear CD-SSMs, as they may be used to efficiently solve many spatiotemporal Gaussian process problems [@sarkka2013spatiotemporal], but does not include more general CD-SSM methods.
 
-To the best of our knowledge, no existing Python library provides a comprehensive, efficient framework for continuous-discrete state space modeling and inference.
+To the best of our knowledge, no existing Python library provides a comprehensive, efficient framework for inference using CD-SSMs.
 
 # Software design
 
