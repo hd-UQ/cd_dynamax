@@ -55,7 +55,7 @@ We provide the following modifications of the dynamax codebase, to accommodate c
 
 ## [utils](./utils)
 
-- cd-dynamax example model defintions:
+- cd-dynamax example model definitions:
     - [data_driven_models.py](./utils/data_driven_models.py): example neural network, Gaussian Process, polynomial and dictionary-learning models
     - [physics_based_models.py](./utils/physics_based_models.py): example definition of mechanistic models
 
