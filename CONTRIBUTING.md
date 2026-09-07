@@ -17,7 +17,7 @@ Thank you for your interest in contributing!
 
 ## What to contribute
 
-- Start with our [outstanding issues](https://github.com/hd-UQ/cd_dynamax_private/issues) and feel free to open a new issue if you want to propose a new direction.
+- Start with our [outstanding issues](https://github.com/hd-UQ/cd_dynamax/issues) and feel free to open a new issue if you want to propose a new direction.
 - Applications of the codebase are welcome, especially end-to-end inference pipelines on interesting test examples and/or real data sets.
 - New inference methods are encouraged, particularly when paired with motivating examples that show where the method helps.
 - Numerical improvements are valuable, including updates that improve computational efficiency, stability, and/or estimation accuracy.
