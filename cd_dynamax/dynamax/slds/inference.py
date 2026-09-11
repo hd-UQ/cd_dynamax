@@ -180,6 +180,10 @@ def rbpfilter(
     samples discrete states from a discrete proposal, and then runs a KF step conditional on the sampled
     value of the chain. At the end of the update it computes an effective sample size and decide whether
     resampling is necessary.
+
+    The proposal transition matrix must assign positive probability to every transition
+    with positive target probability. Particle weights and marginal likelihood increments
+    include the target-to-proposal transition probability ratio.
     '''
 
     num_timesteps = len(emissions)
@@ -213,12 +217,14 @@ def rbpfilter(
         # Run KF step conditional on the sampled states
         lls, filtered_means, filtered_covs = vmap(_conditional_kalman_step, in_axes = (0, 0, 0, None, None, None))(new_states, filtered_means, filtered_covs, params.linear_gaussian, u, y)
 
-        # Compute weights
-        marginal_loglik = logsumexp(jnp.log(weights) + lls)
-        lls -= jnp.max(lls)
-        loglik_weights = jnp.exp(lls)
-        weights = jnp.multiply(loglik_weights.T, weights)
-        weights /= jnp.sum(weights)
+        # Correct for sampling from the proposal rather than the target transition.
+        log_importance_ratios = (
+            jnp.log(params.discrete.transition_matrix[prev_states, new_states])
+            - jnp.log(params.discrete.proposal_transition_matrix[prev_states, new_states])
+        )
+        log_weights = jnp.log(weights) + lls + log_importance_ratios
+        marginal_loglik = logsumexp(log_weights)
+        weights = jnp.exp(log_weights - marginal_loglik)
 
         # Resample if necessary
         resample_cond = 1.0 / jnp.sum(jnp.square(weights)) < ess_threshold * num_particles
