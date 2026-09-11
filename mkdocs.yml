@@ -176,7 +176,7 @@ theme:
 
     # Navigation:
     #
-    #- navigation.expand      # Expand all collapsable sections.
+    #- navigation.expand      # Expand all collapsible sections.
     - navigation.instant # Instant loading pages.
     # - navigation.indexes     # Attach pages directly to Sections. Incompatible with "toc.integrate"
     - navigation.sections # Render top sections as groups.
