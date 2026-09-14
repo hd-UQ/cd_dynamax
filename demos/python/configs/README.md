@@ -31,6 +31,21 @@ Config files cross-reference each other by relative path, so a full experiment i
 - a `filter/` config points to its own `solver/` config for the filter's internal integration (`diffeqsolve_settings_file`)
     - Note that this is not duplication of a `solver/` config: it is specifically for the filter's internal integration, which  can differ from the model's, e.g. to filter with a coarser/cheaper solver than the one used to generate data
 
+## How configs are loaded and executed
+
+Config files aren't parsed by a custom format engine. Each one is read with Python's `configparser.ConfigParser`, and then every value string is passed through `eval()`, evaluated in a namespace that already has cd-dynamax's models/utils, dynamax's bijectors, `diffrax as dfx`, and `optax` imported. That's the whole reason a config can write `jnp.eye(state_dim)`, `LearnableVector(...)`, `dfx.ConstantStepSize()`, or `optax.adam(1e-1)` directly, with no import statement of its own.
+
+**A config file is executable Python, not sandboxed data.** Only load configs from sources you trust.
+
+The functions doing this live in [`experiment_utils.py`](../../../cd_dynamax/src/utils/experiment_utils.py) (model/filter/solver configs) and [`data_generator.py`](../../../cd_dynamax/src/utils/data_generator.py) (data configs):
+
+- **`create_cddynamax_model_from_config`** — reads a `model/` config, builds the model class, and `eval()`s every entry in `[initial_values]`. If the config also has a `[prior]` section (optional, `prior_class_file` + `prior_init_key`), it dynamically imports the `.py` module named there — a `prior/` file — and instantiates it as the parameter prior used for MCMC-based fitting.
+- **`create_cddynamax_filter_from_config`** — reads a `filter/` config. The filter algorithm is inferred from whichever section appears **first** in the file (`KF`/`EKF`/`UKF`/`EnKF`/`DPF`), so that section must come before `[filter_info]`, not after.
+- **`solver_settings_from_config`** — reads a `solver/` config into the `diffeqsolve_settings` dict passed to `diffrax.diffeqsolve`.
+- **`mcmc_config_to_dict`** — reads the `[mcmc]` section of a `fitting/` config.
+- **`generate_data_from_config`** (in `data_generator.py`) — reads a `data/` config. If its `data_save_file` already exists on disk, it loads that pickle instead of regenerating, so re-running a script is cheap unless you delete or rename the cached file.
+- **`override_config`** — applies a `{"section.option": value}` dict on top of an already-parsed `ConfigParser`, before any `eval()`s happen. This is what CLI flags use under the hood: e.g. `--enforce_twin_experiment` overrides `data_generation.true_model_config_file`, and `--data_key` overrides `data_generation.key` — letting a script patch one field without editing the config file itself.
+
 ## What each config file controls
 
 We describe below, for each config type:
@@ -116,3 +131,128 @@ We describe below, for each config type:
 - **Key attributes**:
     - `sample(key, M)` and `log_prob(x)`, implemented directly in code rather than declared as static values, since priors need
   arbitrary sampling logic.
+
+## Annotated template examples
+
+Minimal, fully-commented examples for each config type
+    - Use as starting point instead of reverse-engineering it from the working examples.
+
+### `data/`
+
+```ini
+#### Data Config File
+[data_generation]
+key: 0                                          # PRNG key for reproducible sampling
+t0: 0.0                                          # start time
+t1: 10.0                                         # end time
+num_samples: 1000                                # number of emission times to draw
+irregular_samples: True                          # True: randomly-spaced emission times; False: a regular grid
+true_model_config_file: model/true_l63_mech_x1   # model/ config used as the "true" generating process
+
+[data_saving]
+data_save_file: data/my_experiment_data.pkl      # where the generated trajectory is pickled -- also a cache: if this file already exists, it's loaded instead of regenerated
+```
+
+### `model/`
+
+```ini
+[model]
+class_name: CDNLGSSM                             # CDLGSSM | CDNLGSSM | CDNLSSM
+state_dim: 3
+emission_dim: 1
+solver_config_file: solver/dt1e-2_maxSteps1e5    # integrates the continuous-time dynamics
+
+[initial_values]
+# Every entry is a {"params": ..., "props": ...} pair:
+#   params -> the value, or a learnable function
+#   props  -> ParameterProperties (or a learnable-object of them), marking the entry
+#             trainable and giving a constrainer for unconstrained-space optimization
+initial_mean = {"params": jnp.zeros(state_dim),
+    "props": ParameterProperties(trainable=False)}
+initial_cov = {"params": 5.0 * jnp.eye(state_dim),
+    "props": ParameterProperties(trainable=False, constrainer=RealToPSDBijector())}
+
+dynamics_drift = {"params": LearnableLorenz63_Drift(sigma=10.0, rho=28.0, beta=8.0 / 3.0),
+    "props": LearnableLorenz63_Drift(sigma=ParameterProperties(trainable=True),
+                                      rho=ParameterProperties(trainable=True),
+                                      beta=ParameterProperties(trainable=True))}
+dynamics_diffusion_coefficient = {"params": jnp.eye(state_dim),
+    "props": ParameterProperties(trainable=False)}
+
+emission_cov = {"params": jnp.eye(emission_dim),
+    "props": ParameterProperties(trainable=False, constrainer=RealToPSDBijector())}
+
+# Optional: a prior over trainable parameters, only needed for MCMC-based fitting
+[prior]
+prior_class_file: prior/l63_mech_drift_hi_info.py
+prior_init_key: 0
+```
+
+### `solver/`
+
+```ini
+[diffeqsolve_settings]
+solver: None                               # None defaults to Dopri5 (ODE) / Heun (SDE)
+stepsize_controller: dfx.ConstantStepSize()
+adjoint: dfx.RecursiveCheckpointAdjoint()   # vs. dfx.DirectAdjoint() -- a memory/speed trade-off for gradients through the solve
+dt0: 0.01
+max_steps: 1e5
+tol_vbt: 5e-3
+```
+
+### `filter/`
+
+```ini
+[EKF]
+dt_final: 1e-4
+state_order: first                         # zeroth | first | second -- order of the Taylor approximation to the dynamics
+emission_order: first
+smooth_order: first
+cov_rescaling: 1.0
+diffeqsolve_settings_file: solver/dt1e-2_maxSteps1e5
+
+[filter_info]
+name=EKF (1st order)
+desc=Extended Kalman Filter with first order approximation to state and emission functions
+filtered_style = {'color': '#1f77b4', 'linestyle': '-', 'linewidth': 1.5, 'alpha': 0.7}
+forecasted_style = {'color': '#1f77b4', 'linestyle': '--', 'linewidth': 1.5, 'alpha': 0.7}
+```
+The filter-type section (here `[EKF]`) must be the *first* section in the file -- it's how the loader decides which filter class to build; `[filter_info]` must follow it.
+
+### `fitting/`
+
+```ini
+[sgd]
+optimizer: optax.adam(1e-1)
+batch_size: 1
+num_epochs: 1000
+shuffle: False
+return_param_history: True
+key: 0
+```
+```ini
+[mcmc]
+type: nuts                                 # nuts | rmh | additive_step_random_walk
+n_samples: 100
+warmup_samples: 10
+parameters: {}                             # sampler-specific, e.g. {'proposal': "blackjax.mcmc.random_walk.normal(0.1)"} for random-walk variants
+verbose: True
+key: 0
+```
+
+### `prior/`
+
+```python
+import jax.numpy as jnp
+from cd_dynamax import Prior
+
+class CDNLGSSM_Prior(Prior):
+    def __init__(self, **kwargs):
+        ...  # define one distribution per trainable parameter
+
+    def sample(self, key, M):
+        ...  # return M samples, in the same pytree shape as the trainable params
+
+    def log_prob(self, x):
+        ...  # return log p(x) for a pytree x shaped like the trainable params
+```
