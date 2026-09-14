@@ -18,8 +18,19 @@ demos/python/
 
 ## Getting Started
 
-To run the demos, ensure you have the `cd-dynamax` library installed in your Python environment.
+To run the demos, ensure you have the `cd-dynamax` library installed in your Python environment. 
 
-Then navigate to the `demos/python/scripts` directory and execute the desired script using Python ---see details in the [./scripts/README.md](./scripts/README.md).
+We offer two complementary ways to exercise the framework: notebooks teach the API, scripts+configs run repeatable experiments.
+    
+### cd-dynamax demos: notebooks vs. scripts
 
-If you prefer Jupyter notebooks, navigate to the `demos/python/notebooks` directory and launch Jupyter Notebook or JupyterLab to open and run the notebooks ---see details in the [./notebooks/README.md](./notebooks/README.md).
+- Jupyter notebooks in `demos/python/notebooks` 
+    - If you prefer interactive exploration, navigate to the `demos/python/notebooks` directory and launch Jupyter Notebook or JupyterLab to open and run the notebooks
+    - These are code-first, self-contained tutorials. Model, data, filter, and fit are all defined inline in Python (no config files). Good for learning the API or prototyping a new idea.
+    - See details in the [./notebooks/README.md](./notebooks/README.md).
+
+- Python scripts + configs (`demos/python/scripts/`, `demos/python/configs/`)
+    - If you prefer a more structured, repeatable approach, use the Python scripts in `demos/python/scripts` along with the configuration files in `demos/python/configs`.
+    - Config-driven experiment harness. Each experiment axis is its own config file; scripts assemble them at runtime.
+    - No code changes needed to try a new model/filter/solver/optimizer combination.
+    - Navigate to the `demos/python/scripts` directory and execute the desired script using Python ---see details in the [./scripts/README.md](./scripts/README.md).
