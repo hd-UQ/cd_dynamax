@@ -30,8 +30,8 @@ We offer two complementary ways to exercise the framework: notebooks teach the A
     - Good for learning the API or prototyping a new idea.
     - See details in the [./notebooks/README.md](./notebooks/README.md).
 
-- Python [scripts](./scripts/) + [configs](./configs/)
-    - If you prefer a more structured, reproducible approach, use the Python scripts in `demos/python/scripts` along with the configuration files in `demos/python/configs`.
+- Python [demos/python/scripts](./scripts/) + [demos/python/configs](./configs/)
+    - If you prefer a more structured, reproducible approach, use the Python scripts in [demos/python/scripts](./scripts/) along with the configuration files in [demos/python/configs](./configs/).
     - This is a config-file driven experiment harness.
     - Each experiment component (data, model, filter, etc.) is its own config file; scripts assemble them at runtime.
     - No code changes needed to try a new model/filter/solver/optimizer combination.
