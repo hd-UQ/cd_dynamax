@@ -1,27 +1,28 @@
-# Overview: a config-driven experimentation harness
+# Overview: a config-driven cd-dynamax experimentation pipeline
+
+We provide a config-file driven experiment harness: each experiment component (data, model, filter, etc.) is its own config file; scripts assemble them at runtime.
 
 None of these scripts hardcode a model, filter, or optimizer.
 
-Each one takes `--data_config_file`, `--model_config_file`, `--filter_config_file`, and (for fitting) `--fit_config_file` flags
+Instead, each one takes `--data_config_file`, `--model_config_file`, `--filter_config_file`, and (for fitting) `--fit_config_file` flags
     - These all point to files under [`../configs/`](../configs/README.md) (see there for what each config type contains)
     
 The general flow of these scripts at runtime:
-
-    1. generates or loads the data (`data/`),
-    2. builds the cd-dynamax model object (`model/`)
-        - which can be a     CD-LGSSM, CD-NLGSSM, or CD-NLSSM depending on the config's `class_name`,
-    3. builds the filter (`filter/`)
-        - and, for fitting scripts, the optimizer (`fitting/`),
-    4. runs filtering/forecasting or parameter learning, and saves results.
+1. generates or loads the data (`data/`),
+2. builds the cd-dynamax model object (`model/`)
+    - which can be a     CD-LGSSM, CD-NLGSSM, or CD-NLSSM depending on the config's `class_name`,
+3. builds the filter (`filter/`)
+    - and, for fitting scripts, the optimizer (`fitting/`),
+4. runs filtering/forecasting or parameter learning, and saves results.
 
 ## Design Motivation & Rationale
 
-Swapping any one axis (e.g., a different filter, a stiffer solver, a different optimizer)
-is a matter of **pointing to a different config file, not editing code.**
+Swapping any one axis (e.g., a different filter, a stiffer solver, a different optimizer) is a matter of
+- **pointing to a different config file, not editing code.**
 
 This is what makes it a *harness*:
-    - the same driver script covers every model family and algorithm combination the config axes can express, so filter/model/solver/fitting comparisons are run identically and
-are directly comparable.
+- the same driver script covers every model family and algorithm combination the config axes can express, so
+- filter/model/solver/fitting comparisons are run identically and are directly comparable.
 
 ## Mechanics worth knowing before the examples
 
