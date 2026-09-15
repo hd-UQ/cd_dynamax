@@ -41,6 +41,14 @@ from cd_dynamax.src.continuous_discrete_nonlinear_ssm import (
 from cd_dynamax.src.continuous_discrete_nonlinear_ssm.models import (
     PosteriorCDNLSSMFiltered,
 )
+from cd_dynamax.dynamax.slds.inference import (
+    DiscreteParamsSLDS,
+    LGParamsSLDS,
+    ParamsSLDS,
+    RBPFiltered,
+    rbpfilter,
+    rbpfilter_optimal,
+)
 
 
 NTIME = 3
@@ -48,6 +56,8 @@ STATE_DIM = 1
 EMISSION_DIM = 1
 ENKF_PARTICLES = 16
 DPF_PARTICLES = 8
+RBPF_PARTICLES = 16
+SLDS_NUM_STATES = 2
 TEST_EMISSIONS = jnp.zeros((NTIME, EMISSION_DIM))
 TEST_T_EMISSIONS = jnp.array([[0.0], [0.1], [0.2]])
 
@@ -153,6 +163,16 @@ def _assert_posterior_cdnlssm_contract(posterior):
     _assert_scalar_total_loglik(posterior.marginal_loglik)
 
 
+def _assert_rbpfiltered_contract(posterior):
+    assert isinstance(posterior, RBPFiltered)
+    _assert_scalar_total_loglik(posterior.marginal_loglik)
+    assert posterior.weights.shape == (NTIME, RBPF_PARTICLES)
+    assert posterior.states.shape == (NTIME, RBPF_PARTICLES)
+    assert posterior.means.shape == (NTIME, RBPF_PARTICLES, STATE_DIM)
+    assert posterior.covariances.shape == (NTIME, RBPF_PARTICLES, STATE_DIM, STATE_DIM)
+    assert posterior["means"] is posterior.means
+
+
 def _expected_gssm_field_shapes(ensemble_size=None):
     expected_shapes = dict(BASE_GSSM_FIELD_SHAPES)
 
@@ -228,6 +248,38 @@ def _assert_posterior_gssm_contract(
         _assert_enkf_posterior_extras_contract(posterior.posterior_extras)
     else:
         assert posterior.posterior_extras is None
+
+
+def _make_slds_params():
+    transition_matrix = jnp.ones((SLDS_NUM_STATES, SLDS_NUM_STATES)) / SLDS_NUM_STATES
+    return ParamsSLDS(
+        discrete=DiscreteParamsSLDS(
+            initial_distribution=jnp.ones(SLDS_NUM_STATES) / SLDS_NUM_STATES,
+            transition_matrix=transition_matrix,
+            proposal_transition_matrix=transition_matrix,
+        ),
+        linear_gaussian=LGParamsSLDS(
+            initial_mean=jnp.zeros((SLDS_NUM_STATES, STATE_DIM)),
+            initial_cov=jnp.tile(
+                jnp.eye(STATE_DIM)[None, :, :], (SLDS_NUM_STATES, 1, 1)
+            ),
+            dynamics_weights=jnp.tile(
+                (0.9 * jnp.eye(STATE_DIM))[None, :, :], (SLDS_NUM_STATES, 1, 1)
+            ),
+            dynamics_cov=jnp.tile(
+                (0.1 * jnp.eye(STATE_DIM))[None, :, :], (SLDS_NUM_STATES, 1, 1)
+            ),
+            dynamics_bias=jnp.zeros((SLDS_NUM_STATES, STATE_DIM)),
+            dynamics_input_weights=jnp.zeros((SLDS_NUM_STATES, STATE_DIM, 1)),
+            emission_weights=jnp.ones((SLDS_NUM_STATES, EMISSION_DIM, STATE_DIM)),
+            emission_cov=jnp.tile(
+                (0.1 * jnp.eye(EMISSION_DIM))[None, :, :], (SLDS_NUM_STATES, 1, 1)
+            ),
+            emission_bias=jnp.zeros((SLDS_NUM_STATES, EMISSION_DIM)),
+            emission_input_weights=jnp.zeros((SLDS_NUM_STATES, EMISSION_DIM, 1)),
+            initialized=True,
+        ),
+    )
 
 
 def _run_cdlgssm_filter(requested_fields):
@@ -442,3 +494,15 @@ def test_filter_output_field_constants_reference_known_posterior_fields():
 def test_particle_filter_posterior_contract(case):
     posterior = case.runner()
     _assert_posterior_cdnlssm_contract(posterior)
+
+
+def test_slds_rbpf_posterior_contract():
+    params = _make_slds_params()
+    posterior = rbpfilter(RBPF_PARTICLES, params, TEST_EMISSIONS, jr.PRNGKey(0))
+    _assert_rbpfiltered_contract(posterior)
+
+
+def test_slds_optimal_rbpf_posterior_contract():
+    params = _make_slds_params()
+    posterior = rbpfilter_optimal(RBPF_PARTICLES, params, TEST_EMISSIONS, jr.PRNGKey(0))
+    _assert_rbpfiltered_contract(posterior)
