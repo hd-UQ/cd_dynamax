@@ -1,6 +1,8 @@
 # cd-dynamax's abstract SSM class and related types
 from abc import ABC
 from abc import abstractmethod
+from contextlib import nullcontext
+from inspect import signature
 
 # JAX imports
 import jax.numpy as jnp
@@ -1136,21 +1138,33 @@ class SSM(ABC):
         ):
             # Initialize MCMC using window_adaptation
             # https://blackjax-devs.github.io/blackjax/examples/quickstart.html#use-stan-s-window-adaptation
+            # Before BlackJAX 1.6, progress was a warmup keyword argument.
+            legacy_progress = (
+                "progress_bar" in signature(blackjax.window_adaptation).parameters
+            )
+            warmup_kwargs = dict(mcmc_algorithm["parameters"])
+            if legacy_progress:
+                warmup_kwargs["progress_bar"] = verbose
             warmup = blackjax.window_adaptation(
                 algorithm=mcmc_algo,
                 logdensity_fn=_logprob,
-                progress_bar=verbose,
-                **mcmc_algorithm["parameters"],
+                **warmup_kwargs,
             )
 
             # Set-up warmup
             warmup_key, key = jr.split(key)
             # Run warmup
-            (warmup_state, warmup_kernel_params), warmup_info = warmup.run(
-                warmup_key,
-                position=initial_unc_params_trainable,
-                num_steps=mcmc_algorithm["warmup_samples"],
+            progress = (
+                blackjax.progress_bar()
+                if verbose and not legacy_progress
+                else nullcontext()
             )
+            with progress:
+                (warmup_state, warmup_kernel_params), warmup_info = warmup.run(
+                    warmup_key,
+                    position=initial_unc_params_trainable,
+                    num_steps=mcmc_algorithm["warmup_samples"],
+                )
 
             # Set-up HMC
             # MCMC-HMC sampling kernel, based on warmup kernel params
