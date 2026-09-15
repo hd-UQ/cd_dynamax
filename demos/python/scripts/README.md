@@ -1,11 +1,13 @@
 # Overview: a config-driven cd-dynamax experimentation pipeline
 
-We provide a config-file driven experiment harness: each experiment component (data, model, filter, etc.) is its own config file; scripts assemble them at runtime.
+We provide a config-file driven experiment harness:
+- each experiment component (data, model, filter, etc.) is its own config file;
+- scripts assemble them at runtime.
 
-None of these scripts hardcode a model, filter, or optimizer.
+**None of these scripts hardcode a model, filter, or optimizer.**
 
 Instead, each one takes `--data_config_file`, `--model_config_file`, `--filter_config_file`, and (for fitting) `--fit_config_file` flags
-    - These all point to files under [`../configs/`](../configs/README.md) (see there for what each config type contains)
+- These all point to files under [`../configs/`](../configs/README.md) (see there for what each config type contains)
     
 The general flow of these scripts at runtime:
 1. generates or loads the data (`data/`),
@@ -24,7 +26,7 @@ This is what makes it a *harness*:
 - the same driver script covers every model family and algorithm combination the config axes can express, so
 - filter/model/solver/fitting comparisons are run identically and are directly comparable.
 
-## Mechanics worth knowing before the examples
+### Tips worth knowing before running the examples
 
 A few mechanics worth knowing before diving into the examples below:
 
