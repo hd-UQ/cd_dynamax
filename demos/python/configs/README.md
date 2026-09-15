@@ -19,11 +19,12 @@ Specifically, there are configuration files provided according to the following 
 Users can modify these configuration files to customize the behavior of the cd-dynamax library for their specific use cases.
 
 When running demos or scripts, the appropriate configuration files can be loaded to set up the desired models and algorithms.
+- See the cd-dynamax config walkthrough in [../notebooks/cddynamax_experiment_config_tutorial.ipynb](../notebooks/cddynamax_experiment_config_tutorial.ipynb) 
 
 ## Format
 
 In general, config files are INI-style, parsed section-by-section, with values evaluated as Python expressions
-    - e.g., `jnp.eye(state_dim)`, `LearnableVector(...)`, `ParameterProperties(trainable=True)`
+- e.g., `jnp.eye(state_dim)`, `LearnableVector(...)`, `ParameterProperties(trainable=True)`
 
 Config files cross-reference each other by relative path, so a full experiment is assembled by picking one file per axis:
 - a `data/` config points to the `model/` config used to generate "true" data (`true_model_config_file`)
@@ -39,19 +40,29 @@ Config files aren't parsed by a custom format engine. Each one is read with Pyth
 
 The functions doing this live in [`experiment_utils.py`](../../../cd_dynamax/src/utils/experiment_utils.py) (model/filter/solver configs) and [`data_generator.py`](../../../cd_dynamax/src/utils/data_generator.py) (data configs):
 
-- **`create_cddynamax_model_from_config`** — reads a `model/` config, builds the model class, and `eval()`s every entry in `[initial_values]`. If the config also has a `[prior]` section (optional, `prior_class_file` + `prior_init_key`), it dynamically imports the `.py` module named there — a `prior/` file — and instantiates it as the parameter prior used for MCMC-based fitting.
-- **`create_cddynamax_filter_from_config`** — reads a `filter/` config. The filter algorithm is inferred from whichever section appears **first** in the file (`KF`/`EKF`/`UKF`/`EnKF`/`DPF`), so that section must come before `[filter_info]`, not after.
-- **`solver_settings_from_config`** — reads a `solver/` config into the `diffeqsolve_settings` dict passed to `diffrax.diffeqsolve`.
-- **`mcmc_config_to_dict`** — reads the `[mcmc]` section of a `fitting/` config.
-- **`generate_data_from_config`** (in `data_generator.py`) — reads a `data/` config. If its `data_save_file` already exists on disk, it loads that pickle instead of regenerating, so re-running a script is cheap unless you delete or rename the cached file.
-- **`override_config`** — applies a `{"section.option": value}` dict on top of an already-parsed `ConfigParser`, before any `eval()`s happen. This is what CLI flags use under the hood: e.g. `--enforce_twin_experiment` overrides `data_generation.true_model_config_file`, and `--data_key` overrides `data_generation.key` — letting a script patch one field without editing the config file itself.
+- **`create_cddynamax_model_from_config`**: reads a `model/` config, builds the model class, and `eval()`s every entry in `[initial_values]`.
+    - If the config also has a `[prior]` section (optional, `prior_class_file` + `prior_init_key`), it dynamically imports the `.py` module named there (a `prior/` file) and instantiates it as the parameter prior used for MCMC-based fitting.
+    
+- **`create_cddynamax_filter_from_config`**: reads a `filter/` config.
+    - The filter algorithm is inferred from whichever section appears **first** in the file (`KF`/`EKF`/`UKF`/`EnKF`/`DPF`), so that section must come before `[filter_info]`, not after.
+
+- **`solver_settings_from_config`**: reads a `solver/` config into the `diffeqsolve_settings` dict passed to `diffrax.diffeqsolve`.
+
+- **`mcmc_config_to_dict`**: reads the `[mcmc]` section of a `fitting/` config.
+
+- **`generate_data_from_config`** (in `data_generator.py`): reads a `data/` config.
+    - If its `data_save_file` already exists on disk, it loads that pickle instead of regenerating, so re-running a script is cheap unless you delete or rename the cached file.
+
+- **`override_config`**: applies a `{"section.option": value}` dict on top of an already-parsed `ConfigParser`, before any `eval()`s happen.
+    - This is what CLI flags use under the hood: e.g. `--enforce_twin_experiment` overrides `data_generation.true_model_config_file`, and `--data_key` overrides `data_generation.key`
+    - This lets a script patch one field without editing the config file itself.
 
 ## What each config file controls
 
 We describe below, for each config type:
-    - what it's for,
-    - the section header(s) it must contain, and
-    - the key attributes that live inside those sections.
+- what it's for,
+- the section header(s) it must contain, and
+- the key attributes that live inside those sections.
 
 ### `data/`
 
