@@ -20,3 +20,5 @@ Each tutorial is tagged with the model family it exercises — `ContDiscreteLine
 
 - **[CD-NLSSM]** [Comparison of a Differentiable Particle Filter and Ensemble Kalman Filter](./tracking_dpf_enkf.ipynb) a tracking example with non-Gaussian observations, where observations consist of a bearing estimate (that lives in the circle, $S^1$) and a power estimate (that lives in $\mathbb{R}$).
 
+- [Config walkthrough tutorial](./config_walkthrough_tutorial.ipynb) on loading, overriding, and writing `demos/python/configs/` config files directly from Python — the same loader functions the `demos/python/scripts/` CLI harness uses, and why they're useful even outside a script.
+
