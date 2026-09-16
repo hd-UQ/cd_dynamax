@@ -26,6 +26,8 @@ When running demos or scripts, the appropriate configuration files can be loaded
 In general, config files are INI-style, parsed section-by-section, with values evaluated as Python expressions
 - e.g., `jnp.eye(state_dim)`, `LearnableVector(...)`, `ParameterProperties(trainable=True)`
 
+**A config file is executable Python, not sandboxed data.** Only load configs from sources you trust.
+
 Config files cross-reference each other by relative path, so a full experiment is assembled by picking one file per axis:
 - a `data/` config points to the `model/` config used to generate "true" data (`true_model_config_file`)
 - a `model/` config points to the `solver/` config used to integrate its dynamics (`solver_config_file`)
@@ -34,9 +36,8 @@ Config files cross-reference each other by relative path, so a full experiment i
 
 ## How configs are loaded and executed
 
-Config files aren't parsed by a custom format engine. Each one is read with Python's `configparser.ConfigParser`, and then every value string is passed through `eval()`, evaluated in a namespace that already has cd-dynamax's models/utils, dynamax's bijectors, `diffrax as dfx`, and `optax` imported. That's the whole reason a config can write `jnp.eye(state_dim)`, `LearnableVector(...)`, `dfx.ConstantStepSize()`, or `optax.adam(1e-1)` directly, with no import statement of its own.
-
-**A config file is executable Python, not sandboxed data.** Only load configs from sources you trust.
+Config files aren't parsed by a custom format engine. Each one is read with Python's `configparser.ConfigParser`, and then every value string is passed through `eval()`, evaluated in a namespace that already has cd-dynamax's models/utils, dynamax's bijectors, `diffrax as dfx`, and `optax` imported.
+- That's the whole reason a config can write `jnp.eye(state_dim)`, `LearnableVector(...)`, `dfx.ConstantStepSize()`, or `optax.adam(1e-1)` directly, with no import statement of its own.
 
 The functions doing this live in [`experiment_utils.py`](../../../cd_dynamax/src/utils/experiment_utils.py) (model/filter/solver configs) and [`data_generator.py`](../../../cd_dynamax/src/utils/data_generator.py) (data configs):
 
@@ -66,8 +67,9 @@ We describe below, for each config type:
 
 ### `data/`
 
-- **Purpose**: how to generate (or, if desired, load) a trajectory to feed into filtering/fitting
-    - the time grid to sample on and which model acts as the "true" generator.
+- **Purpose**: how to generate (or, if desired, load) a trajectory to plot/analyze/filter. It needs
+    - the time grid to sample on, and
+    - which model acts as the "true" generator.
 - **Sections**: `[data_generation]`, `[data_saving]`.
 - **Key attributes**:
     - `[data_generation]`: PRNG `key`, time range (`t0`, `t1`), `num_samples`, `irregular_samples` (regular vs. randomly-spaced emission times), `true_model_config_file` (the `model/` config to sample from).
@@ -76,7 +78,7 @@ We describe below, for each config type:
 ### `model/`
 
 - **Purpose**: specification of the CD-SSM to filter/fit
-    - its class, dimensions,  and every parameter of the initial state, dynamics, and emission  distributions, each tagged as fixed or trainable.
+    - it defines the cd-dynamax class, state/space dimensions, and every parameter of the initial state, dynamics, and emission  distributions, each tagged as fixed or trainable.
     
     - cd-dynamax model parameters are defined following dynamax convention:
         - i.e, each parameter contains a `{"params": ..., "props": ...}` pair:
@@ -84,12 +86,12 @@ We describe below, for each config type:
             - `props` is `ParameterProperties` (or learnable-object of them) marking it `trainable` and giving a `constrainer` (e.g. `RealToPSDBijector()` for covariances) for unconstrained-space optimization.
 
 - **Sections**: `[model]`, `[initial_values]`.
-    - Note that `[initial_values]` refers to the initial values of all CD-SSM parameter
+    - Note that `[initial_values]` refers to the initial values of all CD-SSM parameters/props
 
 - **Key attributes**:
     - `[model]`: `class_name` (`CDLGSSM`, `CDNLGSSM`, or `CDNLSSM`), `state_dim`, `emission_dim`, `solver_config_file`.
     - `[initial_values]`: one entry per parameter
-        - (`initial_mean`, `initial_cov`)
+        - `initial_mean`, `initial_cov`
         - `dynamics_weights`/`dynamics_drift`, `dynamics_diffusion_coefficient`, `dynamics_diffusion_cov`,
         - `emission_weights`, `emission_cov`
 
@@ -145,8 +147,8 @@ We describe below, for each config type:
 
 ## Annotated template examples
 
-Minimal, fully-commented examples for each config type
-    - Use as starting point instead of reverse-engineering it from the working examples.
+We provide here minimal, fully-commented examples for each config type.
+- Use as starting point instead of reverse-engineering it from the working examples.
 
 ### `data/`
 
