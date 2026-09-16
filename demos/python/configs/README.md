@@ -26,6 +26,8 @@ When running demos or scripts, the appropriate configuration files can be loaded
 In general, config files are INI-style, parsed section-by-section, with values evaluated as Python expressions
 - e.g., `jnp.eye(state_dim)`, `LearnableVector(...)`, `ParameterProperties(trainable=True)`
 
+**Comments must be on their own line, not trailing after a value.** `ConfigParser()` is constructed without `inline_comment_prefixes` anywhere in this codebase, so a trailing `# ...` is not stripped -- it becomes part of the value itself (e.g. `class_name: CDNLGSSM  # ...` would set `class_name` to the literal string `"CDNLGSSM  # ..."`, not `"CDNLGSSM"`). All examples below follow `# comment` above the field it describes for exactly this reason.
+
 **A config file is executable Python, not sandboxed data.** Only load configs from sources you trust.
 
 Config files cross-reference each other by relative path, so a full experiment is assembled by picking one file per axis:
@@ -155,25 +157,35 @@ We provide here minimal, fully-commented examples for each config type.
 ```ini
 #### Data Config File
 [data_generation]
-key: 0                                          # PRNG key for reproducible sampling
-t0: 0.0                                          # start time
-t1: 10.0                                         # end time
-num_samples: 1000                                # number of emission times to draw
-irregular_samples: True                          # True: randomly-spaced emission times; False: a regular grid
-true_model_config_file: model/true_l63_mech_x1   # model/ config used as the "true" generating process
+# PRNG key for reproducible sampling
+key: 0
+# start time
+t0: 0.0
+# end time
+t1: 10.0
+# number of emission times to draw
+num_samples: 1000
+# True: randomly-spaced emission times; False: a regular grid
+irregular_samples: True
+# model/ config used as the "true" generating process
+true_model_config_file: model/true_l63_mech_x1
 
 [data_saving]
-data_save_file: data/my_experiment_data.pkl      # where the generated trajectory is pickled -- also a cache: if this file already exists, it's loaded instead of regenerated
+# where the generated trajectory is pickled -- also a cache: if this file
+# already exists, it's loaded instead of regenerated
+data_save_file: data/my_experiment_data.pkl
 ```
 
 ### `model/`
 
 ```ini
 [model]
-class_name: CDNLGSSM                             # CDLGSSM | CDNLGSSM | CDNLSSM
+# CDLGSSM | CDNLGSSM | CDNLSSM
+class_name: CDNLGSSM
 state_dim: 3
 emission_dim: 1
-solver_config_file: solver/dt1e-2_maxSteps1e5    # integrates the continuous-time dynamics
+# integrates the continuous-time dynamics
+solver_config_file: solver/dt1e-2_maxSteps1e5
 
 [initial_values]
 # Every entry is a {"params": ..., "props": ...} pair:
@@ -205,9 +217,11 @@ prior_init_key: 0
 
 ```ini
 [diffeqsolve_settings]
-solver: None                               # None defaults to Dopri5 (ODE) / Heun (SDE)
+# None defaults to Dopri5 (ODE) / Heun (SDE)
+solver: None
 stepsize_controller: dfx.ConstantStepSize()
-adjoint: dfx.RecursiveCheckpointAdjoint()   # vs. dfx.DirectAdjoint() -- a memory/speed trade-off for gradients through the solve
+# vs. dfx.DirectAdjoint() -- a memory/speed trade-off for gradients through the solve
+adjoint: dfx.RecursiveCheckpointAdjoint()
 dt0: 0.01
 max_steps: 1e5
 tol_vbt: 5e-3
@@ -218,7 +232,8 @@ tol_vbt: 5e-3
 ```ini
 [EKF]
 dt_final: 1e-4
-state_order: first                         # zeroth | first | second -- order of the Taylor approximation to the dynamics
+# zeroth | first | second -- order of the Taylor approximation to the dynamics
+state_order: first
 emission_order: first
 smooth_order: first
 cov_rescaling: 1.0
@@ -245,10 +260,12 @@ key: 0
 ```
 ```ini
 [mcmc]
-type: nuts                                 # nuts | rmh | additive_step_random_walk
+# nuts | rmh | additive_step_random_walk
+type: nuts
 n_samples: 100
 warmup_samples: 10
-parameters: {}                             # sampler-specific, e.g. {'proposal': "blackjax.mcmc.random_walk.normal(0.1)"} for random-walk variants
+# sampler-specific, e.g. {'proposal': "blackjax.mcmc.random_walk.normal(0.1)"} for random-walk variants
+parameters: {}
 verbose: True
 key: 0
 ```
@@ -261,11 +278,14 @@ from cd_dynamax import Prior
 
 class CDNLGSSM_Prior(Prior):
     def __init__(self, **kwargs):
-        ...  # define one distribution per trainable parameter
+        # define one distribution per trainable parameter
+        ...
 
     def sample(self, key, M):
-        ...  # return M samples, in the same pytree shape as the trainable params
+        # return M samples, in the same pytree shape as the trainable params
+        ...
 
     def log_prob(self, x):
-        ...  # return log p(x) for a pytree x shaped like the trainable params
+        # return log p(x) for a pytree x shaped like the trainable params
+        ...
 ```
