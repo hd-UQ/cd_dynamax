@@ -56,7 +56,7 @@ Dynamical systems describe complex phenomena in fields including engineering, ec
 - A (possibly unknown) stochastic dynamical system, i.e.,
   $$dx(t) = f\left(x(t), u(t), t\right)\, dt + L\left(x(t), u(t), t\right)\, dw(t) \;,$$
   where:
-    - $x(t) \in \mathbb{R}^{d_x}$ and $x(0) \sim p(x_0; \varphi_{x_0})$,
+    - $x(t) \in \mathbb{R}^{d_x}$ is the state at time $t$ and $x(0) \sim p(x_0; \varphi_{x_0})$,
     - $u(t) \in \mathbb{R}^{d_u}$ is an external input (i.e., control) signal,
     - $f: \mathbb{R}^{d_x} \times \mathbb{R}^{d_u} \times \mathbb{R} \to \mathbb{R}^{d_x}$ is the drift function,
     - $L: \mathbb{R}^{d_x} \times \mathbb{R}^{d_u} \times \mathbb{R} \to \mathbb{R}^{d_x \times d_w}$ is the diffusion coefficient, and
