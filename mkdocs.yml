@@ -16,6 +16,7 @@ nav:
   - Welcome: index.md
   - Examples:
     - Overview: examples/index.md
+    - Experiment configuration: examples/notebooks/cddynamax_experiment_config_tutorial.ipynb
     - CD-LGSSM SGD fit to data: examples/notebooks/cdlgssm_sgd_fit_to_data_tutorial.ipynb
     - Lorenz63 SGD fit to data: examples/notebooks/lorenz63_sgd_fit_to_data_tutorial.ipynb
     - Lorenz63 neural drift SGD fit: examples/notebooks/lorenz63_nndrift_sgd_fit_to_data_tutorial.ipynb
