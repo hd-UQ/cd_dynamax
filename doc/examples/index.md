@@ -2,6 +2,8 @@
 
 We provide a set of tutorial and example notebooks that demonstrate fitting, filtering, and likelihood evaluation with continuous-discrete state-space models in cd_dynamax.
 
+- **[Experiment configuration](notebooks/cddynamax_experiment_config_tutorial/)** — Load, override, and create configuration files to define reproducible continuous-discrete state-space model experiments.
+
 - **[CD-LGSSM SGD fit to data](notebooks/cdlgssm_sgd_fit_to_data_tutorial/)** — Fit a continuous-discrete linear Gaussian SSM to synthetic data using SGD on the marginal log-likelihood (computed via the Kalman filter).
 
 - **[Lorenz63 SGD fit to data](notebooks/lorenz63_sgd_fit_to_data_tutorial/)** — Fit a nonlinear Lorenz 63 model to observed data by maximizing log-likelihood with SGD, using the EnKF to approximate the likelihood.
