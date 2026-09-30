@@ -42,7 +42,6 @@ dependencies = [
     "dm-tree>=0.1.8",
     "fastprogress>=1.0.0",
     "graphviz",
-    "ipykernel",
     "orbax-checkpoint<0.11.3; sys_platform == 'win32'"
 ]
 
@@ -60,6 +59,7 @@ dev = [
     "mkdocs-jupyter>=0.25.1",
     "mkdocstrings-python",
     "tinygp>=0.3",
+    "ipykernel",
 ]
 
 [tool.ruff.lint]
