@@ -67,6 +67,9 @@ def build_dpf_hyperparams(
     return DPFHyperParams(
         dt_final=extra_kwargs.get("dt_final", defaults.dt_final),
         N_particles=extra_kwargs.get("N_particles", N_particles),
+        ess_threshold_ratio=extra_kwargs.get(
+            "ess_threshold_ratio", defaults.ess_threshold_ratio
+        ),
         resample_method=extra_kwargs.get("resample_method", defaults.resample_method),
         softness=extra_kwargs.get("softness", defaults.softness),
         cov_rescaling=extra_kwargs.get("cov_rescaling", filter_state_cov_rescaling),
