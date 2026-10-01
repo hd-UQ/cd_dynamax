@@ -140,7 +140,24 @@ def optimal_resampling(weights, N, key):
 
     return final_idx[M-N:], final_weights[M-N:] / final_weights[M-N:].sum() 
 
-def _conditional_kalman_step(state, mu, Sigma, params, u, y):
+def _prepare_emission_mask(emissions, emission_mask):
+    """Validate and broadcast a fixed-shape emission mask."""
+    if emission_mask is None:
+        return jnp.ones_like(emissions, dtype=bool)
+
+    emission_mask = jnp.asarray(emission_mask, dtype=bool)
+    if emission_mask.shape == (len(emissions),):
+        emission_mask = emission_mask[:, None]
+    if emission_mask.shape not in ((len(emissions), 1), emissions.shape):
+        raise ValueError(
+            "emission_mask must have shape (num_timesteps,), "
+            "(num_timesteps, 1), or match emissions; "
+            f"got {emission_mask.shape}."
+        )
+    return jnp.broadcast_to(emission_mask, emissions.shape)
+
+
+def _conditional_kalman_step(state, mu, Sigma, params, u, y, emission_mask):
     """
     Perform a Kalman step, given a prior and a linear Gaussian observation model.
     """
@@ -157,12 +174,22 @@ def _conditional_kalman_step(state, mu, Sigma, params, u, y):
     mu_pred = F @ mu + B @ u + b
     Sigma_pred = F @ Sigma @ F.T + Q
 
+    # Project missing observation coordinates into neutral dummy dimensions.
+    # Their observation rows are zero and N(0; 0, 1 / (2 pi)) has log density 0.
+    masked_y = jnp.where(emission_mask, y, 0.0)
+    M = jnp.diag(emission_mask.astype(H.dtype))
+    identity = jnp.eye(len(emission_mask), dtype=H.dtype)
+    masked_H = M @ H
+    masked_D = M @ D
+    masked_d = M @ d
+    masked_R = M @ R @ M + (identity - M) / (2.0 * jnp.pi)
+
     # update
-    S = R + H @ Sigma_pred @ H.T
-    K = psd_solve(S, H @ Sigma_pred).T
-    mu_y = H @ mu_pred + D @ u + d
-    ll = MVN(loc = mu_y, covariance_matrix = S).log_prob(y)
-    mu_cond = mu_pred + K @ (y - mu_y)
+    S = masked_R + masked_H @ Sigma_pred @ masked_H.T
+    K = psd_solve(S, masked_H @ Sigma_pred).T
+    mu_y = masked_H @ mu_pred + masked_D @ u + masked_d
+    ll = MVN(loc=mu_y, covariance_matrix=S).log_prob(masked_y)
+    mu_cond = mu_pred + K @ (masked_y - mu_y)
     Sigma_cond = Sigma_pred - K @ S @ K.T
     return ll, mu_cond, Sigma_cond
 
@@ -172,7 +199,8 @@ def rbpfilter(
     emissions:  Float[Array, "ntime emission_dim"],
     key: PRNGKey = jr.PRNGKey(0),
     inputs: Optional[Float[Array, "ntime input_dim"]] = None,
-    ess_threshold: float = 0.5
+    ess_threshold: float = 0.5,
+    emission_mask: Optional[Array] = None,
     ):
     '''
     Implementation of the Rao-Blackwellized particle filter, for approximating the 
@@ -180,6 +208,9 @@ def rbpfilter(
     samples discrete states from a discrete proposal, and then runs a KF step conditional on the sampled
     value of the chain. At the end of the update it computes an effective sample size and decide whether
     resampling is necessary.
+
+    emission_mask may have shape (ntime,), (ntime, 1), or match emissions.
+    False coordinates are excluded from the Kalman update and likelihood.
     '''
 
     num_timesteps = len(emissions)
@@ -204,6 +235,7 @@ def rbpfilter(
         # Get emissions and inputs for time index t
         u = inputs[t]
         y = emissions[t]
+        mask = emission_mask[t]
 
         # Sample discrete states from the proposal
         keys = jr.split(key, num_particles+1)
@@ -211,7 +243,7 @@ def rbpfilter(
         new_states = vmap(lambda key, x: jr.choice(key, jnp.arange(num_states), p=params.discrete.proposal_transition_matrix[x]))(keys[1:], prev_states)
 
         # Run KF step conditional on the sampled states
-        lls, filtered_means, filtered_covs = vmap(_conditional_kalman_step, in_axes = (0, 0, 0, None, None, None))(new_states, filtered_means, filtered_covs, params.linear_gaussian, u, y)
+        lls, filtered_means, filtered_covs = vmap(_conditional_kalman_step, in_axes = (0, 0, 0, None, None, None, None))(new_states, filtered_means, filtered_covs, params.linear_gaussian, u, y, mask)
 
         # Compute weights
         marginal_loglik = logsumexp(jnp.log(weights) + lls)
@@ -239,6 +271,7 @@ def rbpfilter(
 
     keys = jr.split(key, num_particles+2)
     next_key = keys[-1]
+    emission_mask = _prepare_emission_mask(emissions, emission_mask)
 
     # Initialize carry
     initial_weights = jnp.ones(shape=(num_particles,)) / num_particles
@@ -267,10 +300,14 @@ def rbpfilter_optimal(
     params: ParamsSLDS,
     emissions:  Float[Array, "ntime emission_dim"],
     key: PRNGKey = jr.PRNGKey(0),
-    inputs: Optional[Float[Array, "ntime input_dim"]]=None
+    inputs: Optional[Float[Array, "ntime input_dim"]]=None,
+    emission_mask: Optional[Array] = None,
     ):
     '''
     Implementation of the Rao-Blackwellized particle filter with optimal resampling
+
+    emission_mask may have shape (ntime,), (ntime, 1), or match emissions.
+    False coordinates are excluded from the Kalman update and likelihood.
     '''
 
     num_timesteps = len(emissions)
@@ -296,9 +333,10 @@ def rbpfilter_optimal(
         # Get emissions and inputs for time index t
         u = inputs[t]
         y = emissions[t]
+        mask = emission_mask[t]
 
         # Run KF step conditional on all possible states
-        _vec_kalman_step = lambda mu, Sigma: vmap(_conditional_kalman_step, in_axes=(0, None, None, None, None, None))(jnp.arange(num_states), mu, Sigma ,params.linear_gaussian, u, y)
+        _vec_kalman_step = lambda mu, Sigma: vmap(_conditional_kalman_step, in_axes=(0, None, None, None, None, None, None))(jnp.arange(num_states), mu, Sigma ,params.linear_gaussian, u, y, mask)
         lls, filtered_means, filtered_covs = vmap(_vec_kalman_step, in_axes=(0, 0))(filtered_means, filtered_covs)
 
         # Compute weights
@@ -337,6 +375,7 @@ def rbpfilter_optimal(
 
     keys = jr.split(key, num_particles+2)
     next_key = keys[-1]
+    emission_mask = _prepare_emission_mask(emissions, emission_mask)
 
     # Initialize carry
     initial_weights = jnp.ones(shape=(num_particles,)) / num_particles
