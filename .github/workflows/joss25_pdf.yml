@@ -14,27 +14,27 @@ jobs:
   paper:
     runs-on: ubuntu-latest          
     name: Paper PDF
-        steps:
-          - name: Checkout
-            uses: actions/checkout@v4
-            with:
-              fetch-depth: 0
-              ref: ${{ github.ref }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          ref: ${{ github.ref }}
 
-          - name: Build JOSS PDF
-            uses: openjournals/openjournals-draft-action@master
-            with:
-              journal: joss
-              paper-path: doc/2025_joss_submission/paper.md
+      - name: Build JOSS PDF
+        uses: openjournals/openjournals-draft-action@master
+        with:
+          journal: joss
+          paper-path: doc/2025_joss_submission/paper.md
 
-          - name: Upload
-            uses: actions/upload-artifact@v4
-            with:
-              name: paper
-              path: doc/2025_joss_submission/paper.pdf
+      - name: Upload
+        uses: actions/upload-artifact@v4
+        with:
+          name: paper
+          path: doc/2025_joss_submission/paper.pdf
 
-          - name: Commit PDF to repository
-            uses: EndBug/add-and-commit@v9
-            with:
-              message: '(auto) JOSS Paper PDF'
-              add: 'doc/2025_joss_submission/paper.pdf --force'
+      - name: Commit PDF to repository
+        uses: EndBug/add-and-commit@v9
+        with:
+          message: '(auto) JOSS Paper PDF'
+          add: 'doc/2025_joss_submission/paper.pdf --force'
