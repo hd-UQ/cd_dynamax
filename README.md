@@ -2,6 +2,7 @@
 
 [![PyPI version](https://img.shields.io/pypi/v/cd-dynamax.svg)](https://pypi.org/project/cd-dynamax/)
 [![Python versions](https://img.shields.io/badge/python-3.11%2B-blue.svg)](https://pypi.org/project/cd-dynamax/)
+[![DOI](https://joss.theoj.org/papers/10.21105/joss.10778/status.svg)](https://doi.org/10.21105/joss.10778)
 [![Tests](https://img.shields.io/github/actions/workflow/status/hd-UQ/cd_dynamax/tests.yml?branch=public&label=tests)](https://github.com/hd-UQ/cd_dynamax/actions/workflows/tests.yml)
 [![License: MIT](https://img.shields.io/github/license/hd-UQ/cd_dynamax)](https://github.com/hd-UQ/cd_dynamax/blob/public/LICENSE)
 
