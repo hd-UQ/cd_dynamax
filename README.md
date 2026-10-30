@@ -3,6 +3,7 @@
 [![PyPI version](https://img.shields.io/pypi/v/cd-dynamax.svg)](https://pypi.org/project/cd-dynamax/)
 [![Python versions](https://img.shields.io/badge/python-3.11%2B-blue.svg)](https://pypi.org/project/cd-dynamax/)
 [![DOI](https://joss.theoj.org/papers/10.21105/joss.10778/status.svg)](https://doi.org/10.21105/joss.10778)
+[![Zenodo DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.23362342.svg)](https://doi.org/10.5281/zenodo.23362342)
 [![Tests](https://img.shields.io/github/actions/workflow/status/hd-UQ/cd_dynamax/tests.yml?branch=public&label=tests)](https://github.com/hd-UQ/cd_dynamax/actions/workflows/tests.yml)
 [![License: MIT](https://img.shields.io/github/license/hd-UQ/cd_dynamax)](https://github.com/hd-UQ/cd_dynamax/blob/public/LICENSE)
 
@@ -211,3 +212,22 @@ Check the [JAX installation docs](https://jax.readthedocs.io/en/latest/installat
     ```bash
     pytest
     ```
+
+## Citing this work
+
+If you use `cd-dynamax` in your research, please consider citing our [JOSS paper](https://doi.org/10.21105/joss.10778):
+
+```bibtex
+@article{Levine2026CDDynamax,
+  author = {Matthew Levine and Daniel Waxman and I{\~n}igo Urteaga},
+  title = {{CD-Dynamax}: A {JAX}-based Python package for continuous-discrete probabilistic state space modeling and inference},
+  journal = {Journal of Open Source Software},
+  year = {2026},
+  volume = {11},
+  number = {126},
+  pages = {10778},
+  publisher = {Open Journals},
+  doi = {10.21105/joss.10778},
+  url = {https://doi.org/10.21105/joss.10778}
+}
+```
