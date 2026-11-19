@@ -23,7 +23,7 @@ PROPOSAL_ATOL = np.array([0.08, 0.06, 0.04])
 
 
 def make_switching_params():
-    """Zero dynamics remove dependence on the sampled initial continuous means."""
+    """Zero dynamics make the continuous prior independent of past states after y[0]."""
     transition = jnp.array([[0.9, 0.1], [0.2, 0.8]])
     return ParamsSLDS(
         discrete=DiscreteParamsSLDS(
@@ -50,21 +50,25 @@ def make_switching_params():
 def exact_filter(params, emissions):
     """An HMM forward recursion with scalar Gaussian conditional state means.
 
-    Since F=0, z_t | s_t is N(b_s, Q_s) independently of the previous z.
-    Like rbpfilter, transition the initial mode distribution before observing y[0].
+    At y[0] use the initial regime probabilities and conditional Gaussians.
+    Later, since F=0, z_t | s_t is N(b_s, Q_s) independently of the previous z.
     This reference does not use the particle filter's Kalman or weighting helpers.
     """
     transition = np.asarray(params.discrete.transition_matrix)
     mode_probs = np.asarray(params.discrete.initial_distribution)
-    means = np.asarray(params.linear_gaussian.dynamics_bias)[:, 0]
+    initial_mean = np.asarray(params.linear_gaussian.initial_mean)[:, 0]
+    initial_var = np.asarray(params.linear_gaussian.initial_cov)[:, 0, 0]
+    dynamics_bias = np.asarray(params.linear_gaussian.dynamics_bias)[:, 0]
     process_var = np.asarray(params.linear_gaussian.dynamics_cov)[:, 0, 0]
     observation_var = np.asarray(params.linear_gaussian.emission_cov)[:, 0, 0]
-    predictive_var = process_var + observation_var
-    gain = process_var / predictive_var
     marginal_loglik = 0.0
     filtered_means, filtered_mode_probs = [], []
-    for y in emissions[:, 0]:
-        log_weights = np.log(mode_probs @ transition) + norm.logpdf(
+    for t, y in enumerate(emissions[:, 0]):
+        means = initial_mean if t == 0 else dynamics_bias
+        state_var = initial_var if t == 0 else process_var
+        predictive_var = state_var + observation_var
+        gain = state_var / predictive_var
+        log_weights = np.log(mode_probs) + norm.logpdf(
             y, loc=means, scale=np.sqrt(predictive_var)
         )
         increment = logsumexp(log_weights)
@@ -73,6 +77,7 @@ def exact_filter(params, emissions):
         marginal_loglik += increment
         filtered_means.append(mode_probs @ conditional_means)
         filtered_mode_probs.append(mode_probs)
+        mode_probs = mode_probs @ transition
     return (
         np.asarray(marginal_loglik),
         np.asarray(filtered_means),

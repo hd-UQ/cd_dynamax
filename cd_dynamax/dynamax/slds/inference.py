@@ -157,22 +157,12 @@ def _prepare_emission_mask(emissions, emission_mask):
     return jnp.broadcast_to(emission_mask, emissions.shape)
 
 
-def _conditional_kalman_step(state, mu, Sigma, params, u, y, emission_mask):
-    """
-    Perform a Kalman step, given a prior and a linear Gaussian observation model.
-    """
-    F = params.dynamics_weights[state]
-    b = params.dynamics_bias[state]
-    B = params.dynamics_input_weights[state]
-    Q = params.dynamics_cov[state]
+def _condition_on(state, mu_pred, Sigma_pred, params, u, y, emission_mask):
+    """Update a predicted Gaussian using the observation for this regime."""
     H = params.emission_weights[state]
     d = params.emission_bias[state]
     D = params.emission_input_weights[state]
     R = params.emission_cov[state]
-
-    # prediction
-    mu_pred = F @ mu + B @ u + b
-    Sigma_pred = F @ Sigma @ F.T + Q
 
     # Project missing observation coordinates into neutral dummy dimensions.
     # Their observation rows are zero and N(0; 0, 1 / (2 pi)) has log density 0.
@@ -193,6 +183,47 @@ def _conditional_kalman_step(state, mu, Sigma, params, u, y, emission_mask):
     Sigma_cond = Sigma_pred - K @ S @ K.T
     return ll, mu_cond, Sigma_cond
 
+
+def _conditional_kalman_step(state, mu, Sigma, params, u, y, emission_mask):
+    """Predict and update a Gaussian after transitioning to this regime."""
+    F = params.dynamics_weights[state]
+    b = params.dynamics_bias[state]
+    B = params.dynamics_input_weights[state]
+    Q = params.dynamics_cov[state]
+    mu_pred = F @ mu + B @ u + b
+    Sigma_pred = F @ Sigma @ F.T + Q
+    return _condition_on(state, mu_pred, Sigma_pred, params, u, y, emission_mask)
+
+
+def _condition_initial(params, u, y, emission_mask):
+    """Score the first observation and condition the Gaussian for each initial regime."""
+    states = jnp.arange(params.initial_mean.shape[0])
+    return vmap(_condition_on, in_axes=(0, 0, 0, None, None, None, None))(
+        states, params.initial_mean, params.initial_cov, params, u, y, emission_mask
+    )
+
+
+def _resample_if_needed(carry, ess_threshold):
+    weights = carry[0]
+    ess = 1.0 / jnp.sum(jnp.square(weights))
+    return lax.cond(
+        ess < ess_threshold * len(weights), resampling, lambda *args: args, *carry
+    )
+
+
+def _scan_transitions(step, initial_carry, initial_loglik, num_timesteps):
+    """Collect the initial filtered result and the subsequent transition steps."""
+    _, out = lax.scan(step, initial_carry, jnp.arange(1, num_timesteps))
+    weights, states, means, covariances, _ = initial_carry
+    return RBPFiltered(
+        marginal_loglik=initial_loglik + out["marginal_loglik"].sum(),
+        weights=jnp.concatenate((weights[None], out["weights"])),
+        states=jnp.concatenate((states[None], out["states"])),
+        means=jnp.concatenate((means[None], out["means"])),
+        covariances=jnp.concatenate((covariances[None], out["covariances"])),
+    )
+
+
 def rbpfilter(
     num_particles: int,
     params: ParamsSLDS,
@@ -204,10 +235,14 @@ def rbpfilter(
     ):
     '''
     Implementation of the Rao-Blackwellized particle filter, for approximating the 
-    filtering distribution of a switching linear dynamical system. The filter at each iteration
-    samples discrete states from a discrete proposal, and then runs a KF step conditional on the sampled
-    value of the chain. At the end of the update it computes an effective sample size and decide whether
-    resampling is necessary.
+    filtering distribution of a switching linear dynamical system. The first
+    observation updates the initial regimes and their conditional Gaussians.
+    For each subsequent observation, the filter samples a regime from the
+    transition proposal and runs a Kalman prediction and update. Resampling is
+    based on the effective sample size after each observation.
+
+    The first input is used only for the first observation. Each later input
+    is used for both the transition into that state and its observation.
 
     The proposal transition matrix must assign positive probability to every transition
     with positive target probability. Particle weights and marginal likelihood increments
@@ -258,13 +293,11 @@ def rbpfilter(
         marginal_loglik = logsumexp(log_weights)
         weights = jnp.exp(log_weights - marginal_loglik)
 
-        # Resample if necessary
-        resample_cond = 1.0 / jnp.sum(jnp.square(weights)) < ess_threshold * num_particles
-        weights, new_states, filtered_means, filtered_covs, next_key = lax.cond(resample_cond, resampling, lambda *args: args,
-                                                                                weights, new_states, filtered_means, filtered_covs, next_key)
-
-        # Build carry and output states
-        carry = (weights, new_states, filtered_means, filtered_covs, next_key)
+        carry = _resample_if_needed(
+            (weights, new_states, filtered_means, filtered_covs, next_key),
+            ess_threshold,
+        )
+        weights, new_states, filtered_means, filtered_covs, _ = carry
         outputs = {
             "marginal_loglik": marginal_loglik,
             "weights": weights,
@@ -275,31 +308,22 @@ def rbpfilter(
 
         return carry, outputs
 
-    keys = jr.split(key, num_particles+2)
-    next_key = keys[-1]
+    init_key, next_key = jr.split(key)
     emission_mask = _prepare_emission_mask(emissions, emission_mask)
-
-    # Initialize carry
-    initial_weights = jnp.ones(shape=(num_particles,)) / num_particles
-    initial_states = jr.choice(keys[0], jnp.arange(params.discrete.initial_distribution.shape[0]), shape=(num_particles,), p = params.discrete.initial_distribution)
-    initial_means = jnp.array([MVN(params.linear_gaussian.initial_mean[initial_states[i]], params.linear_gaussian.initial_cov[initial_states[i]]).sample(seed=keys[i+1]) for i in range(num_particles)])
-    initial_covs = jnp.array([params.linear_gaussian.initial_cov[state] for state in initial_states])
-    
-    carry = (
-        initial_weights,
-        initial_states, 
-        initial_means,
-        initial_covs, 
-        next_key)
-    
-    _, out = lax.scan(_step, carry, jnp.arange(num_timesteps))
-
-    return RBPFiltered(
-        marginal_loglik=out["marginal_loglik"].sum(),
-        weights=out["weights"],
-        states=out["states"],
-        means=out["means"],
-        covariances=out["covariances"])
+    lls, means, covs = _condition_initial(
+        params.linear_gaussian, inputs[0], emissions[0], emission_mask[0]
+    )
+    initial_probs = params.discrete.initial_distribution
+    states = jr.choice(
+        init_key, len(initial_probs), shape=(num_particles,), p=initial_probs
+    )
+    log_weights = lls[states] - jnp.log(num_particles)
+    initial_loglik = logsumexp(log_weights)
+    weights = jnp.exp(log_weights - initial_loglik)
+    carry = _resample_if_needed(
+        (weights, states, means[states], covs[states], next_key), ess_threshold
+    )
+    return _scan_transitions(_step, carry, initial_loglik, num_timesteps)
 
 def rbpfilter_optimal(
     num_particles: int,
@@ -310,7 +334,14 @@ def rbpfilter_optimal(
     emission_mask: Optional[Array] = None,
     ):
     '''
-    Implementation of the Rao-Blackwellized particle filter with optimal resampling
+    Implementation of the Rao-Blackwellized particle filter with optimal resampling.
+
+    The first observation updates the initial regime mixture exactly, then
+    particles are drawn from the posterior regime probabilities. Subsequent
+    observations use optimal resampling of the candidate transitions.
+
+    The first input is used only for the first observation. Each later input
+    is used for both the transition into that state and its observation.
 
     emission_mask may have shape (ntime,), (ntime, 1), or match emissions.
     False coordinates are excluded from the Kalman update and likelihood.
@@ -379,28 +410,14 @@ def rbpfilter_optimal(
 
         return carry, outputs
 
-    keys = jr.split(key, num_particles+2)
-    next_key = keys[-1]
+    init_key, next_key = jr.split(key)
     emission_mask = _prepare_emission_mask(emissions, emission_mask)
-
-    # Initialize carry
-    initial_weights = jnp.ones(shape=(num_particles,)) / num_particles
-    initial_states = jr.choice(keys[0], jnp.arange(params.discrete.initial_distribution.shape[0]), shape=(num_particles,), p = params.discrete.initial_distribution)
-    initial_means = jnp.array([MVN(params.linear_gaussian.initial_mean[initial_states[i]], params.linear_gaussian.initial_cov[initial_states[i]]).sample(seed=keys[i+1]) for i in range(num_particles)])
-    initial_covs = jnp.array([params.linear_gaussian.initial_cov[state] for state in initial_states])
-    
-    carry = (
-        initial_weights,
-        initial_states, 
-        initial_means,
-        initial_covs, 
-        next_key)
-    
-    _, out = lax.scan(_step, carry, jnp.arange(num_timesteps))
-
-    return RBPFiltered(
-        marginal_loglik=out["marginal_loglik"].sum(),
-        weights=out["weights"],
-        states=out["states"],
-        means=out["means"],
-        covariances=out["covariances"])
+    lls, means, covs = _condition_initial(
+        params.linear_gaussian, inputs[0], emissions[0], emission_mask[0]
+    )
+    log_weights = jnp.log(params.discrete.initial_distribution) + lls
+    initial_loglik = logsumexp(log_weights)
+    states = jr.categorical(init_key, log_weights, shape=(num_particles,))
+    weights = jnp.full((num_particles,), 1.0 / num_particles, dtype=lls.dtype)
+    carry = (weights, states, means[states], covs[states], next_key)
+    return _scan_transitions(_step, carry, initial_loglik, num_timesteps)
