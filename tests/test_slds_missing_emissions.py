@@ -51,7 +51,7 @@ def test_correlated_emission_covariance_matches_observed_subspace():
     u = jnp.zeros(1)
 
     masked = _conditional_kalman_step(
-        0, mu, covariance, params, u, y, jnp.array([True, False])
+        0, mu, covariance, params, u, u, y, jnp.array([True, False])
     )
 
     observed_only_params = params._replace(
@@ -66,6 +66,7 @@ def test_correlated_emission_covariance_matches_observed_subspace():
         covariance,
         observed_only_params,
         u,
+        u,
         y[:1],
         jnp.array([True]),
     )
@@ -78,13 +79,15 @@ def test_fully_missing_emission_is_neutral():
     params = _linear_params()
     mu = jnp.array([0.4, -0.5])
     covariance = jnp.array([[0.7, 0.1], [0.1, 0.6]])
+    u = jnp.zeros(1)
 
     ll, filtered_mean, filtered_cov = _conditional_kalman_step(
         0,
         mu,
         covariance,
         params,
-        jnp.zeros(1),
+        u,
+        u,
         jnp.array([jnp.nan, jnp.nan]),
         jnp.array([False, False]),
     )

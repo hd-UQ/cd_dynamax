@@ -13,6 +13,7 @@ from cd_dynamax.dynamax.slds.inference import (
     rbpfilter,
     rbpfilter_optimal,
 )
+from cd_dynamax.dynamax.slds.models import SLDS
 
 
 STATE_DIM = 2
@@ -25,16 +26,20 @@ ATOL = 2e-6
 
 def init_lgssm_model():
     """Initialize a small stable LGSSM for the degenerate SLDS comparison."""
-    model = LinearGaussianSSM(state_dim=STATE_DIM, emission_dim=EMISSION_DIM)
+    model = LinearGaussianSSM(
+        state_dim=STATE_DIM, emission_dim=EMISSION_DIM, input_dim=1
+    )
     params, _ = model.initialize(
         initial_mean=jnp.array([0.2, -0.1]),
         initial_covariance=0.5 * jnp.eye(STATE_DIM),
         dynamics_weights=jnp.array([[0.75, 0.1], [-0.05, 0.8]]),
         dynamics_bias=jnp.zeros(STATE_DIM),
         dynamics_covariance=0.05 * jnp.eye(STATE_DIM),
+        dynamics_input_weights=jnp.array([[0.4], [-0.2]]),
         emission_weights=jnp.array([[1.0, 0.3], [-0.2, 0.7]]),
         emission_bias=jnp.zeros(EMISSION_DIM),
         emission_covariance=0.1 * jnp.eye(EMISSION_DIM),
+        emission_input_weights=jnp.array([[-0.3], [0.5]]),
     )
     return model, params
 
@@ -53,23 +58,28 @@ def make_one_regime_slds_params(lgssm_params):
             dynamics_weights=lgssm_params.dynamics.weights[None],
             dynamics_cov=lgssm_params.dynamics.cov[None],
             dynamics_bias=lgssm_params.dynamics.bias[None],
-            dynamics_input_weights=jnp.zeros((1, STATE_DIM, 1)),
+            dynamics_input_weights=lgssm_params.dynamics.input_weights[None],
             emission_weights=lgssm_params.emissions.weights[None],
             emission_cov=lgssm_params.emissions.cov[None],
             emission_bias=lgssm_params.emissions.bias[None],
-            emission_input_weights=jnp.zeros((1, EMISSION_DIM, 1)),
+            emission_input_weights=lgssm_params.emissions.input_weights[None],
             initialized=True,
         ),
     )
 
 
 @pytest.mark.parametrize("filter_fn", [rbpfilter, rbpfilter_optimal])
-def test_one_regime_slds_matches_lgssm(filter_fn):
+def test_one_regime_slds_matches_lgssm_with_inputs(filter_fn):
     lgssm_model, lgssm_params = init_lgssm_model()
-    _, emissions = lgssm_model.sample(lgssm_params, jr.PRNGKey(0), NUM_TIMESTEPS)
+    inputs = jnp.array([[1.0], [-0.5], [0.0], [0.5], [-1.0], [0.0], [1.0], [-0.5]])
+    _, emissions = lgssm_model.sample(
+        lgssm_params, jr.PRNGKey(0), NUM_TIMESTEPS, inputs=inputs
+    )
     slds_params = make_one_regime_slds_params(lgssm_params)
-    kf_post = lgssm_filter(lgssm_params, emissions)
-    posterior = filter_fn(NUM_PARTICLES, slds_params, emissions, jr.PRNGKey(1))
+    kf_post = lgssm_filter(lgssm_params, emissions, inputs=inputs)
+    posterior = filter_fn(
+        NUM_PARTICLES, slds_params, emissions, jr.PRNGKey(1), inputs=inputs
+    )
 
     np.testing.assert_allclose(
         posterior.marginal_loglik, kf_post.marginal_loglik, atol=ATOL, rtol=0
@@ -130,6 +140,25 @@ def test_first_row_observes_the_initial_regime(filter_fn, observed, switching_pa
     )
     np.testing.assert_allclose(
         posterior.covariances, 2.0 / 3.0 if observed else 2.0, atol=ATOL
+    )
+
+
+def test_slds_sample_uses_input_for_outgoing_transition(switching_params):
+    model = SLDS(num_states=2, state_dim=1, emission_dim=1)
+    inputs = jnp.array([[2.0], [-3.0], [4.0]])
+    key = jr.PRNGKey(3)
+    _, states, emissions = model.sample(switching_params, key, len(inputs), inputs)
+    _, baseline_states, baseline_emissions = model.sample(
+        switching_params, key, len(inputs)
+    )
+
+    # Identical keys cancel the noise. Dynamics add 5 * u[t], observations add u[t].
+    expected_state_shift = jnp.array([[0.0], [10.0], [-5.0]])
+    np.testing.assert_allclose(
+        states - baseline_states, expected_state_shift, atol=ATOL
+    )
+    np.testing.assert_allclose(
+        emissions - baseline_emissions, expected_state_shift + inputs, atol=ATOL
     )
 
 

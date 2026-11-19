@@ -94,7 +94,8 @@ class SLDS(SSM):
             params: model parameters $\theta$
             key: random number generator
             num_timesteps: number of timesteps $T$
-            inputs: inputs $u_{1:T}$
+            inputs: `inputs[t]` drives the observation at row `t` and, when
+                present, the transition from row `t` to row `t + 1`.
 
         Returns:
             latent states and emissions
@@ -105,12 +106,16 @@ class SLDS(SSM):
 
 
         def _step(prev_states, args):
-            key, inpt = args
+            key, transition_input, observation_input = args
             key0, key1, key2 = jr.split(key, 3)
             dstate, cstate = prev_states
             dstate = jr.choice(key0, jnp.arange(self.num_states), p = params.discrete.transition_matrix[dstate,:])
-            cstate = self.transition_distribution(params, dstate, cstate, inpt).sample(seed=key2)
-            emission = self.emission_distribution(params, dstate, cstate, inpt).sample(seed=key1)
+            cstate = self.transition_distribution(
+                params, dstate, cstate, transition_input
+            ).sample(seed=key2)
+            emission = self.emission_distribution(
+                params, dstate, cstate, observation_input
+            ).sample(seed=key1)
             return (dstate, cstate), (dstate, cstate, emission)
 
         # Sample the initial state
@@ -122,8 +127,13 @@ class SLDS(SSM):
 
         # Sample the remaining emissions and states
         next_keys = jr.split(key, num_timesteps - 1)
-        next_inputs = tree_map(lambda x: x[1:], inputs)
-        _, (next_dstates, next_cstates, next_emissions) = lax.scan(_step, (initial_dstate, initial_cstate), (next_keys, next_inputs))
+        transition_inputs = tree_map(lambda x: x[:-1], inputs)
+        observation_inputs = tree_map(lambda x: x[1:], inputs)
+        _, (next_dstates, next_cstates, next_emissions) = lax.scan(
+            _step,
+            (initial_dstate, initial_cstate),
+            (next_keys, transition_inputs, observation_inputs),
+        )
 
         # Concatenate the initial state and emission with the following ones
         expand_and_cat = lambda x0, x1T: jnp.concatenate((jnp.expand_dims(x0, 0), x1T))

@@ -184,15 +184,19 @@ def _condition_on(state, mu_pred, Sigma_pred, params, u, y, emission_mask):
     return ll, mu_cond, Sigma_cond
 
 
-def _conditional_kalman_step(state, mu, Sigma, params, u, y, emission_mask):
+def _conditional_kalman_step(
+    state, mu, Sigma, params, transition_input, observation_input, y, emission_mask
+):
     """Predict and update a Gaussian after transitioning to this regime."""
     F = params.dynamics_weights[state]
     b = params.dynamics_bias[state]
     B = params.dynamics_input_weights[state]
     Q = params.dynamics_cov[state]
-    mu_pred = F @ mu + B @ u + b
+    mu_pred = F @ mu + B @ transition_input + b
     Sigma_pred = F @ Sigma @ F.T + Q
-    return _condition_on(state, mu_pred, Sigma_pred, params, u, y, emission_mask)
+    return _condition_on(
+        state, mu_pred, Sigma_pred, params, observation_input, y, emission_mask
+    )
 
 
 def _condition_initial(params, u, y, emission_mask):
@@ -241,8 +245,8 @@ def rbpfilter(
     transition proposal and runs a Kalman prediction and update. Resampling is
     based on the effective sample size after each observation.
 
-    The first input is used only for the first observation. Each later input
-    is used for both the transition into that state and its observation.
+    `inputs[t]` drives the observation at row `t` and, when present,
+    the transition from row `t` to row `t + 1`.
 
     The proposal transition matrix must assign positive probability to every transition
     with positive target probability. Particle weights and marginal likelihood increments
@@ -271,8 +275,8 @@ def rbpfilter(
         weights, prev_states, filtered_means, filtered_covs, key = carry
         num_states = params.discrete.transition_matrix.shape[0]
 
-        # Get emissions and inputs for time index t
-        u = inputs[t]
+        transition_input = inputs[t - 1]
+        observation_input = inputs[t]
         y = emissions[t]
         mask = emission_mask[t]
 
@@ -282,7 +286,18 @@ def rbpfilter(
         new_states = vmap(lambda key, x: jr.choice(key, jnp.arange(num_states), p=params.discrete.proposal_transition_matrix[x]))(keys[1:], prev_states)
 
         # Run KF step conditional on the sampled states
-        lls, filtered_means, filtered_covs = vmap(_conditional_kalman_step, in_axes = (0, 0, 0, None, None, None, None))(new_states, filtered_means, filtered_covs, params.linear_gaussian, u, y, mask)
+        lls, filtered_means, filtered_covs = vmap(
+            _conditional_kalman_step, in_axes=(0, 0, 0, None, None, None, None, None)
+        )(
+            new_states,
+            filtered_means,
+            filtered_covs,
+            params.linear_gaussian,
+            transition_input,
+            observation_input,
+            y,
+            mask,
+        )
 
         # Correct for sampling from the proposal rather than the target transition.
         log_importance_ratios = (
@@ -340,8 +355,8 @@ def rbpfilter_optimal(
     particles are drawn from the posterior regime probabilities. Subsequent
     observations use optimal resampling of the candidate transitions.
 
-    The first input is used only for the first observation. Each later input
-    is used for both the transition into that state and its observation.
+    `inputs[t]` drives the observation at row `t` and, when present,
+    the transition from row `t` to row `t + 1`.
 
     emission_mask may have shape (ntime,), (ntime, 1), or match emissions.
     False coordinates are excluded from the Kalman update and likelihood.
@@ -367,14 +382,27 @@ def rbpfilter_optimal(
 
         key, next_key = jr.split(key, 2)
 
-        # Get emissions and inputs for time index t
-        u = inputs[t]
+        transition_input = inputs[t - 1]
+        observation_input = inputs[t]
         y = emissions[t]
         mask = emission_mask[t]
 
         # Run KF step conditional on all possible states
-        _vec_kalman_step = lambda mu, Sigma: vmap(_conditional_kalman_step, in_axes=(0, None, None, None, None, None, None))(jnp.arange(num_states), mu, Sigma ,params.linear_gaussian, u, y, mask)
-        lls, filtered_means, filtered_covs = vmap(_vec_kalman_step, in_axes=(0, 0))(filtered_means, filtered_covs)
+        candidate_step = vmap(
+            _conditional_kalman_step, in_axes=(0, None, None, None, None, None, None, None)
+        )
+        lls, filtered_means, filtered_covs = vmap(
+            candidate_step, in_axes=(None, 0, 0, None, None, None, None, None)
+        )(
+            jnp.arange(num_states),
+            filtered_means,
+            filtered_covs,
+            params.linear_gaussian,
+            transition_input,
+            observation_input,
+            y,
+            mask,
+        )
 
         # Compute weights
         marginal_loglik = logsumexp(
